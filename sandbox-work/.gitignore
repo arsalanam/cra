@@ -1,0 +1,6 @@
+# Per-run tmpdirs from sandbox_exec land here when running under
+# docker compose. They are cleaned up on container exit but if the
+# agent crashes mid-run, leftovers may persist — they're safe to delete.
+*
+!.gitkeep
+!.gitignore

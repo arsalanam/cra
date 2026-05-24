@@ -1,0 +1,121 @@
+# Local-dev stack for the Clinical Research Assistant.
+#
+# Bring up:    docker compose -f deploy/compose/docker-compose.yml up -d
+# Tear down:   docker compose -f deploy/compose/docker-compose.yml down
+# Logs:        docker compose -f deploy/compose/docker-compose.yml logs -f agent
+#
+# Prerequisites on the host:
+#   1. Docker Desktop running.
+#   2. The sandbox image built locally:
+#        docker build -t pydantic-sandbox:latest ../../sandbox
+#      The agent shells out to the host docker daemon (via the mounted
+#      socket) to spawn sandbox containers — see architecture.md, the
+#      "Sandbox execution dispatch" decision record.
+#   3. A `.env` file in this directory (copy `.env.example`).
+#   4. HOST_SANDBOX_WORK_DIR in .env set to the absolute path of the
+#      sibling `sandbox-work/` directory on YOUR host.
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-cra}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cra}
+      POSTGRES_DB: ${POSTGRES_DB:-cra}
+    ports:
+      - "5432:5432"  # exposed for the migration script + ad-hoc psql
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    # Explicit network aliases force the service-name DNS record to be
+    # registered. Defensive against an intermittent Docker Desktop bug
+    # where the service alias silently fails to register, leaving the
+    # container reachable only by container name (compose-postgres-1).
+    networks:
+      default:
+        aliases:
+          - postgres
+          - db
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-cra} -d ${POSTGRES_DB:-cra}"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  agent:
+    build:
+      context: ../..
+      dockerfile: deploy/compose/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # — Bedrock —
+      # Profile-based auth: ~/.aws is mounted read-only below and the
+      # named profile is selected here. Do NOT also set AWS_ACCESS_KEY_ID
+      # to ${AWS_ACCESS_KEY_ID} — an unset host var becomes an empty
+      # string in-container, and botocore's env provider treats a
+      # present-but-empty key as authoritative, shadowing the profile.
+      AWS_PROFILE: ${AWS_PROFILE:-default}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-us-east-1}
+      BEDROCK_MODEL_ID: ${BEDROCK_MODEL_ID:-us.anthropic.claude-haiku-4-5-20251001-v1:0}
+      # — DB —
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://cra:cra@postgres:5432/cra}
+      # — External APIs —
+      TAVILY_API_KEY: ${TAVILY_API_KEY}
+      NCBI_API_KEY: ${NCBI_API_KEY}
+      # — Daily token budgets —
+      MAX_INPUT_TOKENS_PER_DAY: ${MAX_INPUT_TOKENS_PER_DAY:-3000000}
+      MAX_OUTPUT_TOKENS_PER_DAY: ${MAX_OUTPUT_TOKENS_PER_DAY:-600000}
+      # — Sandbox: docker-out-of-docker path translation —
+      SANDBOX_WORK_DIR: /work/sandbox
+      HOST_SANDBOX_WORK_DIR: ${HOST_SANDBOX_WORK_DIR}
+      # — Images dir (served at /images) —
+      IMAGES_DIR: /work/images
+      # — Local publication cache (R0): content-addressable raw-blob store —
+      LIBRARY_RAW_DIR: /work/library
+      LIBRARY_CACHE_ENABLED: ${LIBRARY_CACHE_ENABLED:-true}
+      # — Embeddings (R2): Titan Text Embeddings v2 on Bedrock —
+      EMBEDDING_MODEL_ID: ${EMBEDDING_MODEL_ID:-amazon.titan-embed-text-v2:0}
+      EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-1024}
+      EMBEDDING_ENABLED: ${EMBEDDING_ENABLED:-true}
+      # — Cognito identity (blank → auth disabled, dev/test mode) —
+      COGNITO_REGION: ${COGNITO_REGION:-us-east-1}
+      COGNITO_USER_POOL_ID: ${COGNITO_USER_POOL_ID}
+      COGNITO_CLIENT_ID: ${COGNITO_CLIENT_ID}
+      COGNITO_CLIENT_SECRET: ${COGNITO_CLIENT_SECRET}
+      COGNITO_DOMAIN: ${COGNITO_DOMAIN}
+      COGNITO_REDIRECT_URI: ${COGNITO_REDIRECT_URI:-http://localhost:8000/auth/callback}
+      SESSION_COOKIE_SECRET: ${SESSION_COOKIE_SECRET}
+    ports:
+      - "8000:8000"
+    volumes:
+      # Host AWS credentials/config, read-only. Combined with AWS_PROFILE
+      # above, this lets boto3 resolve the named profile inside the
+      # container. ${USERPROFILE} is the host home on Windows (~ on
+      # Linux/macOS — use ${HOME}/.aws there instead). Note: SSO and
+      # credential_process profiles won't resolve in-container; use a
+      # plain key/secret profile.
+      - ${USERPROFILE}/.aws:/root/.aws:ro
+      # Host docker daemon — lets sandbox_exec spawn sibling containers.
+      # On Windows / Docker Desktop, the named-pipe is also exposed under
+      # this path inside the container.
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Shared sandbox work-dir: agent writes tmpdirs here, host docker
+      # daemon bind-mounts them into sandbox containers. Both sides MUST
+      # see the same files at the same paths, which is why the host path
+      # is forwarded via HOST_SANDBOX_WORK_DIR.
+      - ../../sandbox-work:/work/sandbox
+      # Generated artefacts (forest plots etc.), served at /images.
+      # Bind-mounted so they survive `docker compose down` and are
+      # inspectable from the host.
+      - ../../images:/work/images
+      # Local publication cache raw-blob store (R0). Bind-mounted so cached
+      # full text survives restarts and is inspectable from the host. Mirror
+      # of /work/images; in k8s this becomes the shared document-cache volume.
+      - ../../library:/work/library
+
+volumes:
+  postgres-data:

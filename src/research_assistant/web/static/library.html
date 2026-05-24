@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Library · Clinical Research Assistant</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, Segoe UI, Roboto, sans-serif; background: #0f1115; color: #e6e6e6; min-height: 100vh; }
+
+  .header { padding: 14px 24px; border-bottom: 1px solid #262a33; display: flex; justify-content: space-between; align-items: center; background: #171a21; }
+  .header h1 { margin: 0; font-size: 16px; }
+  .header a { color: #8b93a7; text-decoration: none; font-size: 13px; }
+  .header a:hover { color: #e6e6e6; }
+
+  .container { max-width: 960px; margin: 24px auto; padding: 0 24px; }
+  h2 { font-size: 14px; text-transform: uppercase; color: #8b93a7; letter-spacing: .6px; margin: 0 0 12px; font-weight: 700; }
+  .lead { color: #8b93a7; font-size: 13px; margin: 0 0 20px; line-height: 1.5; }
+
+  .stats { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 28px; }
+  .stat { background: #171a21; border: 1px solid #262a33; border-radius: 8px; padding: 14px 20px; flex: 1; min-width: 130px; }
+  .stat .num { font-size: 22px; font-weight: 700; color: #e6e6e6; }
+  .stat .label { font-size: 11px; text-transform: uppercase; color: #5a6070; letter-spacing: .5px; margin-top: 4px; }
+
+  .card { background: #171a21; border: 1px solid #262a33; border-radius: 8px; padding: 20px 24px; margin-bottom: 24px; }
+  .upload-row { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label { font-size: 11px; text-transform: uppercase; color: #5a6070; font-weight: 600; letter-spacing: .5px; }
+  .field input[type="text"], .field input[type="file"] {
+    background: #0f1115; color: #e6e6e6; border: 1px solid #2a2f3a; border-radius: 4px; padding: 8px 10px; font: inherit; font-size: 13px;
+  }
+  .field input:focus { outline: 1px solid #4a7fd9; border-color: #4a7fd9; }
+
+  .btn-primary { background: #4a7fd9; color: #fff; border: 0; border-radius: 6px; padding: 9px 18px; font-weight: 600; font-size: 13px; cursor: pointer; }
+  .btn-primary:hover { background: #5a8fe9; }
+  .btn-primary:disabled { background: #333; color: #777; cursor: not-allowed; }
+  .btn-del { background: none; border: 1px solid #3a2a2a; color: #d97a7a; border-radius: 5px; padding: 4px 10px; font-size: 12px; cursor: pointer; }
+  .btn-del:hover { background: #2a1f1f; }
+
+  .status { font-size: 12px; color: #8b93a7; }
+  .status.ok { color: #6bcf7f; }
+  .status.err { color: #d97a7a; }
+
+  .search-box { width: 100%; background: #0f1115; color: #e6e6e6; border: 1px solid #2a2f3a; border-radius: 6px; padding: 9px 12px; font: inherit; font-size: 13px; margin-bottom: 14px; }
+  .search-box:focus { outline: 1px solid #4a7fd9; border-color: #4a7fd9; }
+
+  .pub { background: #171a21; border: 1px solid #262a33; border-radius: 8px; padding: 14px 18px; margin-bottom: 10px; }
+  .pub-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+  .pub-title { font-size: 14px; color: #e6e6e6; font-weight: 600; cursor: pointer; line-height: 1.4; }
+  .pub-title:hover { color: #9db8ec; }
+  .pub-meta { font-size: 12px; color: #5a6070; margin-top: 5px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .badge { font-family: 'Consolas', monospace; font-size: 10px; padding: 2px 7px; border-radius: 4px; background: #0f1115; color: #8b93a7; border: 1px solid #2a2f3a; }
+  .badge.upload { color: #c79be0; border-color: #3a2f44; }
+  .badge.pubmed { color: #7fb0e0; border-color: #2a3a44; }
+  .badge.ok { color: #6bcf7f; border-color: #2a3f2f; }
+  .badge.warn { color: #d9b87a; border-color: #3f372a; }
+
+  .passages { margin-top: 12px; border-top: 1px solid #1f232c; padding-top: 12px; display: none; }
+  .passages.open { display: block; }
+  .passage { font-size: 12px; color: #b8bdc7; margin-bottom: 10px; line-height: 1.45; }
+  .passage .sec { font-family: 'Consolas', monospace; font-size: 10px; color: #5a6070; text-transform: uppercase; margin-right: 6px; }
+
+  .loading, .err-box, .empty { color: #8b93a7; font-size: 13px; padding: 24px; text-align: center; }
+  .err-box { color: #d97a7a; }
+</style>
+</head>
+<body>
+  <div class="header">
+    <h1>Library</h1>
+    <a href="/">← Back to assistant</a>
+  </div>
+
+  <div class="container">
+    <p class="lead">
+      Your local publication cache. Everything found via <code>search_papers</code> / fetched full text
+      is stored here automatically; you can also upload PDFs of papers behind paywalls. Cached passages
+      are embedded for semantic <code>rag_search</code> retrieval.
+    </p>
+
+    <div id="stats" class="stats"></div>
+
+    <h2>Upload a PDF</h2>
+    <div class="card">
+      <div class="upload-row">
+        <div class="field">
+          <label>PDF file</label>
+          <input type="file" id="file" accept="application/pdf,.pdf" />
+        </div>
+        <div class="field" style="flex:1; min-width:180px;">
+          <label>Title (optional)</label>
+          <input type="text" id="title" placeholder="Defaults to PDF metadata / filename" />
+        </div>
+        <div class="field" style="min-width:160px;">
+          <label>DOI (optional)</label>
+          <input type="text" id="doi" placeholder="10.xxxx/..." />
+        </div>
+        <button class="btn-primary" id="upload-btn" onclick="doUpload()">Upload</button>
+      </div>
+      <div id="upload-status" class="status" style="margin-top:12px;"></div>
+    </div>
+
+    <h2>Publications</h2>
+    <input type="text" class="search-box" id="search" placeholder="Search titles and abstracts…" oninput="onSearch()" />
+    <div id="list" class="loading">Loading…</div>
+  </div>
+
+<script>
+  async function api(path, opts) {
+    const resp = await fetch(path, opts);
+    if (resp.status === 401) { window.location.href = "/auth/login"; throw new Error("unauthorized"); }
+    return resp;
+  }
+
+  function esc(s) { return (s == null ? "" : String(s)).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+
+  async function loadStats() {
+    const s = await (await api("/api/library/stats")).json();
+    const pct = s.passages ? Math.round((s.embedded_passages / s.passages) * 100) : 0;
+    document.getElementById("stats").innerHTML = [
+      ["Publications", s.publications],
+      ["Passages", s.passages],
+      ["Embedded", s.passages ? `${pct}%` : "—"],
+      ["Full text", s.fulltext_publications],
+    ].map(([label, num]) => `<div class="stat"><div class="num">${esc(num)}</div><div class="label">${label}</div></div>`).join("");
+  }
+
+  function pubRow(p) {
+    const ids = [];
+    if (p.pmid) ids.push(`PMID ${esc(p.pmid)}`);
+    if (p.doi) ids.push(esc(p.doi));
+    const emb = p.passage_count && p.embedded_count >= p.passage_count
+      ? `<span class="badge ok">embedded</span>`
+      : (p.embedded_count ? `<span class="badge warn">${p.embedded_count}/${p.passage_count} embedded</span>` : `<span class="badge warn">not embedded</span>`);
+    const ft = p.has_fulltext ? `<span class="badge ok">full text</span>` : "";
+    return `
+      <div class="pub" data-id="${esc(p.id)}">
+        <div class="pub-head">
+          <div>
+            <div class="pub-title" onclick="toggle('${esc(p.id)}')">${esc(p.title)}</div>
+            <div class="pub-meta">
+              <span class="badge ${esc(p.source)}">${esc(p.source)}</span>
+              ${p.journal ? esc(p.journal) : ""} ${p.year ? esc(p.year) : ""}
+              ${ids.length ? "· " + ids.join(" · ") : ""}
+              <span class="badge">${p.passage_count} passage${p.passage_count === 1 ? "" : "s"}</span>
+              ${emb} ${ft}
+            </div>
+          </div>
+          <button class="btn-del" onclick="del('${esc(p.id)}')">Delete</button>
+        </div>
+        <div class="passages" id="pass-${esc(p.id)}"></div>
+      </div>`;
+  }
+
+  let searchTimer = null;
+  function onSearch() { clearTimeout(searchTimer); searchTimer = setTimeout(loadList, 250); }
+
+  async function loadList() {
+    const q = document.getElementById("search").value.trim();
+    const list = document.getElementById("list");
+    try {
+      const pubs = await (await api("/api/library" + (q ? `?q=${encodeURIComponent(q)}` : ""))).json();
+      list.innerHTML = pubs.length ? pubs.map(pubRow).join("") : `<div class="empty">No publications${q ? " match your search" : " cached yet"}.</div>`;
+    } catch (e) {
+      list.innerHTML = `<div class="err-box">Failed to load: ${esc(e.message)}</div>`;
+    }
+  }
+
+  async function toggle(id) {
+    const box = document.getElementById("pass-" + id);
+    if (box.classList.contains("open")) { box.classList.remove("open"); return; }
+    box.classList.add("open");
+    box.innerHTML = `<div class="status">Loading passages…</div>`;
+    const d = await (await api("/api/library/" + encodeURIComponent(id))).json();
+    const head = d.abstract ? `<div class="passage"><span class="sec">abstract</span>${esc(d.abstract)}</div>` : "";
+    box.innerHTML = head + d.passages.map(p =>
+      `<div class="passage"><span class="sec">${esc(p.section)} #${p.ordinal}${p.embedded ? " ✓" : ""}</span>${esc(p.snippet)}</div>`
+    ).join("") || `<div class="status">No passages.</div>`;
+  }
+
+  async function del(id) {
+    if (!confirm("Delete this publication and its passages from the library?")) return;
+    const resp = await api("/api/library/" + encodeURIComponent(id), { method: "DELETE" });
+    if (resp.status === 204) { await loadStats(); await loadList(); }
+  }
+
+  async function doUpload() {
+    const fileEl = document.getElementById("file");
+    const status = document.getElementById("upload-status");
+    const btn = document.getElementById("upload-btn");
+    if (!fileEl.files.length) { status.className = "status err"; status.textContent = "Choose a PDF first."; return; }
+    const fd = new FormData();
+    fd.append("file", fileEl.files[0]);
+    const title = document.getElementById("title").value.trim();
+    const doi = document.getElementById("doi").value.trim();
+    if (title) fd.append("title", title);
+    if (doi) fd.append("doi", doi);
+
+    btn.disabled = true;
+    status.className = "status";
+    status.textContent = "Uploading & extracting…";
+    try {
+      const resp = await api("/api/library/upload", { method: "POST", body: fd });
+      const out = await resp.json();
+      if (!resp.ok) { status.className = "status err"; status.textContent = out.detail || "Upload failed."; return; }
+      status.className = "status ok";
+      status.textContent = out.already_cached
+        ? `Already in library: "${out.title}" (${out.pages} pages).`
+        : `Added "${out.title}" — ${out.pages} pages, ${out.passages_created} passages. Embedding in background.`;
+      fileEl.value = ""; document.getElementById("title").value = ""; document.getElementById("doi").value = "";
+      await loadStats(); await loadList();
+    } catch (e) {
+      status.className = "status err"; status.textContent = "Upload failed: " + e.message;
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  loadStats();
+  loadList();
+</script>
+</body>
+</html>

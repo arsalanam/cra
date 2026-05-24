@@ -1,0 +1,76 @@
+[project]
+name = "research-assistant"
+version = "0.1.0"
+description = "Clinical research assistant — Pydantic AI agent with AWS Bedrock + FastAPI + React CDN frontend"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "pydantic-ai>=0.0.54",
+    "boto3>=1.34",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "tavily-python>=0.5",
+    "wikipedia-api>=0.7.1",
+    "httpx>=0.27",
+    "python-multipart>=0.0.9",
+    "pydantic-settings>=2.0",
+    "sqlalchemy[asyncio]>=2.0",
+    "aiosqlite>=0.20",       # kept for test fixtures (in-memory SQLite)
+    "asyncpg>=0.30",         # PostgreSQL async driver (compose / prod)
+    "python-jose[cryptography]>=3.3",  # JWT validation for Cognito ID tokens
+    "itsdangerous>=2.2",     # signed session-cookie serializer
+    "pymupdf>=1.24",
+    "python-docx>=1.1",
+    "python-pptx>=1.0",
+    "docker>=7.0",
+    "apscheduler>=3.11",
+    "pgvector>=0.3",         # pgvector SQLAlchemy type + asyncpg codec (RAG embeddings)
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff",
+    "mypy",
+    "pytest",
+    "pytest-asyncio",
+    "pytest-cov",
+]
+
+[project.scripts]
+research-assistant = "research_assistant.__main__:main"
+cra = "research_assistant.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/research_assistant"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["E501"]
+# Long prompt strings and sample-question text are intentionally verbose.
+"src/research_assistant/agent/prompts.py" = ["E501"]
+"src/research_assistant/data/sample_questions.py" = ["E501"]
+# FastAPI relies on call-in-default for Form/File dependency injection.
+"src/research_assistant/web/app.py" = ["B008"]
+
+[tool.mypy]
+strict = true
+python_version = "3.13"
+exclude = ["tests/"]
+
+[[tool.mypy.overrides]]
+module = ["wikipediaapi", "tavily", "fitz", "docx", "pptx", "docker", "docker.*", "jose", "jose.*", "itsdangerous", "boto3", "botocore", "botocore.*", "pgvector", "pgvector.*", "apscheduler", "apscheduler.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

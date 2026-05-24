@@ -1,0 +1,5 @@
+# Generated artefacts written here by sandbox_exec (forest plots, etc.).
+# Keep the directory itself in version control but never the contents.
+*
+!.gitkeep
+!.gitignore

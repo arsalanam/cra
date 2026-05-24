@@ -1,0 +1,2558 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Clinical Research Assistant</title>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, Segoe UI, Roboto, sans-serif; background: #0f1115; color: #e6e6e6; height: 100vh; }
+  #root { display: flex; height: 100vh; }
+
+  /* ── Sidebar ─────────────────────────────────────────────── */
+  .sidebar { width: 280px; background: #171a21; border-right: 1px solid #262a33; display: flex; flex-direction: column; }
+  .sidebar-top { padding: 16px; }
+  .sidebar-top h2 { font-size: 13px; font-weight: 700; text-transform: uppercase; color: #8b93a7; margin: 0 0 12px; letter-spacing: .5px; }
+  .new-thread-btn { width: 100%; padding: 10px 14px; background: #4a7fd9; color: #fff; border: 0; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .new-thread-btn:hover { background: #5a8fe9; }
+  .thread-list { flex: 1; overflow-y: auto; padding: 0 12px; }
+  .thread-item { padding: 10px 12px; margin-bottom: 4px; background: transparent; border-radius: 6px; cursor: pointer; font-size: 13px; line-height: 1.4; display: flex; flex-direction: column; gap: 2px; }
+  .thread-item:hover { background: #1f232c; }
+  .thread-item.active { background: #1f232c; border-left: 3px solid #4a7fd9; }
+  .thread-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .thread-meta { font-size: 11px; color: #5a6070; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .workflow-pill { font-size: 9px; text-transform: uppercase; letter-spacing: .4px; padding: 1px 6px; border-radius: 3px; font-weight: 600; }
+  .workflow-pill.meta_analysis { background: #142a30; color: #7adfdf; }
+  .workflow-pill.search_strategy { background: #1c2532; color: #a3b3df; }
+  .workflow-pill.sr_protocol { background: #1d2a1f; color: #a3dfa3; }
+  .workflow-pill.risk_of_bias { background: #2a1d1d; color: #dfa3a3; }
+  .workflow-pill.general_qa { background: #1f232c; color: #b3b9c8; }
+  .thread-actions { opacity: 0; margin-left: auto; }
+  .thread-item:hover .thread-actions { opacity: 1; }
+  .thread-delete { background: none; border: 0; color: #d97a7a; cursor: pointer; font-size: 12px; padding: 2px 6px; border-radius: 4px; }
+  .thread-delete:hover { background: #2a1010; }
+  .sidebar-bottom { padding: 12px 16px; border-top: 1px solid #262a33; }
+  .sidebar-link { display: flex; align-items: center; gap: 8px; padding: 8px 10px; color: #8b93a7; text-decoration: none; font-size: 13px; border-radius: 6px; cursor: pointer; border: 0; background: 0; width: 100%; text-align: left; }
+  .sidebar-link:hover { background: #1f232c; color: #e6e6e6; }
+  .sidebar-divider { height: 1px; background: #262a33; margin: 8px 0; }
+  .empty-threads { padding: 20px 12px; text-align: center; color: #5a6070; font-size: 13px; }
+
+  /* ── Notifications bell + dropdown ─────────────────────────── */
+  .bell-row { position: relative; }
+  .bell-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 16px; height: 16px; padding: 0 5px; background: #d97a7a; color: #fff; border-radius: 9px; font-size: 10px; font-weight: 700; margin-left: auto; }
+  .bell-badge.zero { background: transparent; color: #5a6070; font-weight: 400; }
+  .notif-dropdown { position: absolute; bottom: 100%; left: 8px; right: 8px; margin-bottom: 4px; background: #1f232c; border: 1px solid #2a2f3a; border-radius: 6px; max-height: 360px; overflow-y: auto; z-index: 50; box-shadow: 0 -8px 24px rgba(0,0,0,0.4); }
+  .notif-item { padding: 10px 12px; border-bottom: 1px solid #262a33; cursor: pointer; font-size: 12px; line-height: 1.4; }
+  .notif-item:last-child { border-bottom: 0; }
+  .notif-item:hover { background: #262a33; }
+  .notif-item.unread { border-left: 3px solid #4a7fd9; padding-left: 9px; }
+  .notif-item.read   { opacity: 0.6; }
+  .notif-title { color: #e6e6e6; font-weight: 600; margin-bottom: 2px; }
+  .notif-summary { color: #b3b9c8; font-size: 11px; line-height: 1.5; }
+  .notif-meta { color: #5a6070; font-size: 10px; margin-top: 4px; display: flex; gap: 8px; }
+  .notif-empty { padding: 16px 12px; text-align: center; color: #5a6070; font-size: 12px; }
+
+  /* ── Main ─────────────────────────────────────────────────── */
+  .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .header { padding: 12px 20px; border-bottom: 1px solid #262a33; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
+  .header h1 { margin: 0; font-size: 16px; }
+  .health { font-size: 12px; color: #8b93a7; }
+
+  /* ── Conversation area ──────────────────────────────────── */
+  .conversation { flex: 1; overflow-y: auto; padding: 24px 32px; max-width: 920px; width: 100%; margin: 0 auto; }
+  .turn { margin-bottom: 16px; }
+  .turn-user { background: #1a2332; color: #b3cfee; padding: 12px 16px; border-radius: 8px; font-size: 14px; white-space: pre-wrap; word-wrap: break-word; }
+  .turn-user .role-tag { font-size: 11px; text-transform: uppercase; font-weight: 600; color: #5a83b3; margin-bottom: 4px; letter-spacing: .5px; }
+
+  .card { background: #171a21; border: 1px solid #262a33; border-radius: 8px; padding: 18px 22px; }
+  .card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  .card-tag { font-size: 11px; text-transform: uppercase; font-weight: 700; letter-spacing: .8px; padding: 3px 8px; border-radius: 4px; }
+  .card-tag.clarification { background: #2a2010; color: #d9a84a; }
+  .card-tag.pico { background: #102a15; color: #6bcf7f; }
+  .card-tag.search_results { background: #1a2332; color: #7aa7d9; }
+  .card-tag.answer { background: #1f232c; color: #b3b9c8; }
+  .card h3 { margin: 0; font-size: 16px; color: #e6e6e6; font-weight: 600; }
+  .card .rationale { color: #8b93a7; font-size: 13px; margin-top: 12px; line-height: 1.5; padding-top: 12px; border-top: 1px solid #1f232c; }
+
+  /* ── PICO editor ────────────────────────────────────────── */
+  .pico-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 18px; }
+  .pico-grid .full { grid-column: 1 / -1; }
+  .pico-field { display: flex; flex-direction: column; gap: 4px; }
+  .pico-field label { font-size: 11px; text-transform: uppercase; color: #5a6070; font-weight: 600; letter-spacing: .5px; }
+  .pico-field textarea, .pico-field input { background: #0f1115; color: #e6e6e6; border: 1px solid #2a2f3a; border-radius: 4px; padding: 8px 10px; font: inherit; font-size: 13px; resize: vertical; }
+  .pico-field textarea { min-height: 60px; }
+  .pico-field .hint { font-size: 11px; color: #5a6070; margin-top: 2px; }
+
+  .list-editor { display: flex; flex-direction: column; gap: 4px; }
+  .list-row { display: flex; gap: 6px; }
+  .list-row input { flex: 1; }
+  .list-row button { padding: 4px 10px; background: #2a2f3a; color: #8b93a7; border: 0; border-radius: 4px; cursor: pointer; font-size: 12px; }
+  .list-row button:hover { background: #3a3f4a; color: #e6e6e6; }
+  .add-btn { align-self: flex-start; background: transparent; color: #4a7fd9; border: 1px dashed #4a7fd9; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+  .add-btn:hover { background: #1a2332; }
+
+  .card-actions { display: flex; gap: 10px; margin-top: 16px; padding-top: 14px; border-top: 1px solid #1f232c; }
+  .btn-primary { background: #4a7fd9; color: #fff; border: 0; border-radius: 6px; padding: 9px 18px; font-weight: 600; font-size: 13px; cursor: pointer; }
+  .btn-primary:hover { background: #5a8fe9; }
+  .btn-primary:disabled { background: #333; color: #777; cursor: not-allowed; }
+  .btn-secondary { background: transparent; color: #8b93a7; border: 1px solid #2a2f3a; border-radius: 6px; padding: 9px 18px; font-weight: 600; font-size: 13px; cursor: pointer; }
+  .btn-secondary:hover { background: #1f232c; color: #e6e6e6; }
+
+  /* ── Clarification ──────────────────────────────────────── */
+  .clarification-q { font-size: 15px; line-height: 1.5; margin: 0 0 12px; }
+  .options { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .option-btn { background: #1f232c; color: #d9a84a; border: 1px solid #2a2010; padding: 8px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+  .option-btn:hover { background: #2a2010; color: #f0c87a; }
+
+  /* ── Search results ─────────────────────────────────────── */
+  .strategy-block { background: #0f1115; border: 1px solid #2a2f3a; border-radius: 6px; padding: 12px 14px; margin-bottom: 16px; font-size: 12px; }
+  .strategy-block .label { font-size: 10px; text-transform: uppercase; color: #5a6070; font-weight: 600; letter-spacing: .5px; margin-bottom: 4px; }
+  .strategy-query { font-family: 'Consolas', 'Monaco', monospace; color: #b3cfee; word-break: break-all; line-height: 1.5; }
+  .filter-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .chip { background: #1a2332; color: #7aa7d9; padding: 2px 8px; border-radius: 10px; font-size: 11px; }
+  .mesh-chip { background: #1f232c; color: #8b93a7; padding: 2px 8px; border-radius: 10px; font-size: 11px; }
+
+  .study-card { border: 1px solid #2a2f3a; border-radius: 6px; padding: 14px 16px; margin-bottom: 10px; background: #0f1115; display: flex; gap: 10px; }
+  .study-card.selected { border-color: #4a7fd9; background: #14182a; }
+  .study-checkbox { margin-top: 2px; width: 16px; height: 16px; accent-color: #4a7fd9; cursor: pointer; flex-shrink: 0; }
+  .study-body { flex: 1; min-width: 0; }
+  .study-title { font-size: 14px; font-weight: 600; color: #e6e6e6; line-height: 1.4; margin-bottom: 4px; }
+  .study-title a { color: inherit; text-decoration: none; }
+  .study-title a:hover { color: #7aa7d9; }
+  .study-meta { font-size: 12px; color: #8b93a7; margin-bottom: 8px; }
+  .study-link { color: #7aa7d9; text-decoration: none; }
+  .study-link:hover { color: #b3cfee; text-decoration: underline; }
+  .study-relevance { font-size: 12px; color: #6bcf7f; background: #102a15; border-left: 3px solid #6bcf7f; padding: 6px 10px; border-radius: 3px; margin-bottom: 8px; }
+  .study-abstract { font-size: 12px; color: #b3b9c8; line-height: 1.5; margin: 8px 0; }
+  .study-tags { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
+  .toggle-abstract { background: none; border: 0; color: #5a83b3; cursor: pointer; font-size: 11px; padding: 2px 0; text-decoration: underline; }
+
+  /* ── Selection bar ──────────────────────────────────────── */
+  .selection-bar { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; background: #0f1115; border: 1px solid #2a2f3a; border-radius: 6px; margin-bottom: 14px; font-size: 13px; }
+  .selection-count { color: #b3b9c8; }
+  .selection-count.warn { color: #d9a84a; }
+  .selection-count.error { color: #d97a7a; }
+
+  /* ── Data extraction ────────────────────────────────────── */
+  .extraction-summary { background: #102a15; color: #b3e6c1; padding: 10px 14px; border-radius: 6px; font-size: 13px; line-height: 1.5; margin-bottom: 14px; border-left: 3px solid #6bcf7f; }
+  .extraction-helper { background: #1a2332; color: #b3cfee; padding: 10px 14px; border-radius: 6px; font-size: 12px; line-height: 1.5; margin-bottom: 14px; border-left: 3px solid #4a7fd9; }
+  .extraction-helper strong { color: #d9a84a; }
+  .extract-study { border: 1px solid #2a2f3a; border-radius: 6px; padding: 12px 14px; margin-bottom: 12px; background: #0f1115; }
+  .extract-study-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid #1f232c; }
+  .extract-study-title { font-size: 13px; font-weight: 600; color: #e6e6e6; line-height: 1.4; flex: 1; }
+  .extract-study-title a { color: inherit; text-decoration: none; }
+  .extract-study-title a:hover { color: #7aa7d9; }
+  .extract-meta { font-size: 11px; color: #5a6070; margin-top: 2px; }
+  .outcome-row { padding: 10px 0; border-bottom: 1px dashed #1f232c; }
+  .outcome-row:last-child { border-bottom: 0; }
+  .outcome-header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .outcome-name { flex: 1; font-size: 13px; font-weight: 600; color: #b3b9c8; }
+  .effect-select { background: #1f232c; color: #e6e6e6; border: 1px solid #2a2f3a; border-radius: 4px; padding: 4px 8px; font: inherit; font-size: 12px; }
+  .source-badge { font-size: 10px; text-transform: uppercase; padding: 2px 7px; border-radius: 3px; letter-spacing: .5px; font-weight: 600; }
+  .source-badge.abstract { background: #1a2332; color: #7aa7d9; }
+  .source-badge.full_text { background: #102a15; color: #6bcf7f; }
+  .source-badge.user_provided { background: #2a2010; color: #d9a84a; }
+  .complete-flag { font-size: 11px; padding: 2px 7px; border-radius: 3px; letter-spacing: .3px; }
+  .complete-flag.ok { background: #102a15; color: #6bcf7f; }
+  .complete-flag.warn { background: #2a1010; color: #d97a7a; }
+  .data-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; }
+  .data-field { display: flex; flex-direction: column; gap: 2px; }
+  .data-field label { font-size: 10px; text-transform: uppercase; color: #5a6070; font-weight: 600; letter-spacing: .3px; }
+  .data-field input { background: #1f232c; color: #e6e6e6; border: 1px solid #2a2f3a; border-radius: 4px; padding: 5px 8px; font: inherit; font-size: 12px; }
+  .data-field input:focus { outline: 1px solid #4a7fd9; }
+  .extraction-notes { font-size: 11px; color: #8b93a7; font-style: italic; margin-top: 6px; padding: 6px 8px; background: #1a1d24; border-radius: 3px; }
+
+  /* ── Meta-analysis ──────────────────────────────────────── */
+  .meta-summary { background: #1a2332; color: #b3cfee; padding: 12px 16px; border-radius: 6px; font-size: 13px; line-height: 1.5; margin-bottom: 18px; }
+  .outcome-result { border: 1px solid #2a2f3a; border-radius: 6px; padding: 16px; margin-bottom: 16px; background: #0f1115; }
+  .outcome-result h4 { margin: 0 0 8px; font-size: 15px; color: #e6e6e6; }
+  .effect-display { display: flex; align-items: baseline; gap: 12px; margin: 8px 0; }
+  .effect-pooled { font-size: 22px; font-weight: 700; color: #b3cfee; }
+  .effect-ci { font-size: 13px; color: #8b93a7; }
+  .stats-row { display: flex; gap: 18px; flex-wrap: wrap; font-size: 12px; color: #8b93a7; margin: 8px 0 12px; }
+  .stat-item .stat-val { color: #e6e6e6; font-weight: 600; }
+  .i-squared.low { color: #6bcf7f; }
+  .i-squared.mod { color: #d9a84a; }
+  .i-squared.high { color: #d97a7a; }
+  .interpretation { padding: 8px 12px; border-radius: 4px; font-size: 13px; line-height: 1.5; margin-bottom: 12px; }
+  .interpretation.intervention { background: #102a15; color: #6bcf7f; border-left: 3px solid #6bcf7f; }
+  .interpretation.comparator { background: #2a1010; color: #d97a7a; border-left: 3px solid #d97a7a; }
+  .interpretation.neutral { background: #1f232c; color: #b3b9c8; border-left: 3px solid #5a6070; }
+  .forest-plot { margin-top: 10px; background: #ffffff; border-radius: 4px; padding: 8px; }
+  .forest-plot img { max-width: 100%; display: block; }
+  .forest-plot.missing { background: #1f232c; color: #5a6070; padding: 24px; text-align: center; font-size: 12px; font-style: italic; }
+  .caveats { background: #2a2010; color: #f0c87a; padding: 10px 14px; border-radius: 6px; font-size: 12px; line-height: 1.6; margin-top: 12px; }
+  .caveats h5 { margin: 0 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: #d9a84a; }
+  .caveats ul { margin: 4px 0 0; padding-left: 18px; }
+  .excluded-studies { margin-top: 12px; font-size: 11px; color: #5a6070; }
+  .card-tag.data_extraction { background: #2a1a10; color: #d9a84a; }
+  .card-tag.meta_analysis { background: #142a30; color: #7adfdf; }
+  .card-tag.query_blocks { background: #1c2532; color: #a3b3df; }
+  .card-tag.strategy_result { background: #1c2532; color: #a3b3df; }
+  .card-tag.protocol_methods { background: #1d2a1f; color: #a3dfa3; }
+  .card-tag.protocol_document { background: #1d2a1f; color: #a3dfa3; }
+  .card-tag.rob_assessments { background: #2a1d1d; color: #dfa3a3; }
+  .card-tag.rob_summary { background: #2a1d1d; color: #dfa3a3; }
+
+  /* ── risk_of_bias: assessments table ──────────────────────── */
+  .rob-tool-row { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .rob-tool-pill { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; padding: 3px 9px; border-radius: 3px; font-weight: 700; background: #2a1d1d; color: #dfa3a3; }
+  .rob-summary-box { background: #14181f; padding: 10px 12px; border-radius: 4px; font-size: 12px; color: #b3b9c8; line-height: 1.5; margin-bottom: 14px; border-left: 3px solid #5a6070; }
+
+  .rob-study { border: 1px solid #2a2f3a; border-radius: 6px; padding: 12px 14px; margin-bottom: 12px; background: #0f1115; }
+  .rob-study-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid #1f232c; flex-wrap: wrap; }
+  .rob-study-title { flex: 1; min-width: 220px; font-size: 13px; font-weight: 600; color: #e6e6e6; line-height: 1.4; }
+  .rob-study-meta { font-size: 11px; color: #5a6070; margin-top: 2px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .rob-study-meta a { color: #7aa7d9; text-decoration: none; }
+  .rob-study-meta a:hover { text-decoration: underline; }
+  .rob-overall-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .rob-overall-row .lbl { font-size: 10px; text-transform: uppercase; color: #5a6070; font-weight: 600; letter-spacing: .5px; }
+
+  .judgment-pill { font-size: 10px; text-transform: uppercase; letter-spacing: .4px; padding: 2px 8px; border-radius: 3px; font-weight: 700; }
+  .judgment-pill.low { background: #102a15; color: #6bcf7f; }
+  .judgment-pill.some_concerns { background: #2a2010; color: #d9a84a; }
+  .judgment-pill.high { background: #2a1010; color: #d97a7a; }
+  .judgment-pill.no_information { background: #1f232c; color: #8b93a7; }
+  .judgment-select { background: #1f232c; color: #e6e6e6; border: 1px solid #2a2f3a; border-radius: 4px; padding: 4px 6px; font: inherit; font-size: 12px; }
+  .judgment-select.low { color: #6bcf7f; border-color: #1d3a25; }
+  .judgment-select.some_concerns { color: #d9a84a; border-color: #3a3010; }
+  .judgment-select.high { color: #d97a7a; border-color: #3a1010; }
+  .judgment-select.no_information { color: #8b93a7; }
+
+  .rob-domain-row { display: grid; grid-template-columns: 1.4fr 130px; gap: 10px; align-items: start; padding: 8px 0; border-bottom: 1px dashed #1f232c; }
+  .rob-domain-row:last-child { border-bottom: 0; }
+  .rob-domain-name { font-size: 12px; color: #b3b9c8; font-weight: 600; }
+  .rob-domain-justify { grid-column: 1 / -1; font-size: 11px; color: #8b93a7; line-height: 1.5; padding: 4px 0; }
+  .rob-domain-justify textarea { width: 100%; background: #14181f; color: #e6e6e6; border: 1px solid #1f232c; border-radius: 3px; padding: 6px 8px; font: inherit; font-size: 11px; min-height: 36px; resize: vertical; }
+  .rob-domain-quote { grid-column: 1 / -1; font-size: 11px; color: #b3cfee; line-height: 1.4; padding: 6px 8px; background: #14182a; border-left: 2px solid #4a7fd9; border-radius: 3px; margin-top: 4px; font-style: italic; }
+  .rob-domain-toggle { background: none; border: 0; color: #5a83b3; cursor: pointer; font-size: 11px; padding: 2px 0; text-decoration: underline; align-self: flex-start; }
+
+  /* ── risk_of_bias: summary ────────────────────────────────── */
+  .rob-plot { background: #ffffff; border-radius: 4px; padding: 8px; margin-bottom: 14px; }
+  .rob-plot img { max-width: 100%; display: block; }
+  .rob-plot.missing { background: #1f232c; color: #5a6070; padding: 24px; text-align: center; font-size: 12px; font-style: italic; border-radius: 4px; margin-bottom: 14px; }
+  .rob-narrative { font-size: 13px; color: #e6e6e6; line-height: 1.6; padding: 12px 14px; background: #0f1115; border-radius: 4px; margin-bottom: 14px; border: 1px solid #1f232c; }
+  .rob-sensitivity { padding: 10px 14px; border-radius: 4px; background: #2a2010; border-left: 3px solid #d9a84a; margin-bottom: 14px; }
+  .rob-sensitivity h4 { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: #d9a84a; font-weight: 700; }
+  .rob-sensitivity ul { margin: 4px 0 0; padding-left: 18px; font-size: 12px; color: #e6e6e6; line-height: 1.6; }
+  .rob-high-pmids { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0 0; }
+  .rob-high-pmids .chip { background: #2a1010; color: #d97a7a; padding: 2px 8px; border-radius: 10px; font-size: 11px; }
+  .rob-high-pmids .chip a { color: inherit; text-decoration: none; }
+  .rob-high-pmids .chip a:hover { text-decoration: underline; }
+
+  /* ── sr_protocol: methods card ─────────────────────────────── */
+  .pm-section { border: 1px solid #2a2f3a; border-radius: 6px; padding: 14px 16px; margin-bottom: 12px; background: #0f1115; }
+  .pm-section h4 { margin: 0 0 10px; font-size: 12px; text-transform: uppercase; color: #8b93a7; letter-spacing: .5px; font-weight: 600; }
+  .pm-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+  .pm-select { background: #1f232c; color: #e6e6e6; border: 1px solid #2a2f3a; border-radius: 4px; padding: 6px 10px; font: inherit; font-size: 13px; }
+  .pm-eligibility-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 18px; }
+  .pm-em-row { display: grid; grid-template-columns: 1fr 120px; gap: 10px; align-items: center; padding: 6px 0; border-bottom: 1px dashed #1f232c; }
+  .pm-em-row:last-child { border-bottom: 0; }
+  .pm-em-name { font-size: 13px; color: #b3b9c8; }
+  .pm-checkbox-row { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #b3b9c8; }
+  .pm-checkbox-row input { width: 16px; height: 16px; accent-color: #4a7fd9; }
+
+  /* ── sr_protocol: document card ────────────────────────────── */
+  .pd-section { border: 1px solid #2a2f3a; border-radius: 6px; padding: 14px 16px; margin-bottom: 12px; background: #0f1115; }
+  .pd-section h4 { margin: 0 0 10px; font-size: 12px; text-transform: uppercase; color: #8b93a7; letter-spacing: .5px; font-weight: 600; }
+  .pd-background { font-size: 13px; line-height: 1.6; color: #e6e6e6; white-space: pre-wrap; }
+  .pd-ref { padding: 8px 10px; background: #14181f; border: 1px solid #1f232c; border-radius: 4px; margin-bottom: 6px; font-size: 12px; line-height: 1.4; }
+  .pd-ref-num { color: #4a7fd9; font-weight: 700; margin-right: 6px; }
+  .pd-ref-text { color: #e6e6e6; }
+  .pd-ref-meta { font-size: 11px; color: #5a6070; margin-top: 4px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .pd-ref-link { color: #7aa7d9; text-decoration: none; }
+  .pd-ref-link:hover { text-decoration: underline; }
+  .pd-origin-badge { font-size: 9px; text-transform: uppercase; letter-spacing: .4px; padding: 1px 5px; border-radius: 3px; font-weight: 600; }
+  .pd-origin-badge.search_papers { background: #102a30; color: #7adfdf; }
+  .pd-origin-badge.web_search    { background: #1c2532; color: #a3b3df; }
+  .pd-origin-badge.wikipedia     { background: #2a2010; color: #d9a84a; }
+  .pd-origin-badge.mesh_lookup   { background: #1d2a1f; color: #a3dfa3; }
+  .pd-markdown-preview { font-family: 'Consolas', 'Monaco', monospace; font-size: 11px; color: #b3b9c8; white-space: pre-wrap; max-height: 360px; overflow-y: auto; background: #14181f; padding: 12px; border-radius: 4px; line-height: 1.5; }
+  .pd-prospero-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .pd-prospero-table th { text-align: left; padding: 6px 10px; color: #5a6070; font-size: 10px; text-transform: uppercase; letter-spacing: .5px; border-bottom: 1px solid #2a2f3a; font-weight: 600; }
+  .pd-prospero-table td { padding: 8px 10px; vertical-align: top; border-bottom: 1px solid #1f232c; }
+  .pd-prospero-table td.field { color: #b3b9c8; font-weight: 600; width: 28%; }
+  .pd-prospero-table td.content { color: #e6e6e6; line-height: 1.5; }
+  .pd-prospero-table td.content.placeholder { color: #d9a84a; font-style: italic; }
+  .pd-prospero-table td.action { width: 60px; text-align: right; }
+  .pd-handoff-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+
+  /* ── Search-strategy: query blocks editor ─────────────────── */
+  .qb-block { border: 1px solid #2a2f3a; border-radius: 6px; padding: 12px 14px; margin-bottom: 10px; background: #0f1115; }
+  .qb-block-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .qb-label-pill { font-size: 10px; text-transform: uppercase; padding: 2px 7px; border-radius: 3px; letter-spacing: .5px; font-weight: 600; background: #1c2532; color: #a3b3df; }
+  .qb-concept { font-size: 14px; color: #e6e6e6; font-weight: 600; }
+  .qb-mesh-row, .qb-syn-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; }
+  .qb-mesh-row .label, .qb-syn-row .label { font-size: 10px; text-transform: uppercase; color: #5a6070; font-weight: 600; letter-spacing: .5px; margin-right: 4px; }
+  .qb-mesh-chip { background: #102a30; color: #7adfdf; padding: 2px 8px; border-radius: 10px; font-size: 11px; }
+  .qb-mesh-chip .mid { color: #4a8090; font-size: 10px; margin-left: 4px; }
+  .qb-composed { font-family: 'Consolas', 'Monaco', monospace; color: #b3cfee; word-break: break-all; line-height: 1.5; font-size: 11px; background: #0f1115; padding: 6px 8px; border-radius: 4px; border: 1px dashed #2a2f3a; margin-top: 8px; }
+
+  /* ── Search-strategy: strategy result ─────────────────────── */
+  .sr-band { padding: 10px 14px; border-radius: 6px; font-size: 13px; margin-bottom: 14px; line-height: 1.5; }
+  .sr-band.in_band { background: #102a15; color: #b3e6c1; border-left: 3px solid #6bcf7f; }
+  .sr-band.below   { background: #2a2010; color: #f0c87a; border-left: 3px solid #d9a84a; }
+  .sr-band.above   { background: #2a1a10; color: #f0c87a; border-left: 3px solid #d9a84a; }
+  .sr-band-num { font-weight: 700; font-size: 18px; vertical-align: middle; }
+  .plan-card { border: 1px solid #2a2f3a; border-radius: 6px; padding: 12px 14px; margin-bottom: 10px; background: #0f1115; }
+  .plan-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; gap: 10px; flex-wrap: wrap; }
+  .plan-db { font-size: 13px; font-weight: 700; color: #e6e6e6; }
+  .plan-dialect { font-size: 11px; color: #8b93a7; margin-left: 6px; }
+  .plan-hits { font-size: 13px; color: #7aa7d9; font-weight: 600; }
+  .plan-hits.muted { color: #5a6070; font-weight: 400; font-style: italic; }
+  .plan-query { font-family: 'Consolas', 'Monaco', monospace; color: #b3cfee; word-break: break-all; line-height: 1.5; font-size: 12px; background: #14181f; padding: 8px 10px; border-radius: 4px; max-height: 160px; overflow-y: auto; }
+  .copy-btn { background: #1f232c; color: #8b93a7; border: 1px solid #2a2f3a; border-radius: 4px; padding: 3px 10px; cursor: pointer; font-size: 11px; }
+  .copy-btn:hover { background: #2a2f3a; color: #e6e6e6; }
+  .copy-btn.copied { background: #102a15; color: #6bcf7f; border-color: #102a15; }
+  .plan-caveats { font-size: 11px; color: #f0c87a; margin-top: 6px; padding: 6px 10px; background: #2a2010; border-radius: 4px; line-height: 1.5; }
+  .plan-access { font-size: 11px; color: #8b93a7; margin-top: 4px; font-style: italic; }
+  .plan-card.unexec { border-style: dashed; }
+  .refinements { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
+  .refine-btn { background: #1f232c; color: #b3cfee; border: 1px solid #2a4a7d; padding: 8px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; line-height: 1.4; text-align: left; max-width: 280px; }
+  .refine-btn:hover { background: #1a2332; color: #d3e3fe; }
+  .refine-btn .dir { font-size: 10px; text-transform: uppercase; font-weight: 700; letter-spacing: .5px; display: block; margin-bottom: 2px; }
+  .refine-btn .dir.narrow  { color: #d9a84a; }
+  .refine-btn .dir.broaden { color: #7adfdf; }
+  .refine-btn .why { color: #8b93a7; font-size: 11px; margin-top: 4px; display: block; }
+  .sample-hits { margin-top: 14px; }
+  .sample-hits h4 { margin: 0 0 8px; font-size: 12px; text-transform: uppercase; color: #5a6070; letter-spacing: .5px; font-weight: 600; }
+  .sample-hit { padding: 8px 10px; background: #0f1115; border: 1px solid #1f232c; border-radius: 4px; margin-bottom: 6px; font-size: 12px; line-height: 1.4; }
+  .sample-hit .title a { color: #e6e6e6; text-decoration: none; }
+  .sample-hit .title a:hover { color: #7aa7d9; }
+  .sample-hit .meta { font-size: 11px; color: #5a6070; margin-top: 2px; }
+  .target-band-row { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; font-size: 12px; color: #8b93a7; }
+  .target-band-row input { background: #1f232c; color: #e6e6e6; border: 1px solid #2a2f3a; border-radius: 4px; padding: 3px 6px; font-size: 12px; width: 64px; }
+  .handoff-cta { background: #14182a; border: 1px solid #4a7fd9; padding: 14px 16px; border-radius: 6px; margin-top: 14px; display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .handoff-cta .text { font-size: 13px; color: #b3cfee; line-height: 1.5; flex: 1; min-width: 220px; }
+  .handoff-row { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  /* ── Watch-this-query modal ───────────────────────────────── */
+  .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 100; display: flex; align-items: center; justify-content: center; padding: 20px; }
+  .modal { background: #171a21; border: 1px solid #262a33; border-radius: 8px; width: 100%; max-width: 540px; max-height: 90vh; overflow-y: auto; padding: 24px; }
+  .modal h3 { margin: 0 0 6px; font-size: 16px; color: #e6e6e6; }
+  .modal .lead { font-size: 12px; color: #8b93a7; margin: 0 0 18px; line-height: 1.5; }
+  .modal-section { margin-bottom: 16px; }
+  .modal-section label { font-size: 11px; text-transform: uppercase; color: #5a6070; font-weight: 600; letter-spacing: .5px; display: block; margin-bottom: 6px; }
+  .modal-section input[type="text"], .modal-section input[type="number"] { width: 100%; background: #0f1115; color: #e6e6e6; border: 1px solid #2a2f3a; border-radius: 4px; padding: 8px 10px; font: inherit; font-size: 13px; }
+  .schedule-presets { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+  .preset-chip { background: #1f232c; color: #b3b9c8; border: 1px solid #2a2f3a; padding: 5px 10px; border-radius: 14px; cursor: pointer; font-size: 12px; }
+  .preset-chip.selected { background: #1c2532; color: #a3b3df; border-color: #4a7fd9; }
+  .preset-chip:hover { background: #2a2f3a; }
+  .threshold-row { display: flex; align-items: center; gap: 12px; }
+  .threshold-row input[type="range"] { flex: 1; accent-color: #4a7fd9; }
+  .threshold-val { font-weight: 700; color: #b3cfee; min-width: 36px; text-align: right; font-family: 'Consolas', 'Monaco', monospace; }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; padding-top: 14px; border-top: 1px solid #1f232c; }
+
+  /* ── Composer ───────────────────────────────────────────── */
+  .composer { border-top: 1px solid #262a33; padding: 16px 32px; flex-shrink: 0; max-width: 920px; width: 100%; margin: 0 auto; }
+  .composer-row { display: flex; gap: 10px; align-items: flex-start; }
+  textarea.composer-input { flex: 1; background: #1f232c; color: #e6e6e6; border: 1px solid #2a2f3a; border-radius: 6px; padding: 10px; font: inherit; font-size: 14px; resize: vertical; min-height: 80px; }
+
+  /* ── Welcome ────────────────────────────────────────────── */
+  .welcome { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #5a6070; padding: 20px; }
+  .welcome h2 { color: #8b93a7; font-size: 18px; margin: 0 0 8px; }
+  .welcome p { font-size: 14px; margin: 4px 0; max-width: 520px; text-align: center; line-height: 1.5; }
+  .welcome ul { font-size: 13px; color: #8b93a7; max-width: 520px; line-height: 1.7; padding-left: 20px; }
+
+  /* ── Loading ────────────────────────────────────────────── */
+  .loading { display: flex; align-items: center; gap: 10px; padding: 12px 16px; color: #8b93a7; font-size: 13px; background: #171a21; border-radius: 8px; }
+  .spinner { width: 14px; height: 14px; border: 2px solid #2a2f3a; border-top-color: #4a7fd9; border-radius: 50%; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .error-banner { background: #2a1010; color: #d97a7a; padding: 12px 16px; border-radius: 8px; font-size: 13px; }
+
+  /* ── Usage page ─────────────────────────────────────────── */
+  .usage-page { flex: 1; overflow-y: auto; padding: 32px 40px; }
+  .usage-page h2 { font-size: 18px; margin: 0 0 4px; color: #e6e6e6; }
+  .usage-page .period { font-size: 13px; color: #8b93a7; margin-bottom: 24px; }
+  .usage-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; margin-bottom: 28px; }
+  .usage-card { background: #171a21; border: 1px solid #262a33; border-radius: 8px; padding: 16px; }
+  .usage-card .card-val { font-size: 24px; font-weight: 700; color: #7aa7d9; margin-bottom: 4px; }
+  .usage-card .card-lbl { font-size: 12px; color: #8b93a7; }
+  .usage-section-title { font-size: 14px; font-weight: 600; color: #8b93a7; text-transform: uppercase; letter-spacing: .5px; margin: 0 0 12px; }
+  .tool-bar-row { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; font-size: 13px; }
+  .tool-bar-name { width: 140px; text-align: right; color: #8b93a7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tool-bar-track { flex: 1; height: 20px; background: #1f232c; border-radius: 4px; overflow: hidden; }
+  .tool-bar-fill { height: 100%; background: #4a7fd9; border-radius: 4px; min-width: 2px; }
+  .tool-bar-count { width: 50px; color: #e6e6e6; font-weight: 600; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useEffect, useRef, useState } = React;
+
+/* Auth (Phase E): bounce to the Cognito login on any 401 from the API.
+   /auth/* responses are excluded so the login check itself (/auth/me) and
+   the OIDC round-trip don't trigger a redirect loop. Wraps window.fetch
+   once so every call site is covered without per-call changes. */
+(function installAuthFetch() {
+  const orig = window.fetch.bind(window);
+  let redirecting = false;
+  window.fetch = async (input, init) => {
+    const res = await orig(input, init);
+    const url = typeof input === "string" ? input : (input && input.url) || "";
+    if (res.status === 401 && !url.includes("/auth/") && !redirecting) {
+      redirecting = true;
+      const next = encodeURIComponent(location.pathname + location.search);
+      location.href = "/auth/login?next=" + next;
+    }
+    return res;
+  };
+})();
+
+/* FastAPI returns errors as {"detail": "..."} JSON. Surface the detail text
+   directly so the user sees the friendly server message rather than the
+   raw JSON envelope. */
+function extractErrorMessage(text) {
+  if (!text) return "Unknown error";
+  try {
+    const obj = JSON.parse(text);
+    if (obj && typeof obj.detail === "string") return obj.detail;
+  } catch { /* not JSON — fall through */ }
+  return text;
+}
+
+/* Parse a stored final_answer string into a typed turn (or null). */
+function parseTurn(raw) {
+  if (!raw) return null;
+  if (typeof raw === "object") return raw && raw.kind ? raw : null;
+  try {
+    const obj = JSON.parse(raw);
+    return obj && obj.kind ? obj : null;
+  } catch {
+    return null;
+  }
+}
+
+/* Format an edited PICO back into a structured user message that the agent
+   can interpret as confirmation. The leading line is recognisable so the
+   model knows the user has approved the PICO and wants to proceed. */
+function formatPicoConfirmation(p) {
+  const list = (xs) => (xs && xs.length ? xs.map(x => `  - ${x}`).join("\n") : "  - (none)");
+  return [
+    "PICO confirmed (proceed to STEP 3 — build PubMed search and run it):",
+    "",
+    `- Population: ${p.population || ""}`,
+    `- Intervention: ${p.intervention || ""}`,
+    `- Comparison: ${p.comparison || ""}`,
+    "- Outcomes:",
+    list(p.outcomes),
+    "- Inclusion criteria:",
+    list(p.inclusion_criteria),
+    "- Exclusion criteria:",
+    list(p.exclusion_criteria),
+    `- Study types: ${(p.study_types || []).join(", ") || "(unspecified)"}`,
+    `- Age range: ${p.age_range || "(unspecified)"}`,
+    p.notes ? `- Notes: ${p.notes}` : null,
+  ].filter(Boolean).join("\n");
+}
+
+/* Trigger STEP 4 — data extraction from selected PMIDs. */
+function formatExtractionRequest(pmids) {
+  return [
+    `Selected studies for data extraction (${pmids.length} studies — proceed to STEP 4):`,
+    "",
+    ...pmids.map(p => `- PMID ${p}`),
+    "",
+    "Use the abstracts already in this conversation. Call fetch_pmc_fulltext only when an abstract lacks the numbers you need.",
+  ].join("\n");
+}
+
+/* sr_protocol: confirm edited methods → STEP 3 (full document). The full
+   methods structure is sent inline so the agent can carry it through to
+   protocol_document.methods without re-deriving. */
+function formatMethodsConfirmation(methods) {
+  return [
+    "Methods confirmed (proceed to STEP 3 — produce the full protocol_document with grounded background and PROSPERO field map):",
+    "",
+    "```json",
+    JSON.stringify(methods, null, 2),
+    "```",
+  ].join("\n");
+}
+
+/* sr_protocol: finalize → STEP 5 (lock the document). */
+function formatProtocolFinalize() {
+  return "Finalize protocol — lock the current document as final and surface the search_strategy / meta_analysis hand-off buttons.";
+}
+
+/* sr_protocol → search_strategy hand-off. */
+function formatSearchStrategyHandoff(methods) {
+  const dbList = (methods.information_sources || []).join(", ");
+  return [
+    "I want to build the search strategy for this systematic-review protocol.",
+    "",
+    `Research question: ${methods.title}`,
+    "",
+    "PICO (already validated):",
+    `- Population: ${methods.pico.population}`,
+    `- Intervention: ${methods.pico.intervention}`,
+    `- Comparison: ${methods.pico.comparison}`,
+    `- Outcomes: ${(methods.pico.outcomes || []).join("; ")}`,
+    "",
+    `Planned databases: ${dbList || "PubMed, Embase, Cochrane CENTRAL"}.`,
+    "",
+    "Build me a Boolean PubMed query (the protocol already specifies eligibility filters) and generate per-database plans for each planned database.",
+  ].join("\n");
+}
+
+/* meta_analysis → risk_of_bias hand-off: send the extracted studies and
+   any PICO context found in the thread so the RoB agent can fetch fewer
+   abstracts (or reuse them via the embedded payload). The continuation
+   prefix "Run risk of bias on extracted" routes via the dispatcher. */
+function formatRobOnExtractedStudies(studies, picoContext) {
+  const studyPayload = (studies || []).map(s => {
+    // Build a minimal abstract proxy from the extraction notes if no
+    // abstract is present — the RoB agent will fetch via search_papers
+    // when the field is empty/short.
+    return {
+      pmid: s.pmid || s.source_id || "",
+      title: s.title || "",
+      study_design: s.study_design || "Randomized Controlled Trial",
+      abstract: s.abstract || s.extraction_notes || "",
+    };
+  }).filter(s => s.pmid);
+
+  const lines = [
+    "Run risk of bias on extracted studies (handoff payload follows).",
+    "",
+  ];
+  if (picoContext) {
+    lines.push(
+      "PICO context (from prior thread, for tool selection only):",
+      `- Population: ${picoContext.population || ""}`,
+      `- Intervention: ${picoContext.intervention || ""}`,
+      `- Comparison: ${picoContext.comparison || ""}`,
+      `- Outcomes: ${(picoContext.outcomes || []).join("; ")}`,
+      "",
+    );
+  }
+  lines.push(
+    `Studies (n=${studyPayload.length}):`,
+    "```json",
+    JSON.stringify(studyPayload, null, 2),
+    "```",
+  );
+  return lines.join("\n");
+}
+
+/* risk_of_bias: confirm edited assessments → STEP 3 (summary plot). */
+function formatRobConfirmation(tool, assessments) {
+  return [
+    "RoB confirmed — proceed to STEP 3 (compute domain_distribution and render the stacked-bar summary plot).",
+    "",
+    `Tool: ${tool}`,
+    "",
+    "Assessments (edited):",
+    "```json",
+    JSON.stringify(assessments, null, 2),
+    "```",
+  ].join("\n");
+}
+
+/* risk_of_bias: lock the summary. */
+function formatRobFinalize() {
+  return "Finalize RoB — lock the current summary as final and surface the meta-analysis sensitivity hand-off.";
+}
+
+/* risk_of_bias → meta_analysis sensitivity re-pool. The seed lists the
+   high-RoB PMIDs to exclude and carries any PICO context found in the
+   RoB thread's history (which itself usually came from a data_extraction
+   handoff that already included PICO). */
+function formatMetaAnalysisSensitivity(highRobPmids, picoContext) {
+  const lines = [
+    "Run a sensitivity meta-analysis EXCLUDING these high-RoB studies:",
+    "",
+    ...highRobPmids.map(p => `- PMID ${p}`),
+    "",
+  ];
+  if (picoContext) {
+    lines.push(
+      "PICO (carried from the RoB thread, use as-is in STEP 2 — do not re-derive):",
+      `- Population: ${picoContext.population || ""}`,
+      `- Intervention: ${picoContext.intervention || ""}`,
+      `- Comparison: ${picoContext.comparison || ""}`,
+      `- Outcomes: ${(picoContext.outcomes || []).join("; ")}`,
+    );
+  } else {
+    lines.push("(No PICO context available — please restate the research question in STEP 2.)");
+  }
+  return lines.join("\n");
+}
+
+/* Reconstruct a PicoTable-shaped object from query_blocks (search_strategy's
+   PICO blocks). Used by the watch-creation modal so the backend gets a
+   real PICO snapshot for the triage agent to anchor against. */
+function picoFromQueryBlocks(blocks) {
+  const concepts = (label) => (blocks || []).filter(b => b.label === label).map(b => b.concept);
+  const first = (label) => { const xs = concepts(label); return xs[0] || ""; };
+  return {
+    population: first("population"),
+    intervention: first("intervention"),
+    comparison: first("comparison") || "(not specified)",
+    outcomes: concepts("outcome"),
+    inclusion_criteria: [],
+    exclusion_criteria: [],
+    study_types: [],
+    age_range: null,
+    notes: null,
+  };
+}
+
+/* sr_protocol → meta_analysis hand-off. Skips the protocol's STEP 2 (PICO
+   build) by handing the validated PICO over verbatim. */
+function formatMetaAnalysisHandoffFromProtocol(methods) {
+  return [
+    "I want to run a meta-analysis using this validated protocol PICO.",
+    "",
+    `Title: ${methods.title}`,
+    "",
+    "PICO (already validated — use as-is in STEP 2, do not re-derive):",
+    `- Population: ${methods.pico.population}`,
+    `- Intervention: ${methods.pico.intervention}`,
+    `- Comparison: ${methods.pico.comparison}`,
+    `- Outcomes:`,
+    ...(methods.pico.outcomes || []).map(o => `  - ${o}`),
+    `- Inclusion criteria: ${(methods.pico.inclusion_criteria || []).join("; ")}`,
+    `- Exclusion criteria: ${(methods.pico.exclusion_criteria || []).join("; ")}`,
+    `- Study types: ${(methods.pico.study_types || []).join(", ")}`,
+    `- Age range: ${methods.pico.age_range || "(unspecified)"}`,
+  ].join("\n");
+}
+
+/* Search-strategy: confirm edited query blocks → STEP 3 (compose & test). */
+function formatQueryConfirmation(blocks, targetBand) {
+  const list = (xs) => (xs && xs.length ? xs.map(x => `  - ${x}`).join("\n") : "  - (none)");
+  const lines = [
+    "Confirmed query terms (proceed to STEP 3 — compose, run search_papers, and return strategy_result):",
+    "",
+    `Target hit-count band: ${targetBand[0]}–${targetBand[1]} PubMed hits`,
+    "",
+  ];
+  for (const b of blocks) {
+    lines.push(`- ${b.label.toUpperCase()} — ${b.concept}`);
+    lines.push("  MeSH:");
+    lines.push(list((b.mesh_terms || []).map(m => `${m.descriptor} (UID ${m.mesh_id})`)));
+    lines.push("  Free-text synonyms:");
+    lines.push(list(b.free_text_synonyms || []));
+    lines.push(`  Composed: ${b.composed}`);
+  }
+  return lines.join("\n");
+}
+
+/* Search-strategy: refinement click → STEP 4 (iterate). */
+function formatRefinementClick(continuation) {
+  // The Refinement schema requires `continuation` to start with "Tighten:" or
+  // "Broaden:" — send it verbatim so the dispatcher routes back to us.
+  return continuation;
+}
+
+/* Search-strategy: finalize → STEP 5 (lock the strategy). */
+function formatFinalize() {
+  return "Finalize strategy — lock the current query as final and surface the meta-analysis hand-off.";
+}
+
+/* Search-strategy → meta-analysis hand-off. The seed deliberately includes
+   the validated PubMed query so the meta-analysis specialist can reuse it
+   verbatim in its STEP 3 instead of re-deriving from MeSH. */
+function formatMetaAnalysisHandoff(researchQuestion, pubmedQuery) {
+  return [
+    "I want to run a meta-analysis on this clinical question:",
+    "",
+    researchQuestion,
+    "",
+    "I have already validated this PubMed search query in a previous step — use it as-is in STEP 3 (or refine if you find issues, but skip rebuilding from MeSH unless necessary):",
+    "",
+    "```",
+    pubmedQuery,
+    "```",
+  ].join("\n");
+}
+
+/* Trigger STEP 5 — meta-analysis. The full extracted data is sent inline so the
+   agent can pass it through to sandbox_exec via input_data. */
+function formatExtractionConfirmation(studies) {
+  return [
+    "Confirmed extracted data (proceed to STEP 5 — run meta-analysis):",
+    "",
+    "```json",
+    JSON.stringify({ studies }, null, 2),
+    "```",
+  ].join("\n");
+}
+
+const SELECTION_MIN = 3;
+const SELECTION_MAX = 20;
+
+/* ── App ─────────────────────────────────────────────────── */
+
+function App() {
+  const [health, setHealth] = useState(null);
+  const [me, setMe] = useState(null);
+  const [threads, setThreads] = useState([]);
+  const [activeThreadId, setActiveThreadId] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState("");
+  const [running, setRunning] = useState(false);
+  const [error, setError] = useState(null);
+  const [view, setView] = useState("chat");
+  const [usageData, setUsageData] = useState(null);
+  const [notifs, setNotifs] = useState([]);
+  const [notifCount, setNotifCount] = useState(0);
+  const [bellOpen, setBellOpen] = useState(false);
+  const [watchModal, setWatchModal] = useState(null);  // { pubmedQuery, sampleHitPmids, picoSeed } or null
+  const conversationRef = useRef(null);
+
+  useEffect(() => {
+    fetch("/api/health").then(r => r.json()).then(setHealth).catch(() => {});
+    fetch("/auth/me").then(r => r.ok ? r.json() : null).then(setMe).catch(() => setMe(null));
+    loadThreads();
+  }, []);
+
+  useEffect(() => {
+    if (conversationRef.current) conversationRef.current.scrollTop = conversationRef.current.scrollHeight;
+  }, [messages, running]);
+
+  async function loadThreads() {
+    try { setThreads(await (await fetch("/api/threads")).json()); } catch {}
+  }
+  async function loadMessages(threadId) {
+    try { setMessages(await (await fetch(`/api/threads/${threadId}/messages`)).json()); } catch {}
+  }
+  async function loadUsage() {
+    try { setUsageData(await (await fetch("/api/threads/usage/monthly")).json()); } catch {}
+  }
+
+  async function loadNotifications() {
+    try {
+      const res = await fetch("/api/notifications?limit=10");
+      if (res.ok) setNotifs(await res.json());
+      const c = await fetch("/api/notifications/unread-count");
+      if (c.ok) setNotifCount((await c.json()).count || 0);
+    } catch {}
+  }
+
+  useEffect(() => {
+    loadNotifications();
+    const t = setInterval(loadNotifications, 30000);
+    return () => clearInterval(t);
+  }, []);
+
+  async function markNotifRead(id) {
+    try { await fetch(`/api/notifications/${id}/read`, { method: "POST" }); } catch {}
+    await loadNotifications();
+  }
+
+  async function createThread() {
+    try {
+      const t = await (await fetch("/api/threads", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "New conversation" }),
+      })).json();
+      setActiveThreadId(t.id);
+      setMessages([]);
+      setError(null);
+      setView("chat");
+      await loadThreads();
+    } catch {}
+  }
+
+  async function selectThread(threadId) {
+    setActiveThreadId(threadId);
+    setMessages([]);
+    setError(null);
+    setView("chat");
+    await loadMessages(threadId);
+  }
+
+  async function deleteThread(e, threadId) {
+    e.stopPropagation();
+    try {
+      await fetch(`/api/threads/${threadId}`, { method: "DELETE" });
+      if (activeThreadId === threadId) { setActiveThreadId(null); setMessages([]); }
+      await loadThreads();
+    } catch {}
+  }
+
+  function openUsage() { setActiveThreadId(null); setView("usage"); loadUsage(); }
+
+  /* Send a user message; on the very first send the thread is auto-created. */
+  async function sendMessage(text) {
+    const body = text.trim();
+    if (!body || running) return;
+
+    let threadId = activeThreadId;
+    if (!threadId) {
+      try {
+        const t = await (await fetch("/api/threads", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: body.slice(0, 120) }),
+        })).json();
+        threadId = t.id;
+        setActiveThreadId(threadId);
+        setView("chat");
+        await loadThreads();
+      } catch (e) { setError(`Could not start thread: ${e}`); return; }
+    }
+
+    setRunning(true);
+    setError(null);
+    setInput("");
+
+    /* Optimistic user message bubble */
+    setMessages(prev => [...prev, {
+      id: `tmp-${Date.now()}`, role: "user",
+      input_text: body, final_answer: null, created_at: new Date().toISOString(),
+    }]);
+
+    try {
+      const res = await fetch("/api/turn", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ thread_id: threadId, user_message: body }),
+      });
+      if (!res.ok) {
+        const errText = (await res.text()) || res.statusText;
+        throw new Error(extractErrorMessage(errText));
+      }
+      await loadMessages(threadId);
+      await loadThreads();
+    } catch (e) {
+      setError(`Agent error: ${e.message || e}`);
+      /* Drop the optimistic bubble on error so the user can retry. */
+      await loadMessages(threadId);
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  /* Generic hand-off helper: create a thread, switch to it, auto-send the seed.
+     Used by both search_strategy → meta_analysis and sr_protocol → {search_strategy, meta_analysis}. */
+  async function _runHandoff(threadTitle, seed) {
+    if (running) return;
+    setError(null);
+    let newThreadId = null;
+    try {
+      const t = await (await fetch("/api/threads", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: threadTitle.slice(0, 120) }),
+      })).json();
+      newThreadId = t.id;
+      setActiveThreadId(newThreadId);
+      setView("chat");
+      setMessages([{
+        id: `tmp-${Date.now()}`, role: "user",
+        input_text: seed, final_answer: null, created_at: new Date().toISOString(),
+      }]);
+      await loadThreads();
+    } catch (e) {
+      setError(`Hand-off failed: ${e.message || e}`);
+      return;
+    }
+    setRunning(true);
+    try {
+      const res = await fetch("/api/turn", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ thread_id: newThreadId, user_message: seed }),
+      });
+      if (!res.ok) throw new Error(extractErrorMessage(await res.text()));
+      await loadMessages(newThreadId);
+      await loadThreads();
+    } catch (e) {
+      setError(`Agent error: ${e.message || e}`);
+      await loadMessages(newThreadId);
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  /* sr_protocol → search_strategy hand-off. */
+  async function handoffToSearchStrategy(methods) {
+    const seed = formatSearchStrategyHandoff(methods);
+    await _runHandoff(`Search strategy: ${methods.title.slice(0, 80)}`, seed);
+  }
+
+  /* Look up the most recent PICO context in `messages` for cross-thread carryover.
+     Searches assistant turns for: pico (meta_analysis), protocol_methods
+     (sr_protocol), or query_blocks (search_strategy → derived PICO). Returns
+     a PicoTable-shaped object or null. */
+  function findPicoFromMessages() {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (m.role !== "assistant") continue;
+      const t = parseTurn(m.final_answer);
+      if (!t) continue;
+      if (t.kind === "pico" && t.pico) return t.pico;
+      if (t.kind === "protocol_methods" && t.pico) return t.pico;
+      if (t.kind === "query_blocks" && Array.isArray(t.blocks)) {
+        return picoFromQueryBlocks(t.blocks);
+      }
+    }
+    // Last resort: a user-message handoff seed sometimes has PICO inline.
+    // Skip that for v1 — null tells the seed builder to ask the user.
+    return null;
+  }
+
+  /* meta_analysis (data_extraction card) → risk_of_bias hand-off. */
+  async function handoffToRobFromExtraction(studies) {
+    const pico = findPicoFromMessages();
+    const seed = formatRobOnExtractedStudies(studies, pico);
+    const title = pico
+      ? `Risk of bias: ${(pico.intervention || "studies").slice(0, 80)}`
+      : `Risk of bias (n=${(studies || []).length} studies)`;
+    await _runHandoff(title, seed);
+  }
+
+  /* risk_of_bias (rob_summary card, is_final=true) → meta_analysis sensitivity re-pool. */
+  async function handoffRobToMetaSensitivity(highRobPmids) {
+    const pico = findPicoFromMessages();
+    const seed = formatMetaAnalysisSensitivity(highRobPmids, pico);
+    const title = pico
+      ? `Meta-analysis (sensitivity): ${(pico.intervention || "").slice(0, 80)}`
+      : "Meta-analysis (sensitivity, excluding high-RoB studies)";
+    await _runHandoff(title, seed);
+  }
+
+  /* sr_protocol → meta-analysis hand-off (PICO pre-loaded, skip protocol PICO build). */
+  async function handoffProtocolToMetaAnalysis(methods) {
+    const seed = formatMetaAnalysisHandoffFromProtocol(methods);
+    await _runHandoff(`Meta-analysis: ${methods.title.slice(0, 80)}`, seed);
+  }
+
+  /* Open the "Watch this query" modal, seeding it with the validated
+     PubMed query, sample hits as baseline, and a PICO reconstructed from
+     the most recent query_blocks turn in the thread. */
+  function openWatchModal(pubmedQuery, sampleHitPmids) {
+    let blocks = null;
+    let researchQuestion = "";
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (m.role === "assistant") {
+        const t = parseTurn(m.final_answer);
+        if (t && t.kind === "query_blocks" && Array.isArray(t.blocks)) {
+          blocks = t.blocks;
+          researchQuestion = t.research_question || "";
+          break;
+        }
+      }
+    }
+    const picoSeed = blocks ? picoFromQueryBlocks(blocks) : {
+      population: "", intervention: "", comparison: "(not specified)",
+      outcomes: [], inclusion_criteria: [], exclusion_criteria: [],
+      study_types: [], age_range: null, notes: null,
+    };
+    setWatchModal({
+      pubmedQuery,
+      sampleHitPmids: sampleHitPmids || [],
+      picoSeed,
+      defaultName: researchQuestion ? `Watch: ${researchQuestion.slice(0, 80)}` : "",
+    });
+  }
+
+  /* Search-strategy → meta-analysis hand-off. Creates a fresh thread,
+     switches to it, then auto-sends the seed message containing the
+     research question (looked up from the most recent query_blocks turn,
+     or the user's first message in this thread) + validated PubMed query. */
+  async function handoffToMetaAnalysis(pubmedQuery) {
+    let researchQuestion = "";
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (m.role === "assistant") {
+        const t = parseTurn(m.final_answer);
+        if (t && t.kind === "query_blocks" && t.research_question) {
+          researchQuestion = t.research_question;
+          break;
+        }
+      }
+    }
+    if (!researchQuestion) {
+      const firstUser = messages.find(m => m.role === "user");
+      if (firstUser) researchQuestion = firstUser.input_text;
+    }
+    if (!researchQuestion) researchQuestion = "(see prior conversation)";
+    const seed = formatMetaAnalysisHandoff(researchQuestion, pubmedQuery);
+    await _runHandoff(`Meta-analysis: ${researchQuestion.slice(0, 100)}`, seed);
+  }
+
+  function formatTime(iso) {
+    try {
+      const d = new Date(iso);
+      const now = new Date();
+      if (d.toDateString() === now.toDateString()) return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      return d.toLocaleDateString([], { month: "short", day: "numeric" });
+    } catch { return ""; }
+  }
+
+  return (
+    <>
+      <div className="sidebar">
+        <div className="sidebar-top">
+          <h2>Clinical Research Asst.</h2>
+          <button className="new-thread-btn" onClick={createThread}>+ New Thread</button>
+        </div>
+        <div className="thread-list">
+          {threads.length === 0 && <div className="empty-threads">No conversations yet</div>}
+          {threads.map(t => (
+            <div key={t.id} className={`thread-item ${view === "chat" && activeThreadId === t.id ? "active" : ""}`} onClick={() => selectThread(t.id)}>
+              <div style={{ display: "flex", alignItems: "center" }}>
+                <span className="thread-title">{t.title}</span>
+                <span className="thread-actions">
+                  <button className="thread-delete" onClick={e => deleteThread(e, t.id)} title="Delete">x</button>
+                </span>
+              </div>
+              <div className="thread-meta">
+                <span>{formatTime(t.updated_at)}</span>
+                <span>{t.message_count} msgs</span>
+                {t.workflow && <span className={`workflow-pill ${t.workflow}`}>{t.workflow.replace("_", " ")}</span>}
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="sidebar-bottom">
+          <div className="bell-row">
+            <button className="sidebar-link" onClick={() => setBellOpen(o => !o)}>
+              ◉ Notifications
+              <span className={`bell-badge ${notifCount === 0 ? "zero" : ""}`}>{notifCount}</span>
+            </button>
+            {bellOpen && (
+              <div className="notif-dropdown">
+                {notifs.length === 0 && <div className="notif-empty">No notifications yet. Create a watch from a finalised search strategy.</div>}
+                {notifs.map(n => (
+                  <div
+                    key={n.id}
+                    className={`notif-item ${n.read_at ? "read" : "unread"}`}
+                    onClick={() => { setBellOpen(false); markNotifRead(n.id); window.location.href = "/watches.html"; }}
+                  >
+                    <div className="notif-title">{n.title}</div>
+                    <div className="notif-summary">{n.summary}</div>
+                    <div className="notif-meta">
+                      <span>{n.watch_name}</span>
+                      <span>·</span>
+                      <span>{n.new_paper_count} new</span>
+                      <span>·</span>
+                      <span>{formatTime(n.created_at)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <a className="sidebar-link" href="/library.html">▥ Library</a>
+          <a className="sidebar-link" href="/watches.html">▤ Watches</a>
+          <button className="sidebar-link" onClick={openUsage} style={view === "usage" ? { background: "#1f232c", color: "#e6e6e6" } : {}}>
+            ~ Usage
+          </button>
+          {me && (me.sub === "default-user" || (me.roles || []).includes("admin")) && (
+            <a className="sidebar-link" href="/admin.html">⚙ Settings</a>
+          )}
+          <div className="sidebar-divider" />
+          <a className="sidebar-link" href="https://www.ncbi.nlm.nih.gov/books/NBK25501/" target="_blank" rel="noopener">? E-utilities Docs</a>
+          <a className="sidebar-link" href="https://www.nlm.nih.gov/mesh/meshhome.html" target="_blank" rel="noopener">? MeSH Home</a>
+          <a className="sidebar-link" href="https://ai.pydantic.dev/latest/" target="_blank" rel="noopener">? Pydantic AI Docs</a>
+          <div className="sidebar-divider" />
+          {me && me.sub !== "default-user" ? (
+            <>
+              <div className="sidebar-link" style={{ cursor: "default", fontSize: "12px", color: "#8b93a7" }} title={me.email}>
+                ◷ {me.email}
+              </div>
+              <form method="post" action="/auth/logout" style={{ margin: 0 }}>
+                <button type="submit" className="sidebar-link">⎋ Log out</button>
+              </form>
+            </>
+          ) : me && me.sub === "default-user" ? null : (
+            <a className="sidebar-link" href="/auth/login">⇥ Log in</a>
+          )}
+          <div className="sidebar-link" style={{ cursor: "default", fontSize: "11px", color: "#3a3f4a" }}>{health ? health.model : "..."}</div>
+        </div>
+      </div>
+
+      <div className="main">
+        <div className="header">
+          <h1>Clinical Research Assistant</h1>
+          <div className="health">{health ? `${health.model} · ${health.region}` : "..."}</div>
+        </div>
+
+        {view === "usage" ? (
+          <UsagePage data={usageData} />
+        ) : !activeThreadId ? (
+          <div className="welcome">
+            <h2>Welcome</h2>
+            <p>Start a new thread to draft a review protocol, build a database search strategy, or run a meta-analysis end-to-end.</p>
+            <p style={{ marginTop: 16, color: "#5a6070" }}>The assistant supports:</p>
+            <ul>
+              <li><strong>Protocol draft</strong> — research question → PRISMA-P methods (PICO + eligibility + RoB tool + synthesis plan) → full document with grounded background + PROSPERO field map. Try <code>/protocol</code>.</li>
+              <li><strong>Search strategy</strong> — research question → MeSH-expanded Boolean query, tested on PubMed + Europe PMC, with copy-paste plans for Cochrane CENTRAL and Embase. Try <code>/search</code>.</li>
+              <li><strong>Meta-analysis</strong> — clinical question → PICO → search → extraction → pooled effects + forest plots. Try <code>/meta</code>.</li>
+              <li><strong>Anti-hallucination</strong> — every PMID, MeSH term, and citation is grounded in a real tool call</li>
+            </ul>
+          </div>
+        ) : (
+          <>
+            <div className="conversation" ref={conversationRef}>
+              {messages.map(m => (
+                <Turn key={m.id} message={m} onSend={sendMessage} onHandoff={handoffToMetaAnalysis} onHandoffProtocolToSearch={handoffToSearchStrategy} onHandoffProtocolToMeta={handoffProtocolToMetaAnalysis} onWatch={openWatchModal} onHandoffToRob={handoffToRobFromExtraction} onHandoffRobToMeta={handoffRobToMetaSensitivity} running={running} />
+              ))}
+              {running && <div className="turn"><div className="loading"><div className="spinner" />Agent is thinking…</div></div>}
+              {error && <div className="turn"><div className="error-banner">{error}</div></div>}
+            </div>
+            <div className="composer">
+              <div className="composer-row">
+                <textarea
+                  className="composer-input"
+                  value={input}
+                  placeholder="Describe your clinical question, or answer the assistant's last question…"
+                  onChange={e => setInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); sendMessage(input); } }}
+                  disabled={running}
+                />
+                <button className="btn-primary" onClick={() => sendMessage(input)} disabled={running || !input.trim()}>
+                  {running ? "Working…" : "Send"}
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+      {watchModal && (
+        <WatchModal
+          spec={watchModal}
+          onClose={() => setWatchModal(null)}
+          onCreated={() => { setWatchModal(null); loadNotifications(); }}
+        />
+      )}
+    </>
+  );
+}
+
+/* ── Single conversation turn (user bubble OR assistant card) ──────────── */
+
+function Turn({ message, onSend, onHandoff, onHandoffProtocolToSearch, onHandoffProtocolToMeta, onWatch, onHandoffToRob, onHandoffRobToMeta, running }) {
+  if (message.role === "user") {
+    return (
+      <div className="turn">
+        <div className="turn-user">
+          <div className="role-tag">You</div>
+          {message.input_text}
+        </div>
+      </div>
+    );
+  }
+  /* assistant */
+  const turn = parseTurn(message.final_answer);
+  if (!turn) {
+    /* legacy / plain-text answer */
+    return (
+      <div className="turn">
+        <div className="card">
+          <div className="card-header"><span className="card-tag answer">Answer</span></div>
+          <div style={{ whiteSpace: "pre-wrap" }}>{message.final_answer}</div>
+        </div>
+      </div>
+    );
+  }
+  const KNOWN_KINDS = new Set([
+    "clarification", "pico", "search_results", "data_extraction",
+    "meta_analysis", "answer", "query_blocks", "strategy_result",
+    "protocol_methods", "protocol_document",
+    "rob_assessments", "rob_summary",
+  ]);
+  return (
+    <div className="turn">
+      <TurnErrorBoundary turn={turn}>
+        {turn.kind === "clarification"    && <ClarificationCard turn={turn} onSend={onSend} disabled={running} />}
+        {turn.kind === "pico"             && <PicoCard turn={turn} onSend={onSend} disabled={running} />}
+        {turn.kind === "search_results"   && <SearchResultsCard turn={turn} onSend={onSend} disabled={running} />}
+        {turn.kind === "data_extraction"  && <DataExtractionCard turn={turn} onSend={onSend} onHandoffToRob={onHandoffToRob} disabled={running} />}
+        {turn.kind === "meta_analysis"    && <MetaAnalysisCard turn={turn} />}
+        {turn.kind === "answer"           && <AnswerCard turn={turn} />}
+        {turn.kind === "query_blocks"     && <QueryBlocksCard turn={turn} onSend={onSend} disabled={running} />}
+        {turn.kind === "strategy_result"  && <StrategyResultCard turn={turn} onSend={onSend} onHandoff={onHandoff} onWatch={onWatch} disabled={running} />}
+        {turn.kind === "protocol_methods" && <ProtocolMethodsCard turn={turn} onSend={onSend} disabled={running} />}
+        {turn.kind === "protocol_document" && <ProtocolDocumentCard turn={turn} onSend={onSend} onHandoffSearch={onHandoffProtocolToSearch} onHandoffMeta={onHandoffProtocolToMeta} disabled={running} />}
+        {turn.kind === "rob_assessments"  && <RobAssessmentsCard turn={turn} onSend={onSend} disabled={running} />}
+        {turn.kind === "rob_summary"      && <RobSummaryCard turn={turn} onSend={onSend} onHandoffRobToMeta={onHandoffRobToMeta} disabled={running} />}
+        {!KNOWN_KINDS.has(turn.kind)      && <UnknownTurnCard turn={turn} />}
+      </TurnErrorBoundary>
+    </div>
+  );
+}
+
+/* Per-turn boundary — a JSX bug in one card no longer blanks the whole
+   conversation. Renders the raw turn JSON + the error so we can debug. */
+class TurnErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { err: null }; }
+  static getDerivedStateFromError(err) { return { err }; }
+  componentDidCatch(err, info) { console.error("[turn render] crashed:", err, info, this.props.turn); }
+  render() {
+    if (!this.state.err) return this.props.children;
+    return (
+      <div className="card">
+        <div className="card-header">
+          <h3>Card render error</h3>
+          <span className="card-tag clarification">debug</span>
+        </div>
+        <div style={{ color: "#d97a7a", fontSize: 13, marginBottom: 10 }}>
+          The card for kind=<code>{this.props.turn && this.props.turn.kind}</code> threw while rendering.
+        </div>
+        <pre style={{ fontSize: 11, color: "#d97a7a", whiteSpace: "pre-wrap" }}>{String(this.state.err && this.state.err.stack || this.state.err)}</pre>
+        <details>
+          <summary style={{ cursor: "pointer", color: "#8b93a7", fontSize: 12 }}>Raw turn payload</summary>
+          <pre style={{ fontSize: 11, color: "#b3b9c8", whiteSpace: "pre-wrap" }}>{JSON.stringify(this.props.turn, null, 2)}</pre>
+        </details>
+      </div>
+    );
+  }
+}
+
+function UnknownTurnCard({ turn }) {
+  return (
+    <div className="card">
+      <div className="card-header">
+        <h3>Unknown turn kind: <code>{String(turn.kind)}</code></h3>
+        <span className="card-tag clarification">debug</span>
+      </div>
+      <div style={{ color: "#8b93a7", fontSize: 13, marginBottom: 10 }}>
+        The agent returned a turn with a kind no card handles. Raw payload below.
+      </div>
+      <pre style={{ fontSize: 11, color: "#b3b9c8", whiteSpace: "pre-wrap" }}>{JSON.stringify(turn, null, 2)}</pre>
+    </div>
+  );
+}
+
+/* ── Clarification ─────────────────────────────────────────────────────── */
+
+function ClarificationCard({ turn, onSend, disabled }) {
+  return (
+    <div className="card">
+      <div className="card-header">
+        <h3>Need more info</h3>
+        <span className="card-tag clarification">clarification</span>
+      </div>
+      <p className="clarification-q">{turn.question}</p>
+      {turn.options && turn.options.length > 0 && (
+        <div className="options">
+          {turn.options.map((opt, i) => (
+            <button key={i} className="option-btn" onClick={() => onSend(opt)} disabled={disabled}>{opt}</button>
+          ))}
+        </div>
+      )}
+      {turn.rationale && <div className="rationale">{turn.rationale}</div>}
+    </div>
+  );
+}
+
+/* ── Answer ─────────────────────────────────────────────────────────────── */
+
+function AnswerCard({ turn }) {
+  return (
+    <div className="card">
+      <div className="card-header"><span className="card-tag answer">answer</span></div>
+      <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.6 }}>{turn.text}</div>
+    </div>
+  );
+}
+
+/* ── PICO editor ────────────────────────────────────────────────────────── */
+
+function PicoCard({ turn, onSend, disabled }) {
+  const [pico, setPico] = useState(turn.pico);
+
+  const set = (k, v) => setPico(p => ({ ...p, [k]: v }));
+
+  function submitConfirmed() {
+    onSend(formatPicoConfirmation(pico));
+  }
+
+  return (
+    <div className="card">
+      <div className="card-header">
+        <h3>Proposed PICO</h3>
+        <span className="card-tag pico">pico</span>
+      </div>
+      <div className="pico-grid">
+        <Field label="Population" value={pico.population} onChange={v => set("population", v)} multiline full />
+        <Field label="Intervention" value={pico.intervention} onChange={v => set("intervention", v)} multiline />
+        <Field label="Comparison" value={pico.comparison} onChange={v => set("comparison", v)} multiline />
+        <ListField label="Outcomes" full values={pico.outcomes || []} onChange={v => set("outcomes", v)} placeholder="e.g., All-cause mortality" />
+        <ListField label="Inclusion criteria" values={pico.inclusion_criteria || []} onChange={v => set("inclusion_criteria", v)} placeholder="e.g., RCT design" />
+        <ListField label="Exclusion criteria" values={pico.exclusion_criteria || []} onChange={v => set("exclusion_criteria", v)} placeholder="e.g., case reports" />
+        <ListField label="Study types" values={pico.study_types || []} onChange={v => set("study_types", v)} placeholder="e.g., Randomized Controlled Trial" />
+        <Field label="Age range" value={pico.age_range || ""} onChange={v => set("age_range", v)} placeholder="e.g., ≥18 years" />
+        <Field label="Notes" value={pico.notes || ""} onChange={v => set("notes", v)} multiline full placeholder="Optional scope notes…" />
+      </div>
+      {turn.rationale && <div className="rationale">{turn.rationale}</div>}
+      <div className="card-actions">
+        <button className="btn-primary" onClick={submitConfirmed} disabled={disabled}>Build search strategy</button>
+        <button className="btn-secondary" onClick={() => setPico(turn.pico)} disabled={disabled}>Reset edits</button>
+      </div>
+    </div>
+  );
+}
+
+function Field({ label, value, onChange, multiline, full, placeholder }) {
+  return (
+    <div className={`pico-field ${full ? "full" : ""}`}>
+      <label>{label}</label>
+      {multiline
+        ? <textarea value={value || ""} onChange={e => onChange(e.target.value)} placeholder={placeholder} />
+        : <input type="text" value={value || ""} onChange={e => onChange(e.target.value)} placeholder={placeholder} />}
+    </div>
+  );
+}
+
+function ListField({ label, values, onChange, full, placeholder }) {
+  return (
+    <div className={`pico-field ${full ? "full" : ""}`}>
+      <label>{label}</label>
+      <div className="list-editor">
+        {values.map((v, i) => (
+          <div key={i} className="list-row">
+            <input
+              type="text"
+              value={v}
+              placeholder={placeholder}
+              onChange={e => {
+                const next = [...values]; next[i] = e.target.value; onChange(next);
+              }}
+            />
+            <button onClick={() => onChange(values.filter((_, j) => j !== i))} title="Remove">×</button>
+          </div>
+        ))}
+        <button className="add-btn" onClick={() => onChange([...values, ""])}>+ Add</button>
+      </div>
+    </div>
+  );
+}
+
+/* ── Search results ─────────────────────────────────────────────────────── */
+
+function SearchResultsCard({ turn, onSend, disabled }) {
+  const [selected, setSelected] = useState(() => new Set());
+
+  const toggle = (pmid) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(pmid)) next.delete(pmid); else next.add(pmid);
+      return next;
+    });
+  };
+
+  const count = selected.size;
+  const tooFew = count < SELECTION_MIN;
+  const tooMany = count > SELECTION_MAX;
+  const canExtract = !tooFew && !tooMany && !disabled;
+
+  function selectionMessage() {
+    if (count === 0) return `Select ${SELECTION_MIN}–${SELECTION_MAX} studies to proceed to data extraction`;
+    if (tooFew) return `Selected ${count} — need at least ${SELECTION_MIN} for meta-analysis`;
+    if (tooMany) return `Selected ${count} — cap is ${SELECTION_MAX}; un-tick some studies`;
+    return `Selected ${count} — ready to extract data`;
+  }
+
+  function selectionClass() {
+    if (tooFew && count > 0) return "warn";
+    if (tooMany) return "error";
+    return "";
+  }
+
+  function submitExtraction() {
+    if (!canExtract) return;
+    onSend(formatExtractionRequest([...selected]));
+  }
+
+  return (
+    <div className="card">
+      <div className="card-header">
+        <h3>Search Results</h3>
+        <span className="card-tag search_results">search_results</span>
+      </div>
+
+      <div className="strategy-block">
+        <div className="label">PubMed query</div>
+        <div className="strategy-query">{turn.strategy.pubmed_query}</div>
+        {turn.strategy.filters && turn.strategy.filters.length > 0 && (
+          <div className="filter-chips">
+            {turn.strategy.filters.map((f, i) => <span key={i} className="chip">{f}</span>)}
+          </div>
+        )}
+        {turn.strategy.rationale && (
+          <div style={{ color: "#8b93a7", fontSize: 12, marginTop: 8, lineHeight: 1.5 }}>{turn.strategy.rationale}</div>
+        )}
+      </div>
+
+      <div className="selection-bar">
+        <span className={`selection-count ${selectionClass()}`}>{selectionMessage()}</span>
+        <button className="btn-primary" onClick={submitExtraction} disabled={!canExtract}>
+          Extract data from selected ({count})
+        </button>
+      </div>
+
+      <div style={{ fontSize: 13, color: "#8b93a7", marginBottom: 10 }}>
+        Showing {turn.studies.length} of {turn.total_found} matching studies
+      </div>
+
+      {turn.studies.map(s => (
+        <StudyCard key={s.pmid} study={s} selected={selected.has(s.pmid)} onToggle={() => toggle(s.pmid)} />
+      ))}
+
+      {turn.notes && <div className="rationale">{turn.notes}</div>}
+    </div>
+  );
+}
+
+function StudyCard({ study, selected, onToggle }) {
+  const [showAbstract, setShowAbstract] = useState(false);
+  const pubmedUrl = `https://pubmed.ncbi.nlm.nih.gov/${study.pmid}/`;
+  const doiUrl = study.doi ? `https://doi.org/${study.doi}` : null;
+  return (
+    <div className={`study-card ${selected ? "selected" : ""}`}>
+      <input type="checkbox" className="study-checkbox" checked={!!selected} onChange={onToggle} title="Include in data extraction" />
+      <div className="study-body">
+        <div className="study-title">
+          <a href={pubmedUrl} target="_blank" rel="noopener">{study.title}</a>
+        </div>
+        <div className="study-meta">
+          <a href={pubmedUrl} target="_blank" rel="noopener" className="study-link">PMID {study.pmid}</a>
+          {doiUrl && <> · <a href={doiUrl} target="_blank" rel="noopener" className="study-link">Open at publisher</a></>}
+          {study.journal && <> · {study.journal}</>}
+          {study.year && <> · {study.year}</>}
+          {study.authors && study.authors.length > 0 && <> · {study.authors.slice(0, 3).join(", ")}{study.authors.length > 3 ? " et al." : ""}</>}
+        </div>
+        {study.relevance_note && <div className="study-relevance">{study.relevance_note}</div>}
+        {study.abstract && (
+          <>
+            <button className="toggle-abstract" onClick={() => setShowAbstract(s => !s)}>
+              {showAbstract ? "Hide abstract" : "Show abstract"}
+            </button>
+            {showAbstract && <div className="study-abstract">{study.abstract}</div>}
+          </>
+        )}
+        <div className="study-tags">
+          {(study.publication_types || []).slice(0, 4).map((p, i) => <span key={`pt-${i}`} className="chip">{p}</span>)}
+          {(study.mesh_headings || []).slice(0, 6).map((m, i) => <span key={`mh-${i}`} className="mesh-chip">{m}</span>)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Data extraction ──────────────────────────────────────────────────── */
+
+const BINARY_MEASURES = new Set(["OR", "RR"]);
+
+function isOutcomeComplete(o) {
+  if (BINARY_MEASURES.has(o.effect_measure)) {
+    return [o.events_intervention, o.n_intervention, o.events_comparison, o.n_comparison]
+      .every(v => v !== null && v !== undefined && v !== "");
+  }
+  return [o.mean_intervention, o.sd_intervention, o.n_intervention,
+          o.mean_comparison,   o.sd_comparison,   o.n_comparison]
+    .every(v => v !== null && v !== undefined && v !== "");
+}
+
+function DataExtractionCard({ turn, onSend, onHandoffToRob, disabled }) {
+  const [studies, setStudies] = useState(() => structuredClone(turn.studies));
+
+  function updateOutcome(studyIdx, outcomeIdx, patch) {
+    setStudies(prev => {
+      const next = structuredClone(prev);
+      const o = { ...next[studyIdx].outcomes[outcomeIdx], ...patch };
+      // Any user edit flips the source badge.
+      if (Object.keys(patch).some(k => k !== "is_complete")) {
+        o.extraction_source = "user_provided";
+      }
+      o.is_complete = isOutcomeComplete(o);
+      next[studyIdx].outcomes[outcomeIdx] = o;
+      return next;
+    });
+  }
+
+  const totalRows = studies.reduce((a, s) => a + s.outcomes.length, 0);
+  const completeRows = studies.reduce(
+    (a, s) => a + s.outcomes.filter(o => o.is_complete).length, 0);
+
+  function submit() {
+    if (disabled) return;
+    onSend(formatExtractionConfirmation(studies));
+  }
+
+  return (
+    <div className="card">
+      <div className="card-header">
+        <h3>Data Extraction</h3>
+        <span className="card-tag data_extraction">data_extraction</span>
+      </div>
+
+      {turn.summary && <div className="extraction-summary">{turn.summary}</div>}
+
+      <div className="extraction-helper">
+        <strong>Tip:</strong> If a study's data is incomplete, click its PMID
+        link to open the PubMed page, fetch the full PDF (or supplementary
+        tables), and paste the missing numbers directly. Any field you edit
+        is tagged <span className="source-badge user_provided">USER</span>{" "}
+        so the analysis layer knows you supplied it.
+      </div>
+
+      {studies.map((study, si) => (
+        <div className="extract-study" key={study.pmid}>
+          <div className="extract-study-header">
+            <div className="extract-study-title">
+              <a href={`https://pubmed.ncbi.nlm.nih.gov/${study.pmid}/`} target="_blank" rel="noopener">{study.title}</a>
+              <div className="extract-meta">
+                <a href={`https://pubmed.ncbi.nlm.nih.gov/${study.pmid}/`} target="_blank" rel="noopener" className="study-link">PMID {study.pmid}</a>
+                {study.doi && <> · <a href={`https://doi.org/${study.doi}`} target="_blank" rel="noopener" className="study-link">Open at publisher</a></>}
+                {study.pmc_id && <> · <a href={`https://www.ncbi.nlm.nih.gov/pmc/articles/${study.pmc_id}/`} target="_blank" rel="noopener" className="study-link">PMC full text</a></>}
+                {study.study_design && <> · {study.study_design}</>}
+                {study.follow_up && <> · follow-up {study.follow_up}</>}
+              </div>
+            </div>
+          </div>
+          {(study.extraction_warnings || []).length > 0 && (
+            <div className="extraction-notes" style={{ color: "#d9a84a" }}>
+              ⚠ {study.extraction_warnings.join("; ")}
+            </div>
+          )}
+          {study.outcomes.map((o, oi) => (
+            <OutcomeRow
+              key={`${study.pmid}-${o.outcome}-${oi}`}
+              outcome={o}
+              onChange={patch => updateOutcome(si, oi, patch)}
+            />
+          ))}
+        </div>
+      ))}
+
+      <div className="card-actions">
+        <button className="btn-primary" onClick={submit} disabled={disabled || completeRows === 0}>
+          Run meta-analysis ({completeRows}/{totalRows} rows complete)
+        </button>
+        <button
+          className="btn-secondary"
+          onClick={() => onHandoffToRob && onHandoffToRob(studies)}
+          disabled={disabled || !onHandoffToRob || studies.length === 0}
+          title="Spawn a risk_of_bias thread with these studies pre-loaded."
+        >
+          Assess risk of bias
+        </button>
+        <button className="btn-secondary" onClick={() => setStudies(structuredClone(turn.studies))} disabled={disabled}>
+          Reset edits
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function OutcomeRow({ outcome, onChange }) {
+  const isBinary = BINARY_MEASURES.has(outcome.effect_measure);
+  const setNum = (k) => (e) => {
+    const v = e.target.value;
+    onChange({ [k]: v === "" ? null : Number(v) });
+  };
+  const setEffect = (e) => onChange({ effect_measure: e.target.value });
+
+  return (
+    <div className="outcome-row">
+      <div className="outcome-header">
+        <span className="outcome-name">{outcome.outcome}</span>
+        <select className="effect-select" value={outcome.effect_measure} onChange={setEffect}>
+          <option value="OR">OR (odds ratio)</option>
+          <option value="RR">RR (risk ratio)</option>
+          <option value="MD">MD (mean difference)</option>
+          <option value="SMD">SMD (standardised MD)</option>
+        </select>
+        <span className={`source-badge ${outcome.extraction_source || "abstract"}`}>
+          {(outcome.extraction_source || "abstract").replace("_", " ")}
+        </span>
+        <span className={`complete-flag ${outcome.is_complete ? "ok" : "warn"}`}>
+          {outcome.is_complete ? "complete" : "needs data"}
+        </span>
+      </div>
+
+      {isBinary ? (
+        <div className="data-grid">
+          <NumField label="Events (intervention)" value={outcome.events_intervention} onChange={setNum("events_intervention")} />
+          <NumField label="N (intervention)"       value={outcome.n_intervention}       onChange={setNum("n_intervention")} />
+          <NumField label="Events (comparison)"  value={outcome.events_comparison}  onChange={setNum("events_comparison")} />
+          <NumField label="N (comparison)"        value={outcome.n_comparison}        onChange={setNum("n_comparison")} />
+        </div>
+      ) : (
+        <div className="data-grid">
+          <NumField label="Mean (intervention)" value={outcome.mean_intervention} onChange={setNum("mean_intervention")} />
+          <NumField label="SD (intervention)"   value={outcome.sd_intervention}   onChange={setNum("sd_intervention")} />
+          <NumField label="N (intervention)"    value={outcome.n_intervention}    onChange={setNum("n_intervention")} />
+          <NumField label="Mean (comparison)"  value={outcome.mean_comparison}  onChange={setNum("mean_comparison")} />
+          <NumField label="SD (comparison)"    value={outcome.sd_comparison}    onChange={setNum("sd_comparison")} />
+          <NumField label="N (comparison)"     value={outcome.n_comparison}     onChange={setNum("n_comparison")} />
+        </div>
+      )}
+
+      {outcome.extraction_notes && (
+        <div className="extraction-notes">{outcome.extraction_notes}</div>
+      )}
+    </div>
+  );
+}
+
+function NumField({ label, value, onChange }) {
+  return (
+    <div className="data-field">
+      <label>{label}</label>
+      <input type="number" step="any" value={value === null || value === undefined ? "" : value} onChange={onChange} />
+    </div>
+  );
+}
+
+/* ── Meta-analysis ────────────────────────────────────────────────────── */
+
+function MetaAnalysisCard({ turn }) {
+  return (
+    <div className="card">
+      <div className="card-header">
+        <h3>Meta-Analysis Results</h3>
+        <span className="card-tag meta_analysis">meta_analysis</span>
+      </div>
+
+      {turn.summary && <div className="meta-summary">{turn.summary}</div>}
+
+      {turn.outcome_results.map((r, i) => <OutcomeResult key={i} result={r} />)}
+
+      {turn.studies_excluded && turn.studies_excluded.length > 0 && (
+        <div className="excluded-studies">
+          Excluded from analysis: {turn.studies_excluded.map(e => `${e.pmid} (${e.reason})`).join("; ")}
+        </div>
+      )}
+
+      {turn.caveats && turn.caveats.length > 0 && (
+        <div className="caveats">
+          <h5>Caveats</h5>
+          <ul>{turn.caveats.map((c, i) => <li key={i}>{c}</li>)}</ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function OutcomeResult({ result }) {
+  const interp = (result.interpretation || "").toLowerCase();
+  const interpClass =
+    /favours\s+intervention|favors\s+intervention/.test(interp) ? "intervention" :
+    /favours\s+comparator|favors\s+comparator/.test(interp)     ? "comparator"   : "neutral";
+
+  const i2 = result.i_squared;
+  const i2Class = i2 == null ? "" : i2 < 25 ? "low" : i2 < 75 ? "mod" : "high";
+
+  const isImage = (result.forest_plot_image || "").startsWith("data:image/");
+
+  return (
+    <div className="outcome-result">
+      <h4>{result.outcome} <span style={{ fontSize: 12, color: "#8b93a7", fontWeight: 400 }}>({result.effect_measure})</span></h4>
+      <div className="effect-display">
+        <span className="effect-pooled">{result.pooled_effect.toFixed(2)}</span>
+        <span className="effect-ci">95% CI [{result.ci_lower.toFixed(2)}, {result.ci_upper.toFixed(2)}]</span>
+      </div>
+      <div className="stats-row">
+        {i2 != null && (
+          <span className="stat-item">I²: <span className={`stat-val i-squared ${i2Class}`}>{i2.toFixed(0)}%</span></span>
+        )}
+        {result.heterogeneity_p != null && (
+          <span className="stat-item">heterogeneity p: <span className="stat-val">{result.heterogeneity_p.toFixed(3)}</span></span>
+        )}
+        {result.p_value != null && (
+          <span className="stat-item">p: <span className="stat-val">{result.p_value.toFixed(3)}</span></span>
+        )}
+        <span className="stat-item">studies: <span className="stat-val">{result.n_studies}</span></span>
+        <span className="stat-item">n: <span className="stat-val">{result.n_participants.toLocaleString()}</span></span>
+      </div>
+      <div className={`interpretation ${interpClass}`}>{result.interpretation}</div>
+      {result.forest_plot_image ? (
+        isImage
+          ? <div className="forest-plot"><img src={result.forest_plot_image} alt={`Forest plot for ${result.outcome}`} /></div>
+          : <div className="forest-plot missing">Forest plot file '{result.forest_plot_image}' was referenced but not produced by sandbox_exec.</div>
+      ) : (
+        <div className="forest-plot missing">No forest plot generated for this outcome.</div>
+      )}
+    </div>
+  );
+}
+
+/* ── Usage Page (unchanged) ─────────────────────────────────────────────── */
+
+function UsagePage({ data }) {
+  if (!data) return <div className="usage-page" style={{ color: "#5a6070" }}>Loading usage data...</div>;
+  const toolEntries = Object.entries(data.tool_breakdown || {}).sort((a, b) => b[1] - a[1]);
+  const maxToolCount = toolEntries.length > 0 ? toolEntries[0][1] : 1;
+  return (
+    <div className="usage-page">
+      <h2>Monthly Usage</h2>
+      <div className="period">{data.period}</div>
+      <div className="usage-grid">
+        <div className="usage-card"><div className="card-val">{data.questions?.toLocaleString()}</div><div className="card-lbl">Questions Asked</div></div>
+        <div className="usage-card"><div className="card-val">{data.total_tokens?.toLocaleString()}</div><div className="card-lbl">Total Tokens</div></div>
+        <div className="usage-card"><div className="card-val">{data.input_tokens?.toLocaleString()}</div><div className="card-lbl">Input Tokens</div></div>
+        <div className="usage-card"><div className="card-val">{data.output_tokens?.toLocaleString()}</div><div className="card-lbl">Output Tokens</div></div>
+        <div className="usage-card"><div className="card-val">{data.model_requests?.toLocaleString()}</div><div className="card-lbl">Model Requests</div></div>
+        <div className="usage-card"><div className="card-val">{data.tool_calls?.toLocaleString()}</div><div className="card-lbl">Tool Calls</div></div>
+      </div>
+      {toolEntries.length > 0 && (
+        <>
+          <div className="usage-section-title">Tool Breakdown</div>
+          {toolEntries.map(([name, count]) => (
+            <div key={name} className="tool-bar-row">
+              <div className="tool-bar-name">{name}</div>
+              <div className="tool-bar-track"><div className="tool-bar-fill" style={{ width: `${Math.max((count / maxToolCount) * 100, 2)}%` }} /></div>
+              <div className="tool-bar-count">{count}</div>
+            </div>
+          ))}
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ── Search-strategy: query-blocks editor ─────────────────────────────── */
+
+function QueryBlocksCard({ turn, onSend, disabled }) {
+  const [blocks, setBlocks] = useState(() => structuredClone(turn.blocks || []));
+  const [bandLow, setBandLow] = useState(50);
+  const [bandHigh, setBandHigh] = useState(500);
+
+  function setBlock(i, patch) {
+    setBlocks(prev => {
+      const next = structuredClone(prev);
+      next[i] = { ...next[i], ...patch };
+      return next;
+    });
+  }
+
+  function setSyn(i, syns) { setBlock(i, { free_text_synonyms: syns }); }
+
+  function dropMesh(blockIdx, meshIdx) {
+    setBlocks(prev => {
+      const next = structuredClone(prev);
+      next[blockIdx].mesh_terms.splice(meshIdx, 1);
+      return next;
+    });
+  }
+
+  function submit() {
+    if (disabled) return;
+    onSend(formatQueryConfirmation(blocks, [Number(bandLow) || 50, Number(bandHigh) || 500]));
+  }
+
+  return (
+    <div className="card">
+      <div className="card-header">
+        <h3>Query Blocks</h3>
+        <span className="card-tag query_blocks">query_blocks</span>
+      </div>
+
+      <div style={{ fontSize: 13, color: "#8b93a7", marginBottom: 14, lineHeight: 1.5 }}>
+        Question: <em>{turn.research_question}</em>
+      </div>
+
+      {blocks.map((b, i) => (
+        <div className="qb-block" key={i}>
+          <div className="qb-block-header">
+            <span className="qb-label-pill">{b.label}</span>
+            <span className="qb-concept">{b.concept}</span>
+          </div>
+          {b.mesh_terms && b.mesh_terms.length > 0 && (
+            <div className="qb-mesh-row">
+              <span className="label">MeSH</span>
+              {b.mesh_terms.map((m, j) => (
+                <span key={j} className="qb-mesh-chip">
+                  {m.descriptor}<span className="mid">UID {m.mesh_id}</span>
+                  <button className="copy-btn" style={{ marginLeft: 6, padding: "0 6px" }} onClick={() => dropMesh(i, j)} disabled={disabled} title="Remove this MeSH term">×</button>
+                </span>
+              ))}
+            </div>
+          )}
+          <div className="qb-syn-row">
+            <span className="label">Free-text synonyms</span>
+          </div>
+          <ListField label="" values={b.free_text_synonyms || []} onChange={v => setSyn(i, v)} placeholder="e.g., omeprazole" />
+          <div className="qb-composed">{b.composed}</div>
+        </div>
+      ))}
+
+      {turn.notes && <div className="rationale">{turn.notes}</div>}
+
+      <div className="target-band-row">
+        <span>Target hit-count band:</span>
+        <input type="number" min="1" value={bandLow} onChange={e => setBandLow(e.target.value)} disabled={disabled} />
+        <span>–</span>
+        <input type="number" min="1" value={bandHigh} onChange={e => setBandHigh(e.target.value)} disabled={disabled} />
+        <span>PubMed hits</span>
+      </div>
+
+      <div className="card-actions">
+        <button className="btn-primary" onClick={submit} disabled={disabled}>
+          Confirm terms — compose &amp; test
+        </button>
+        <button className="btn-secondary" onClick={() => setBlocks(structuredClone(turn.blocks || []))} disabled={disabled}>
+          Reset edits
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ── Search-strategy: composed-query result + plans + refinements ─────── */
+
+function CopyButton({ text, label = "Copy" }) {
+  const [copied, setCopied] = useState(false);
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {}
+  }
+  return (
+    <button className={`copy-btn ${copied ? "copied" : ""}`} onClick={copy}>
+      {copied ? "Copied" : label}
+    </button>
+  );
+}
+
+function PlanCard({ plan }) {
+  const hits = plan.executable
+    ? <span className="plan-hits">{plan.estimated_hits != null ? plan.estimated_hits.toLocaleString() : "?"} hits</span>
+    : <span className="plan-hits muted">not executed here — copy &amp; run manually</span>;
+  return (
+    <div className={`plan-card ${plan.executable ? "" : "unexec"}`}>
+      <div className="plan-header">
+        <div>
+          <span className="plan-db">{plan.database.replace("_", " ")}</span>
+          <span className="plan-dialect">{plan.syntax_dialect}</span>
+        </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          {hits}
+          <CopyButton text={plan.composed_query} />
+        </div>
+      </div>
+      <div className="plan-query">{plan.composed_query}</div>
+      {plan.caveats && plan.caveats.length > 0 && (
+        <div className="plan-caveats">
+          {plan.caveats.map((c, i) => <div key={i}>⚠ {c}</div>)}
+        </div>
+      )}
+      {plan.access_note && <div className="plan-access">{plan.access_note}</div>}
+    </div>
+  );
+}
+
+function StrategyResultCard({ turn, onSend, onHandoff, onWatch, disabled }) {
+  const pubmedPlan = (turn.query_plans || []).find(p => p.database === "pubmed");
+  const pubmedHits = pubmedPlan && pubmedPlan.estimated_hits != null ? pubmedPlan.estimated_hits : null;
+  const band = turn.target_band || [50, 500];
+
+  let bandText;
+  if (turn.band_status === "in_band") {
+    bandText = `${pubmedHits != null ? pubmedHits.toLocaleString() : "?"} PubMed hits — inside the ${band[0]}–${band[1]} target band.`;
+  } else if (turn.band_status === "below") {
+    bandText = `Only ${pubmedHits != null ? pubmedHits.toLocaleString() : "?"} PubMed hits — below the ${band[0]}–${band[1]} target band. Consider broadening.`;
+  } else {
+    bandText = `${pubmedHits != null ? pubmedHits.toLocaleString() : "?"} PubMed hits — above the ${band[0]}–${band[1]} target band. Consider narrowing.`;
+  }
+
+  return (
+    <div className="card">
+      <div className="card-header">
+        <h3>Search Strategy {turn.is_final ? "(Final)" : "(Draft)"}</h3>
+        <span className="card-tag strategy_result">strategy_result</span>
+      </div>
+
+      <div className={`sr-band ${turn.band_status}`}>
+        <span className="sr-band-num">{pubmedHits != null ? pubmedHits.toLocaleString() : "?"}</span> &nbsp; {bandText}
+      </div>
+
+      {(turn.query_plans || []).map((p, i) => <PlanCard key={i} plan={p} />)}
+
+      {!turn.is_final && turn.refinement_suggestions && turn.refinement_suggestions.length > 0 && (
+        <>
+          <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: ".5px", color: "#5a6070", fontWeight: 600, marginTop: 16, marginBottom: 4 }}>
+            Suggested next moves
+          </div>
+          <div className="refinements">
+            {turn.refinement_suggestions.map((r, i) => (
+              <button key={i} className="refine-btn" onClick={() => onSend(formatRefinementClick(r.continuation))} disabled={disabled}>
+                <span className={`dir ${r.direction}`}>{r.direction}</span>
+                {r.label}
+                <span className="why">{r.rationale}</span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+
+      {turn.sample_hits && turn.sample_hits.length > 0 && (
+        <div className="sample-hits">
+          <h4>Sample hits ({turn.sample_hits.length})</h4>
+          {turn.sample_hits.map((s, i) => {
+            const url = s.pmid ? `https://pubmed.ncbi.nlm.nih.gov/${s.pmid}/` : (s.doi ? `https://doi.org/${s.doi}` : null);
+            return (
+              <div key={i} className="sample-hit">
+                <div className="title">{url ? <a href={url} target="_blank" rel="noopener">{s.title}</a> : s.title}</div>
+                <div className="meta">
+                  {s.pmid && <>PMID {s.pmid}</>}
+                  {s.journal && <> · {s.journal}</>}
+                  {s.year && <> · {s.year}</>}
+                  {s.source && <> · {s.source}</>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {!turn.is_final && (
+        <div className="card-actions">
+          <button className="btn-primary" onClick={() => onSend(formatFinalize())} disabled={disabled}>
+            Finalize strategy
+          </button>
+        </div>
+      )}
+
+      {turn.is_final && pubmedPlan && (
+        <div className="handoff-cta">
+          <div className="text">
+            Strategy locked. Hand off to a follow-up specialist or save it as a living-review watch.
+          </div>
+          <div className="handoff-row">
+            <button className="btn-primary" onClick={() => onHandoff(pubmedPlan.composed_query)} disabled={disabled}>
+              Run meta-analysis on these results
+            </button>
+            <button
+              className="btn-secondary"
+              onClick={() => onWatch && onWatch(pubmedPlan.composed_query, (turn.sample_hits || []).map(s => s.pmid).filter(Boolean))}
+              disabled={disabled || !onWatch}
+            >
+              Watch this query
+            </button>
+          </div>
+        </div>
+      )}
+
+      {turn.notes && !turn.is_final && <div className="rationale">{turn.notes}</div>}
+    </div>
+  );
+}
+
+/* ── sr_protocol: methods editor ──────────────────────────────────────── */
+
+const REVIEW_TYPES = ["intervention", "diagnostic", "prognostic", "etiology", "prevalence"];
+const ROB_TOOLS = ["RoB 2.0", "ROBINS-I", "Newcastle-Ottawa", "QUADAS-2", "ROBIS", "AMSTAR-2"];
+const SYNTHESIS_METHODS = [
+  { value: "random_effects_meta", label: "Random-effects meta-analysis" },
+  { value: "fixed_effects_meta",  label: "Fixed-effects meta-analysis"  },
+  { value: "narrative_only",      label: "Narrative synthesis only"     },
+];
+const EFFECT_MEASURES = ["OR", "RR", "MD", "SMD"];
+
+function ProtocolMethodsCard({ turn, onSend, disabled }) {
+  const [methods, setMethods] = useState(() => structuredClone(turn));
+
+  const set = (k, v) => setMethods(m => ({ ...m, [k]: v }));
+  const setPico = (k, v) => setMethods(m => ({ ...m, pico: { ...m.pico, [k]: v } }));
+  const setEligibility = (k, v) => setMethods(m => ({ ...m, eligibility: { ...m.eligibility, [k]: v } }));
+  const setRob = (k, v) => setMethods(m => ({ ...m, rob_tool: { ...m.rob_tool, [k]: v } }));
+  const setSyn = (k, v) => setMethods(m => ({ ...m, synthesis_plan: { ...m.synthesis_plan, [k]: v } }));
+
+  function setEffectFor(outcome, measure) {
+    setMethods(m => ({ ...m, effect_measures_plan: { ...m.effect_measures_plan, [outcome]: measure } }));
+  }
+
+  function submit() {
+    if (disabled) return;
+    onSend(formatMethodsConfirmation(methods));
+  }
+
+  const outcomes = methods.pico && methods.pico.outcomes ? methods.pico.outcomes : [];
+
+  return (
+    <div className="card">
+      <div className="card-header">
+        <h3>Protocol Methods</h3>
+        <span className="card-tag protocol_methods">protocol_methods</span>
+      </div>
+
+      <div className="pm-section">
+        <h4>Title &amp; review type</h4>
+        <Field label="Working title" value={methods.title || ""} onChange={v => set("title", v)} multiline full />
+        <div className="pm-row" style={{ marginTop: 8 }}>
+          <label style={{ fontSize: 11, color: "#5a6070", textTransform: "uppercase", fontWeight: 600 }}>Review type</label>
+          <select className="pm-select" value={methods.review_type || "intervention"} onChange={e => set("review_type", e.target.value)} disabled={disabled}>
+            {REVIEW_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
+      </div>
+
+      <div className="pm-section">
+        <h4>PICO</h4>
+        <div className="pico-grid">
+          <Field label="Population" value={methods.pico.population} onChange={v => setPico("population", v)} multiline full />
+          <Field label="Intervention" value={methods.pico.intervention} onChange={v => setPico("intervention", v)} multiline />
+          <Field label="Comparison" value={methods.pico.comparison} onChange={v => setPico("comparison", v)} multiline />
+          <ListField label="Outcomes" full values={methods.pico.outcomes || []} onChange={v => setPico("outcomes", v)} placeholder="e.g., Heart-failure hospitalization" />
+        </div>
+      </div>
+
+      <div className="pm-section">
+        <h4>Eligibility criteria</h4>
+        <div className="pm-eligibility-grid">
+          <ListField label="Inclusion" values={methods.eligibility.inclusion || []} onChange={v => setEligibility("inclusion", v)} placeholder="e.g., RCT design" />
+          <ListField label="Exclusion" values={methods.eligibility.exclusion || []} onChange={v => setEligibility("exclusion", v)} placeholder="e.g., case reports" />
+          <ListField label="Study designs" values={methods.eligibility.study_designs || []} onChange={v => setEligibility("study_designs", v)} placeholder="e.g., Randomized Controlled Trial" />
+          <ListField label="Languages" values={methods.eligibility.language || []} onChange={v => setEligibility("language", v)} placeholder="e.g., English" />
+          <Field label="Date range" value={methods.eligibility.date_range || ""} onChange={v => setEligibility("date_range", v)} placeholder="e.g., 2010–present" />
+          <Field label="Age range" value={methods.eligibility.age_range || ""} onChange={v => setEligibility("age_range", v)} placeholder="e.g., ≥18 years" />
+          <Field label="Setting" value={methods.eligibility.setting || ""} onChange={v => setEligibility("setting", v)} placeholder="e.g., outpatient" full />
+        </div>
+      </div>
+
+      <div className="pm-section">
+        <h4>Information sources</h4>
+        <ListField label="" values={methods.information_sources || []} onChange={v => set("information_sources", v)} placeholder="e.g., CINAHL" />
+      </div>
+
+      <div className="pm-section">
+        <h4>Risk-of-bias tool</h4>
+        <div className="pm-row">
+          <label style={{ fontSize: 11, color: "#5a6070", textTransform: "uppercase", fontWeight: 600 }}>Tool</label>
+          <select className="pm-select" value={methods.rob_tool.tool} onChange={e => setRob("tool", e.target.value)} disabled={disabled}>
+            {ROB_TOOLS.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
+        <Field label="Rationale" value={methods.rob_tool.rationale || ""} onChange={v => setRob("rationale", v)} multiline full />
+      </div>
+
+      <div className="pm-section">
+        <h4>Effect-measures plan</h4>
+        {outcomes.length === 0 && <div style={{ fontSize: 12, color: "#8b93a7" }}>Add outcomes above to plan effect measures.</div>}
+        {outcomes.map((o, i) => {
+          const measure = (methods.effect_measures_plan && methods.effect_measures_plan[o]) || "RR";
+          return (
+            <div key={i} className="pm-em-row">
+              <div className="pm-em-name">{o}</div>
+              <select className="pm-select" value={measure} onChange={e => setEffectFor(o, e.target.value)} disabled={disabled}>
+                {EFFECT_MEASURES.map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="pm-section">
+        <h4>Synthesis plan</h4>
+        <div className="pm-row">
+          <label style={{ fontSize: 11, color: "#5a6070", textTransform: "uppercase", fontWeight: 600 }}>Primary method</label>
+          <select className="pm-select" value={methods.synthesis_plan.primary_method} onChange={e => setSyn("primary_method", e.target.value)} disabled={disabled}>
+            {SYNTHESIS_METHODS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+          </select>
+        </div>
+        <div className="pm-eligibility-grid" style={{ marginTop: 8 }}>
+          <ListField label="Heterogeneity assessment" values={methods.synthesis_plan.heterogeneity_assessment || []} onChange={v => setSyn("heterogeneity_assessment", v)} placeholder="e.g., I²" />
+          <ListField label="Publication-bias methods" values={methods.synthesis_plan.publication_bias_methods || []} onChange={v => setSyn("publication_bias_methods", v)} placeholder="e.g., Funnel plot" />
+          <ListField label="Planned subgroups" values={methods.synthesis_plan.planned_subgroups || []} onChange={v => setSyn("planned_subgroups", v)} placeholder="e.g., baseline severity" />
+          <ListField label="Sensitivity analyses" values={methods.synthesis_plan.planned_sensitivity_analyses || []} onChange={v => setSyn("planned_sensitivity_analyses", v)} placeholder="e.g., exclude high-RoB studies" />
+        </div>
+      </div>
+
+      <div className="pm-section">
+        <div className="pm-checkbox-row">
+          <input type="checkbox" checked={!!methods.use_grade} onChange={e => set("use_grade", e.target.checked)} disabled={disabled} />
+          <span>Plan to use GRADE for certainty-of-evidence assessment</span>
+        </div>
+      </div>
+
+      {methods.notes && <div className="rationale">{methods.notes}</div>}
+
+      <div className="card-actions">
+        <button className="btn-primary" onClick={submit} disabled={disabled}>
+          Methods confirmed — draft full protocol
+        </button>
+        <button className="btn-secondary" onClick={() => setMethods(structuredClone(turn))} disabled={disabled}>
+          Reset edits
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ── sr_protocol: full document card ──────────────────────────────────── */
+
+function ProtocolDocumentCard({ turn, onSend, onHandoffSearch, onHandoffMeta, disabled }) {
+  const [showMarkdown, setShowMarkdown] = useState(false);
+  const refs = turn.references || [];
+  const fields = turn.prospero_field_map || [];
+  const isPlaceholder = (s) => typeof s === "string" && s.startsWith("[USER INPUT NEEDED:");
+
+  return (
+    <div className="card">
+      <div className="card-header">
+        <h3>Protocol Document {turn.is_final ? "(Final)" : "(Draft)"}</h3>
+        <span className="card-tag protocol_document">protocol_document</span>
+      </div>
+
+      <div className="pd-section">
+        <h4>Title</h4>
+        <div style={{ fontSize: 14, color: "#e6e6e6", lineHeight: 1.5 }}>{turn.methods.title}</div>
+      </div>
+
+      <div className="pd-section">
+        <h4>Background &amp; rationale</h4>
+        <div className="pd-background">{turn.background}</div>
+      </div>
+
+      {refs.length > 0 && (
+        <div className="pd-section">
+          <h4>References ({refs.length})</h4>
+          {refs.map((r, i) => {
+            const url = r.url || (r.pmid ? `https://pubmed.ncbi.nlm.nih.gov/${r.pmid}/` : (r.doi ? `https://doi.org/${r.doi}` : null));
+            return (
+              <div key={i} className="pd-ref">
+                <span className="pd-ref-num">[{i + 1}]</span>
+                <span className="pd-ref-text">{r.text}</span>
+                <div className="pd-ref-meta">
+                  <span className={`pd-origin-badge ${r.origin}`}>{r.origin.replace("_", " ")}</span>
+                  {r.pmid && <a className="pd-ref-link" href={`https://pubmed.ncbi.nlm.nih.gov/${r.pmid}/`} target="_blank" rel="noopener">PMID {r.pmid}</a>}
+                  {r.doi && <a className="pd-ref-link" href={`https://doi.org/${r.doi}`} target="_blank" rel="noopener">DOI</a>}
+                  {!r.pmid && r.url && <a className="pd-ref-link" href={r.url} target="_blank" rel="noopener">link</a>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {fields.length > 0 && (
+        <div className="pd-section">
+          <h4>PROSPERO field map ({fields.length} fields)</h4>
+          <table className="pd-prospero-table">
+            <thead>
+              <tr><th>Field</th><th>Content</th><th></th></tr>
+            </thead>
+            <tbody>
+              {fields.map((f, i) => (
+                <tr key={i}>
+                  <td className="field">{f.field}</td>
+                  <td className={`content ${isPlaceholder(f.content) ? "placeholder" : ""}`}>{f.content}</td>
+                  <td className="action"><CopyButton text={f.content} label="Copy" /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <div className="pd-section">
+        <h4 style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span>Full markdown document</span>
+          <span style={{ display: "flex", gap: 8, textTransform: "none", letterSpacing: 0 }}>
+            <button className="copy-btn" onClick={() => setShowMarkdown(s => !s)}>{showMarkdown ? "Hide" : "Show"}</button>
+            <CopyButton text={turn.full_markdown || ""} label="Copy markdown" />
+          </span>
+        </h4>
+        {showMarkdown && <div className="pd-markdown-preview">{turn.full_markdown}</div>}
+      </div>
+
+      {turn.notes && !turn.is_final && <div className="rationale">{turn.notes}</div>}
+
+      {!turn.is_final && (
+        <div className="card-actions">
+          <button className="btn-primary" onClick={() => onSend(formatProtocolFinalize())} disabled={disabled}>
+            Finalize protocol
+          </button>
+        </div>
+      )}
+
+      {turn.is_final && (
+        <div className="handoff-cta">
+          <div className="text">
+            Protocol locked. Continue to the next stage with PICO + eligibility pre-loaded.
+          </div>
+          <div className="pd-handoff-row">
+            <button className="btn-primary" onClick={() => onHandoffSearch(turn.methods)} disabled={disabled}>
+              Build the search strategy
+            </button>
+            <button className="btn-secondary" onClick={() => onHandoffMeta(turn.methods)} disabled={disabled}>
+              Skip to meta-analysis
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Watch this query: modal ──────────────────────────────────────────── */
+
+const SCHEDULE_PRESETS = [
+  { id: "daily",   label: "Daily 09:00",        cron: "0 9 * * *" },
+  { id: "weekly",  label: "Mondays 09:00",      cron: "0 9 * * 1" },
+  { id: "monthly", label: "1st of month 09:00", cron: "0 9 1 * *" },
+  { id: "demo",    label: "Every 2 minutes (demo)", cron: "*/2 * * * *" },
+];
+
+function WatchModal({ spec, onClose, onCreated }) {
+  const [name, setName] = useState(spec.defaultName || "Untitled watch");
+  const [presetId, setPresetId] = useState("weekly");
+  const [customCron, setCustomCron] = useState("");
+  const [threshold, setThreshold] = useState(0.6);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState(null);
+
+  const cronToUse = customCron.trim() || (SCHEDULE_PRESETS.find(p => p.id === presetId) || {}).cron || "0 9 * * 1";
+
+  async function submit() {
+    if (!name.trim()) { setError("Name is required."); return; }
+    setSubmitting(true);
+    setError(null);
+    try {
+      const body = {
+        name: name.trim(),
+        pico: spec.picoSeed,
+        search_query: spec.pubmedQuery,
+        sources: ["pubmed", "europepmc"],
+        schedule_cron: cronToUse,
+        triage_threshold: Number(threshold),
+        baseline_pmids: spec.sampleHitPmids || [],
+      };
+      const res = await fetch("/api/watches", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error(extractErrorMessage(await res.text()));
+      onCreated();
+    } catch (e) {
+      setError(e.message || String(e));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="modal">
+        <h3>Watch this query</h3>
+        <p className="lead">
+          The scheduler will re-run this PubMed query at the chosen frequency, triage any new hits against the
+          PICO snapshot, and notify you when a new paper exceeds the materiality threshold. The current
+          sample-hit PMIDs ({(spec.sampleHitPmids || []).length}) become the baseline so the first scheduled run
+          only surfaces genuinely new evidence.
+        </p>
+
+        <div className="modal-section">
+          <label>Watch name</label>
+          <input type="text" value={name} onChange={e => setName(e.target.value)} disabled={submitting} />
+        </div>
+
+        <div className="modal-section">
+          <label>Schedule</label>
+          <div className="schedule-presets">
+            {SCHEDULE_PRESETS.map(p => (
+              <button
+                key={p.id}
+                className={`preset-chip ${presetId === p.id && !customCron ? "selected" : ""}`}
+                onClick={() => { setPresetId(p.id); setCustomCron(""); }}
+                disabled={submitting}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+          <label style={{ marginTop: 8 }}>Or custom cron (5 fields: minute hour day month dow)</label>
+          <input
+            type="text"
+            placeholder={(SCHEDULE_PRESETS.find(p => p.id === presetId) || {}).cron || ""}
+            value={customCron}
+            onChange={e => setCustomCron(e.target.value)}
+            disabled={submitting}
+            style={{ fontFamily: "Consolas, Monaco, monospace" }}
+          />
+          <div style={{ fontSize: 11, color: "#5a6070", marginTop: 4 }}>
+            Will fire on: <code style={{ color: "#b3cfee" }}>{cronToUse}</code>
+          </div>
+        </div>
+
+        <div className="modal-section">
+          <label>Materiality threshold (0 = notify on any new paper, 1 = only landmark)</label>
+          <div className="threshold-row">
+            <input
+              type="range" min="0" max="1" step="0.05"
+              value={threshold} onChange={e => setThreshold(e.target.value)} disabled={submitting}
+            />
+            <span className="threshold-val">{Number(threshold).toFixed(2)}</span>
+          </div>
+        </div>
+
+        {error && <div style={{ color: "#d97a7a", fontSize: 12, marginTop: 8 }}>⚠ {error}</div>}
+
+        <div className="modal-actions">
+          <button className="btn-secondary" onClick={onClose} disabled={submitting}>Cancel</button>
+          <button className="btn-primary" onClick={submit} disabled={submitting}>
+            {submitting ? "Creating…" : "Create watch"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── risk_of_bias: assessments editor ─────────────────────────────────── */
+
+const ROB_JUDGMENTS = [
+  { id: "low",            label: "Low" },
+  { id: "some_concerns",  label: "Some concerns" },
+  { id: "high",           label: "High" },
+  { id: "no_information", label: "No information" },
+];
+
+function RobAssessmentsCard({ turn, onSend, disabled }) {
+  const [assessments, setAssessments] = useState(() => structuredClone(turn.assessments || []));
+  const [expandedRows, setExpandedRows] = useState(() => new Set());
+
+  function rowKey(si, di) { return `${si}-${di}`; }
+  function toggleExpand(si, di) {
+    setExpandedRows(prev => {
+      const next = new Set(prev);
+      const k = rowKey(si, di);
+      if (next.has(k)) next.delete(k); else next.add(k);
+      return next;
+    });
+  }
+
+  function setDomainField(si, di, patch) {
+    setAssessments(prev => {
+      const next = structuredClone(prev);
+      next[si].domains[di] = { ...next[si].domains[di], ...patch };
+      // Recompute overall judgment per RoB 2.0 / generic worst-domain rule.
+      const judgments = next[si].domains.map(d => d.judgment);
+      let overall = "low";
+      if (judgments.includes("high")) overall = "high";
+      else if (judgments.includes("some_concerns")) overall = "some_concerns";
+      else if (judgments.includes("no_information")) overall = "some_concerns";
+      next[si].overall_judgment = overall;
+      return next;
+    });
+  }
+
+  function setOverall(si, judgment) {
+    setAssessments(prev => {
+      const next = structuredClone(prev);
+      next[si].overall_judgment = judgment;
+      return next;
+    });
+  }
+
+  function submit() {
+    if (disabled) return;
+    onSend(formatRobConfirmation(turn.tool, assessments));
+  }
+
+  return (
+    <div className="card">
+      <div className="card-header">
+        <h3>Risk of Bias — Assessments</h3>
+        <span className="card-tag rob_assessments">rob_assessments</span>
+      </div>
+
+      <div className="rob-tool-row">
+        <span style={{ fontSize: 11, textTransform: "uppercase", color: "#5a6070", fontWeight: 600, letterSpacing: ".5px" }}>Tool</span>
+        <span className="rob-tool-pill">{turn.tool}</span>
+        <span style={{ fontSize: 12, color: "#8b93a7" }}>· {assessments.length} studies</span>
+      </div>
+
+      {turn.summary && <div className="rob-summary-box">{turn.summary}</div>}
+
+      {assessments.map((s, si) => (
+        <div className="rob-study" key={s.pmid || si}>
+          <div className="rob-study-head">
+            <div>
+              <div className="rob-study-title">{s.title}</div>
+              <div className="rob-study-meta">
+                {s.pmid && (
+                  <a href={`https://pubmed.ncbi.nlm.nih.gov/${s.pmid}/`} target="_blank" rel="noopener">
+                    PMID {s.pmid}
+                  </a>
+                )}
+                <span>·</span>
+                <span>{s.study_design}</span>
+              </div>
+            </div>
+            <div className="rob-overall-row">
+              <span className="lbl">Overall</span>
+              <select
+                className={`judgment-select ${s.overall_judgment}`}
+                value={s.overall_judgment}
+                onChange={e => setOverall(si, e.target.value)}
+                disabled={disabled}
+              >
+                {ROB_JUDGMENTS.map(j => <option key={j.id} value={j.id}>{j.label}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {s.domains.map((d, di) => {
+            const k = rowKey(si, di);
+            const expanded = expandedRows.has(k);
+            return (
+              <div className="rob-domain-row" key={di}>
+                <div className="rob-domain-name">{d.domain}</div>
+                <select
+                  className={`judgment-select ${d.judgment}`}
+                  value={d.judgment}
+                  onChange={e => setDomainField(si, di, { judgment: e.target.value })}
+                  disabled={disabled}
+                >
+                  {ROB_JUDGMENTS.map(j => <option key={j.id} value={j.id}>{j.label}</option>)}
+                </select>
+                <button className="rob-domain-toggle" onClick={() => toggleExpand(si, di)}>
+                  {expanded ? "Hide justification" : "Show justification"}
+                </button>
+                {expanded && (
+                  <>
+                    <div className="rob-domain-justify">
+                      <textarea
+                        value={d.justification}
+                        onChange={e => setDomainField(si, di, { justification: e.target.value })}
+                        disabled={disabled}
+                      />
+                    </div>
+                    {d.quote && (
+                      <div className="rob-domain-quote">"{d.quote}"</div>
+                    )}
+                  </>
+                )}
+                {!expanded && (
+                  <div className="rob-domain-justify" style={{ color: "#5a6070", fontSize: 11 }}>
+                    {(d.justification || "").slice(0, 120)}{(d.justification || "").length > 120 ? "…" : ""}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ))}
+
+      <div className="card-actions">
+        <button className="btn-primary" onClick={submit} disabled={disabled}>
+          RoB confirmed — generate summary
+        </button>
+        <button className="btn-secondary" onClick={() => setAssessments(structuredClone(turn.assessments || []))} disabled={disabled}>
+          Reset edits
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ── risk_of_bias: summary card + meta-analysis sensitivity handoff ───── */
+
+function RobSummaryCard({ turn, onSend, onHandoffRobToMeta, disabled }) {
+  const distribution = turn.domain_distribution || [];
+  const highPmids = turn.high_rob_pmids || [];
+  const recs = turn.sensitivity_recommendations || [];
+
+  return (
+    <div className="card">
+      <div className="card-header">
+        <h3>Risk of Bias — Summary {turn.is_final ? "(Final)" : "(Draft)"}</h3>
+        <span className="card-tag rob_summary">rob_summary</span>
+      </div>
+
+      <div className="rob-tool-row">
+        <span style={{ fontSize: 11, textTransform: "uppercase", color: "#5a6070", fontWeight: 600, letterSpacing: ".5px" }}>Tool</span>
+        <span className="rob-tool-pill">{turn.tool}</span>
+      </div>
+
+      {turn.summary_plot_image
+        ? <div className="rob-plot"><img src={turn.summary_plot_image} alt="RoB summary plot" /></div>
+        : <div className="rob-plot missing">Summary plot was not produced — check the assessments turn or try again.</div>}
+
+      {distribution.length > 0 && (
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, marginBottom: 14 }}>
+          <thead>
+            <tr style={{ color: "#5a6070", textTransform: "uppercase", fontSize: 10, letterSpacing: ".4px" }}>
+              <th style={{ textAlign: "left", padding: "6px 8px", borderBottom: "1px solid #2a2f3a" }}>Domain</th>
+              <th style={{ textAlign: "right", padding: "6px 8px", borderBottom: "1px solid #2a2f3a", color: "#6bcf7f" }}>Low</th>
+              <th style={{ textAlign: "right", padding: "6px 8px", borderBottom: "1px solid #2a2f3a", color: "#d9a84a" }}>Some</th>
+              <th style={{ textAlign: "right", padding: "6px 8px", borderBottom: "1px solid #2a2f3a", color: "#d97a7a" }}>High</th>
+              <th style={{ textAlign: "right", padding: "6px 8px", borderBottom: "1px solid #2a2f3a", color: "#8b93a7" }}>No info</th>
+            </tr>
+          </thead>
+          <tbody>
+            {distribution.map((d, i) => (
+              <tr key={i} style={{ borderBottom: "1px solid #1f232c" }}>
+                <td style={{ padding: "6px 8px", color: "#b3b9c8" }}>{d.domain}</td>
+                <td style={{ padding: "6px 8px", textAlign: "right", color: "#6bcf7f" }}>{d.low}</td>
+                <td style={{ padding: "6px 8px", textAlign: "right", color: "#d9a84a" }}>{d.some_concerns}</td>
+                <td style={{ padding: "6px 8px", textAlign: "right", color: "#d97a7a" }}>{d.high}</td>
+                <td style={{ padding: "6px 8px", textAlign: "right", color: "#8b93a7" }}>{d.no_information}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      {turn.narrative && <div className="rob-narrative">{turn.narrative}</div>}
+
+      {(recs.length > 0 || highPmids.length > 0) && (
+        <div className="rob-sensitivity">
+          <h4>Sensitivity recommendations</h4>
+          {recs.length > 0 && (
+            <ul>{recs.map((r, i) => <li key={i}>{r}</li>)}</ul>
+          )}
+          {highPmids.length > 0 && (
+            <>
+              <div style={{ fontSize: 10, textTransform: "uppercase", color: "#d9a84a", letterSpacing: ".5px", marginTop: 8, fontWeight: 600 }}>
+                High-RoB PMIDs
+              </div>
+              <div className="rob-high-pmids">
+                {highPmids.map(p => (
+                  <span key={p} className="chip">
+                    <a href={`https://pubmed.ncbi.nlm.nih.gov/${p}/`} target="_blank" rel="noopener">PMID {p}</a>
+                  </span>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {!turn.is_final && (
+        <div className="card-actions">
+          <button className="btn-primary" onClick={() => onSend(formatRobFinalize())} disabled={disabled}>
+            Finalize RoB
+          </button>
+        </div>
+      )}
+
+      {turn.is_final && (
+        <div className="handoff-cta">
+          <div className="text">
+            RoB locked. {highPmids.length > 0
+              ? `Spawn a sensitivity meta-analysis excluding the ${highPmids.length} high-RoB study${highPmids.length === 1 ? "" : "ies"}?`
+              : "No high-RoB studies to exclude — the original meta-analysis stands."}
+          </div>
+          <button
+            className="btn-primary"
+            onClick={() => onHandoffRobToMeta && onHandoffRobToMeta(highPmids)}
+            disabled={disabled || !onHandoffRobToMeta || highPmids.length === 0}
+          >
+            Re-run meta-analysis excluding high-RoB studies
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>

@@ -1,0 +1,43 @@
+# Local virtualenv + caches
+.venv/
+__pycache__/
+*.pyc
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+
+# Local dev data — never bake into the image
+threads.db
+threads.db-*
+images/*
+!images/.gitkeep
+!images/.gitignore
+sandbox-work/*
+!sandbox-work/.gitkeep
+!sandbox-work/.gitignore
+
+# Git + tooling
+.git/
+.gitignore
+.gitattributes
+.github/
+.idea/
+.vscode/
+
+# Tests + scripts (not needed in the runtime image)
+tests/
+scripts/
+sandbox/      # built separately into pydantic-sandbox:latest
+demoguide.md
+feature-guide.md
+feature-guide.pdf
+architecture.md
+testing.txt
+*.txt
+
+# Compose stack itself — the image doesn't need to ship its own deploy files
+deploy/
+
+# Editor scraps
+*.swp
+.DS_Store

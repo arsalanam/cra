@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Settings · Clinical Research Assistant</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, Segoe UI, Roboto, sans-serif; background: #0f1115; color: #e6e6e6; min-height: 100vh; }
+
+  .header { padding: 14px 24px; border-bottom: 1px solid #262a33; display: flex; justify-content: space-between; align-items: center; background: #171a21; }
+  .header h1 { margin: 0; font-size: 16px; }
+  .header a { color: #8b93a7; text-decoration: none; font-size: 13px; }
+  .header a:hover { color: #e6e6e6; }
+
+  .container { max-width: 820px; margin: 24px auto; padding: 0 24px; }
+  .container h2 { font-size: 14px; text-transform: uppercase; color: #8b93a7; letter-spacing: .6px; margin: 0 0 4px; font-weight: 700; }
+  .lead { color: #8b93a7; font-size: 13px; margin: 0 0 24px; line-height: 1.5; }
+
+  .source-card { background: #171a21; border: 1px solid #262a33; border-radius: 8px; padding: 20px 24px; margin-bottom: 16px; }
+  .source-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+  .source-head h3 { margin: 0; font-size: 15px; color: #e6e6e6; font-weight: 600; }
+  .source-id { font-family: 'Consolas', 'Monaco', monospace; font-size: 11px; color: #5a6070; background: #0f1115; padding: 2px 8px; border-radius: 4px; }
+
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 18px; }
+  .grid .full { grid-column: 1 / -1; }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label { font-size: 11px; text-transform: uppercase; color: #5a6070; font-weight: 600; letter-spacing: .5px; }
+  .field input[type="text"], .field input[type="password"], .field input[type="number"] {
+    background: #0f1115; color: #e6e6e6; border: 1px solid #2a2f3a; border-radius: 4px;
+    padding: 8px 10px; font: inherit; font-size: 13px;
+  }
+  .field input:focus { outline: 1px solid #4a7fd9; border-color: #4a7fd9; }
+  .field .hint { font-size: 11px; color: #5a6070; margin-top: 2px; line-height: 1.4; }
+
+  .toggle-row { display: flex; align-items: center; gap: 12px; }
+  .toggle-row input[type="checkbox"] { width: 16px; height: 16px; accent-color: #4a7fd9; }
+  .toggle-row .toggle-label { font-size: 13px; color: #e6e6e6; }
+
+  .actions { display: flex; gap: 10px; margin-top: 18px; padding-top: 14px; border-top: 1px solid #1f232c; align-items: center; }
+  .btn-primary { background: #4a7fd9; color: #fff; border: 0; border-radius: 6px; padding: 9px 18px; font-weight: 600; font-size: 13px; cursor: pointer; }
+  .btn-primary:hover { background: #5a8fe9; }
+  .btn-primary:disabled { background: #333; color: #777; cursor: not-allowed; }
+  .status { font-size: 12px; color: #8b93a7; }
+  .status.ok { color: #6bcf7f; }
+  .status.err { color: #d97a7a; }
+
+  .meta { font-size: 11px; color: #5a6070; margin-top: 4px; }
+  .loading, .err-box { color: #8b93a7; font-size: 13px; padding: 20px; text-align: center; }
+  .err-box { color: #d97a7a; }
+</style>
+</head>
+<body>
+  <div class="header">
+    <h1>Settings · Paper Sources</h1>
+    <a href="/">← Back to assistant</a>
+  </div>
+
+  <div class="container">
+    <h2>Configure paper sources</h2>
+    <p class="lead">
+      These sources back the <code>search_papers</code> tool. Disabling a source removes it from the multi-source fan-out;
+      the meta-analysis workflow keeps working as long as at least one source stays enabled. Leave <em>API key</em> blank to
+      fall back to the <code>NCBI_API_KEY</code> environment variable for PubMed. Europe PMC needs no key.
+    </p>
+
+    <div id="content" class="loading">Loading sources…</div>
+
+    <h2 style="margin-top:36px;">Invite a user</h2>
+    <p class="lead">
+      Creates the user in Cognito (sends an invitation email) and records a pending invitation.
+      Roles are granted on their first login. Admin-invitation-only — there is no self sign-up.
+    </p>
+    <div class="source-card">
+      <div class="grid">
+        <div class="field full">
+          <label>Email</label>
+          <input type="text" id="inv-email" placeholder="researcher@example.com" />
+        </div>
+        <div class="field full">
+          <div class="toggle-row">
+            <input type="checkbox" id="inv-admin" />
+            <span class="toggle-label">Grant <code>admin</code> role (otherwise <code>researcher</code>)</span>
+          </div>
+        </div>
+      </div>
+      <div class="actions">
+        <button class="btn-primary" id="inv-btn">Send invitation</button>
+        <span class="status" id="inv-status"></span>
+      </div>
+    </div>
+  </div>
+
+<script>
+"use strict";
+
+/* Bounce to login on 401 (Phase E), matching the main app. /auth/* excluded. */
+(function installAuthFetch() {
+  const orig = window.fetch.bind(window);
+  let redirecting = false;
+  window.fetch = async (input, init) => {
+    const res = await orig(input, init);
+    const url = typeof input === "string" ? input : (input && input.url) || "";
+    if (res.status === 401 && !url.includes("/auth/") && !redirecting) {
+      redirecting = true;
+      location.href = "/auth/login?next=" + encodeURIComponent(location.pathname);
+    }
+    return res;
+  };
+})();
+
+const $ = (id) => document.getElementById(id);
+const content = $("content");
+
+async function sendInvite() {
+  const email = $("inv-email").value.trim();
+  const roles = $("inv-admin").checked ? ["admin"] : ["researcher"];
+  const btn = $("inv-btn"), status = $("inv-status");
+  if (!email) { status.textContent = "Enter an email."; status.className = "status err"; return; }
+  btn.disabled = true; status.textContent = "Inviting…"; status.className = "status";
+  try {
+    const resp = await fetch("/api/admin/users", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, roles }),
+    });
+    if (!resp.ok) {
+      const detail = await resp.json().catch(() => ({}));
+      throw new Error(detail.detail || `HTTP ${resp.status}`);
+    }
+    const out = await resp.json();
+    status.textContent = `Invited ${out.email} (${out.roles.join(", ")}) — cognito: ${out.cognito_status}`;
+    status.className = "status ok";
+    $("inv-email").value = ""; $("inv-admin").checked = false;
+  } catch (e) {
+    status.textContent = "Invite failed: " + e.message;
+    status.className = "status err";
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function escapeHtml(s) {
+  if (s == null) return "";
+  return String(s).replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+
+function fmtDate(iso) {
+  if (!iso) return "";
+  try { return new Date(iso).toLocaleString(); } catch { return iso; }
+}
+
+function renderSourceCard(src) {
+  const wrap = document.createElement("div");
+  wrap.className = "source-card";
+  wrap.dataset.id = src.id;
+  wrap.innerHTML = `
+    <div class="source-head">
+      <h3>${escapeHtml(src.display_name)}</h3>
+      <span class="source-id">${escapeHtml(src.id)}</span>
+    </div>
+
+    <div class="grid">
+      <div class="field full">
+        <div class="toggle-row">
+          <input type="checkbox" data-field="enabled" ${src.enabled ? "checked" : ""} />
+          <span class="toggle-label">Enabled — included in <code>search_papers</code> fan-out</span>
+        </div>
+      </div>
+
+      <div class="field full">
+        <label>Display name</label>
+        <input type="text" data-field="display_name" value="${escapeHtml(src.display_name)}" />
+      </div>
+
+      <div class="field full">
+        <label>API key</label>
+        <input type="password" data-field="api_key" value="${escapeHtml(src.api_key || "")}"
+               placeholder="(leave blank to fall back to env)" />
+        <span class="hint">Stored in plaintext in <code>threads.db</code>. Anyone with HTTP access to this server can read it — don't expose beyond localhost.</span>
+      </div>
+
+      <div class="field full">
+        <label>Contact email (NCBI etiquette only)</label>
+        <input type="text" data-field="contact_email" value="${escapeHtml(src.contact_email || "")}"
+               placeholder="research@example.com" />
+      </div>
+
+      <div class="field">
+        <label>Max retries on 429</label>
+        <input type="number" data-field="max_retries" min="0" max="20" value="${src.max_retries}" />
+      </div>
+
+      <div class="field">
+        <label>Backoff base (seconds)</label>
+        <input type="number" data-field="backoff_base_sec" min="0" step="0.1" value="${src.backoff_base_sec}" />
+      </div>
+
+      <div class="field">
+        <label>Backoff cap (seconds)</label>
+        <input type="number" data-field="backoff_cap_sec" min="0" step="0.1" value="${src.backoff_cap_sec}" />
+      </div>
+    </div>
+
+    <div class="actions">
+      <button class="btn-primary" data-action="save">Save</button>
+      <span class="status" data-role="status">Last updated ${escapeHtml(fmtDate(src.updated_at))}</span>
+    </div>
+  `;
+  wrap.querySelector("[data-action='save']").addEventListener("click", () => saveCard(wrap));
+  return wrap;
+}
+
+function readCard(card) {
+  const fields = card.querySelectorAll("[data-field]");
+  const payload = {};
+  fields.forEach((el) => {
+    const key = el.dataset.field;
+    if (el.type === "checkbox") {
+      payload[key] = el.checked;
+    } else if (el.type === "number") {
+      const v = el.value === "" ? null : Number(el.value);
+      if (v !== null && !Number.isNaN(v)) payload[key] = v;
+    } else {
+      // Empty string for api_key / contact_email means "clear it"; the
+      // server treats null as "clear" too, so normalise.
+      payload[key] = el.value === "" ? null : el.value;
+    }
+  });
+  return payload;
+}
+
+function setStatus(card, msg, kind) {
+  const el = card.querySelector("[data-role='status']");
+  el.textContent = msg;
+  el.className = "status" + (kind ? " " + kind : "");
+}
+
+async function saveCard(card) {
+  const id = card.dataset.id;
+  const btn = card.querySelector("[data-action='save']");
+  btn.disabled = true;
+  setStatus(card, "Saving…");
+  try {
+    const resp = await fetch(`/api/admin/sources/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(readCard(card)),
+    });
+    if (!resp.ok) {
+      const detail = await resp.json().catch(() => ({}));
+      throw new Error(detail.detail || `HTTP ${resp.status}`);
+    }
+    const updated = await resp.json();
+    setStatus(card, `Saved — last updated ${fmtDate(updated.updated_at)}`, "ok");
+  } catch (e) {
+    setStatus(card, `Save failed: ${e.message}`, "err");
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function init() {
+  try {
+    const resp = await fetch("/api/admin/sources");
+    if (!resp.ok) {
+      const detail = await resp.json().catch(() => ({}));
+      throw new Error(detail.detail || `HTTP ${resp.status}`);
+    }
+    const sources = await resp.json();
+    content.innerHTML = "";
+    if (sources.length === 0) {
+      content.className = "err-box";
+      content.textContent = "No paper sources are seeded — re-run the app to populate defaults.";
+      return;
+    }
+    content.className = "";
+    sources.forEach((s) => content.appendChild(renderSourceCard(s)));
+  } catch (e) {
+    content.className = "err-box";
+    content.textContent = "Could not load sources: " + e.message;
+  }
+}
+
+$("inv-btn").addEventListener("click", sendInvite);
+init();
+</script>
+</body>
+</html>

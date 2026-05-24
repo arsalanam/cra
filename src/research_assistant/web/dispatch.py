@@ -1,0 +1,329 @@
+"""Dispatcher endpoint — single entry point for every user turn.
+
+The endpoint:
+  1. Reads the thread (workflow + summary + recent messages).
+  2. Computes `last_turn_kind` from the most recent assistant message.
+  3. Asks `agent.dispatcher` which specialist to route to.
+  4. Runs the chosen specialist.
+  5. Persists the structured response as JSON in `Message.final_answer`,
+     and the chosen workflow back onto `Thread.workflow`.
+
+Two URLs serve the same handler for backward compatibility:
+  • POST /api/turn           (canonical, dispatcher-aware)
+  • POST /api/clinical/turn  (alias kept while the frontend transitions)
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+from datetime import UTC, datetime, timedelta
+from typing import Any
+
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
+
+from ..agent.dispatcher import dispatch
+from ..config import get_settings
+from ..persistence.context import messages_to_history
+from ..persistence.database import get_db_session
+from ..persistence.models import Message
+from ..persistence.repository import ThreadRepository
+from ..persistence.summarizer import StubThreadSummarizer
+from ..services.quota import (
+    DailyTokenQuotaExceeded,
+    build_quota_payload,
+    enforce_daily_token_quota,
+    get_today_token_totals,
+)
+
+logger = logging.getLogger(__name__)
+
+
+def _classify_agent_error(exc: Exception) -> tuple[int, str]:
+    """Map an agent/Bedrock exception to (status_code, user-facing message).
+
+    Distinguishes the cases the user actually needs to act on differently:
+      - Wall-clock timeout (specialist exceeded `agent_timeout_seconds`)
+      - Bedrock daily-token quota (retry won't help; wait for 00:00 UTC reset
+        or request a quota increase)
+      - Generic Bedrock throttling (per-minute; just retry shortly)
+      - Everything else (surface raw error for debugging)
+    """
+    settings = get_settings()
+
+    # Pre-flight daily-token quota refusal (not a Bedrock error — raised
+    # by services.quota before any Bedrock call is made).
+    if isinstance(exc, DailyTokenQuotaExceeded):
+        return (
+            429,
+            (
+                f"Daily {exc.dimension}-token quota exceeded "
+                f"({exc.current:,} / {exc.limit:,}). "
+                f"The quota resets at 00:00 UTC (in ~{exc.hours_until_reset():.1f} hours). "
+                f"To raise the cap, increase MAX_{exc.dimension.upper()}_TOKENS_PER_DAY."
+            ),
+        )
+
+    # Wall-clock timeout from asyncio.wait_for in a specialist's run_turn.
+    if isinstance(exc, TimeoutError):
+        return (
+            504,
+            (
+                f"Agent turn exceeded the {settings.agent_timeout_seconds:.0f}s "
+                f"wall-clock limit and was cancelled. Common causes and fixes: "
+                f"(1) For math-heavy or combinatorial questions (subset-sum, "
+                f"iterative search, large summations), hint the agent to use "
+                f"`python_repl` or `sandbox_exec` — one Python call beats "
+                f"dozens of `calculator` calls. "
+                f"(2) Narrow the question's scope. "
+                f"(3) If the question is legitimately deep, raise "
+                f"AGENT_TIMEOUT_SECONDS. "
+                f"(4) If it keeps happening for the same question, check the "
+                f"server logs for a misbehaving tool stuck in a retry loop."
+            ),
+        )
+
+    msg = str(exc)
+
+    # Bedrock daily token quota — distinct from per-second throttling because
+    # retry/backoff cannot recover. boto3 has already exhausted retries by the
+    # time this exception bubbles up here.
+    if "Too many tokens per day" in msg:
+        now = datetime.now(UTC)
+        reset = (now + timedelta(days=1)).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        hours = (reset - now).total_seconds() / 3600
+        return (
+            429,
+            (
+                f"AWS Bedrock daily token quota exceeded for this account. "
+                f"The quota resets at 00:00 UTC (in ~{hours:.1f} hours). "
+                f"For a permanent fix, request an increase via the AWS "
+                f"Service Quotas console for 'Cross-region model invocation "
+                f"tokens per day' on the active model."
+            ),
+        )
+
+    # Generic Bedrock per-minute / per-second throttle — retry helps here.
+    if "ThrottlingException" in msg or "status_code: 429" in msg:
+        return (
+            429,
+            (
+                "AWS Bedrock rate-limited this request (per-minute throttle). "
+                "Wait ~30 seconds and retry. If this happens often, request a "
+                "quota increase via AWS Service Quotas."
+            ),
+        )
+
+    # Fallback — surface the raw error so the user can debug. No "Agent error:"
+    # prefix here; the frontend adds its own framing.
+    return (500, str(exc))
+
+
+def _last_assistant_kind(messages: list[Message]) -> str | None:
+    """Find the `kind` of the most recent assistant turn, if any."""
+    for msg in reversed(messages):
+        if msg.role != "assistant" or not msg.final_answer:
+            continue
+        try:
+            payload = json.loads(msg.final_answer)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        kind = payload.get("kind") if isinstance(payload, dict) else None
+        if isinstance(kind, str):
+            return kind
+    return None
+
+
+_ERRORED_TURN_USAGE_PLACEHOLDER = {
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "total_tokens": 0,
+    "requests": 0,
+    "tool_calls": 0,
+}
+
+
+async def _persist_errored_turn(
+    *,
+    thread_id: str,
+    user_message: str,
+    error: Exception,
+    fallback_workflow: str | None,
+) -> None:
+    """Write a placeholder assistant message + `done` event for a failed turn.
+
+    Without this, a turn that raises (Bedrock throttle, tool-call cap,
+    timeout, validator retry exhaustion, …) never gets recorded — the
+    usage page and daily-quota counter both go blind to errored work.
+    Token usage is unrecoverable (pydantic-ai discards partial Usage on
+    exception), so we record zeros; but the event itself increments the
+    visible question count and surfaces the error message in the thread.
+    """
+    error_payload = {
+        "kind": "error",
+        "text": f"Agent error: {error}",
+    }
+    async with get_db_session() as session:
+        repo = ThreadRepository(session)
+        try:
+            assistant_msg = await repo.add_message(
+                thread_id=thread_id,
+                role="assistant",
+                final_answer=json.dumps(error_payload),
+            )
+            await repo.add_stream_event(
+                message_id=assistant_msg.id,
+                event_type="done",
+                data={
+                    "usage": dict(_ERRORED_TURN_USAGE_PLACEHOLDER),
+                    "tool_usage": {},
+                    "workflow": fallback_workflow or "errored",
+                    "error": str(error)[:500],
+                },
+                sequence_num=0,
+            )
+        except Exception:
+            # Recording the error must never itself mask the original
+            # error — log and move on so HTTPException still surfaces.
+            logger.exception(
+                "Failed to persist errored turn for thread=%s; original "
+                "error will still be returned to the client.",
+                thread_id,
+            )
+
+
+class TurnRequest(BaseModel):
+    thread_id: str
+    user_message: str
+
+
+class TurnResponse(BaseModel):
+    user_message_id: str
+    assistant_message_id: str
+    workflow: str
+    output: dict[str, Any]
+    usage: dict[str, Any]  # per-turn token + tool usage
+    quota: dict[str, Any]  # cumulative-today vs daily cap (see _build_quota_payload)
+
+
+def create_dispatch_router() -> APIRouter:
+    router = APIRouter(tags=["turn"])
+
+    @router.post("/turn", response_model=TurnResponse)
+    @router.post("/clinical/turn", response_model=TurnResponse)
+    async def turn(body: TurnRequest) -> TurnResponse:
+        settings = get_settings()
+        logger.info(
+            "Turn requested — thread=%s, msg=%r",
+            body.thread_id,
+            body.user_message[:80],
+        )
+
+        async with get_db_session() as session:
+            repo = ThreadRepository(session)
+            thread = await repo.get_thread(body.thread_id)
+            if thread is None:
+                raise HTTPException(404, "Thread not found")
+
+            # Pre-flight daily-token quota — refuse before persisting the
+            # user message so a quota-blocked turn doesn't leave a dangling
+            # unanswered message in the thread.
+            try:
+                await enforce_daily_token_quota(session)
+            except DailyTokenQuotaExceeded as quota_exc:
+                status, detail = _classify_agent_error(quota_exc)
+                raise HTTPException(status, detail) from quota_exc
+
+            if thread.title == "New conversation":
+                await repo.update_thread(
+                    body.thread_id, title=body.user_message[:120]
+                )
+
+            user_msg = await repo.add_message(
+                thread_id=body.thread_id,
+                role="user",
+                input_text=body.user_message,
+            )
+            user_msg_id = user_msg.id
+
+            context_msgs = await repo.get_messages(
+                body.thread_id, limit=settings.context_window_messages
+            )
+            history = messages_to_history(
+                context_msgs, thread_summary=thread.summary
+            )
+            last_kind = _last_assistant_kind(context_msgs)
+            current_workflow = thread.workflow
+
+            summarizer = StubThreadSummarizer(
+                threshold=settings.summarize_after_messages
+            )
+            if await summarizer.should_summarize(body.thread_id, session):
+                await summarizer.summarize_and_truncate(body.thread_id, session)
+
+        try:
+            output, meta, chosen_workflow = await dispatch(
+                body.user_message,
+                current_workflow=current_workflow,
+                message_history=history,
+                last_turn_kind=last_kind,
+            )
+        except Exception as e:
+            logger.exception("Dispatcher / specialist failed for thread=%s", body.thread_id)
+            # Record the errored turn so it shows up in the usage page +
+            # quota counter — otherwise failed turns are invisible to all
+            # tracking and the user can't see they happened.
+            await _persist_errored_turn(
+                thread_id=body.thread_id,
+                user_message=body.user_message,
+                error=e,
+                fallback_workflow=current_workflow,
+            )
+            status, detail = _classify_agent_error(e)
+            raise HTTPException(status, detail) from e
+
+        # Persist structured output + pin the thread to the chosen workflow.
+        # The `done` StreamEvent fuels the Usage page (/api/threads/usage/monthly)
+        # — it aggregates `usage` and `tool_usage` across all done events in
+        # the current month. Without this write the page reports zeros.
+        output_json = output.model_dump_json()
+        async with get_db_session() as session:
+            repo = ThreadRepository(session)
+            assistant_msg = await repo.add_message(
+                thread_id=body.thread_id,
+                role="assistant",
+                final_answer=output_json,
+            )
+            assistant_msg_id = assistant_msg.id
+            await repo.add_stream_event(
+                message_id=assistant_msg_id,
+                event_type="done",
+                data={
+                    "usage": meta.get("usage", {}),
+                    "tool_usage": meta.get("tool_usage", {}),
+                    "workflow": chosen_workflow,
+                },
+                sequence_num=0,
+            )
+            if thread.workflow != chosen_workflow:
+                await repo.update_thread(body.thread_id, workflow=chosen_workflow)
+
+            # Compute the post-turn quota snapshot in the same session so
+            # this turn's just-written `done` event is included in the totals
+            # the client receives.
+            updated_totals = await get_today_token_totals(session)
+            quota_payload = build_quota_payload(updated_totals, settings)
+
+        return TurnResponse(
+            user_message_id=user_msg_id,
+            assistant_message_id=assistant_msg_id,
+            workflow=chosen_workflow,
+            output=output.model_dump(),
+            usage=meta["usage"],
+            quota=quota_payload,
+        )
+
+    return router

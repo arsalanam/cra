@@ -1,0 +1,211 @@
+"""Async SQLAlchemy engine, session factory, and DB initialisation."""
+
+from __future__ import annotations
+
+import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from typing import Any
+
+from sqlalchemy import inspect, text
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
+
+from ..config import get_settings
+from .models import DEFAULT_USER_ID, Base, SourceConfig, User
+
+logger = logging.getLogger(__name__)
+
+_engine: AsyncEngine | None = None
+_session_factory: async_sessionmaker[AsyncSession] | None = None
+
+
+def _get_engine_and_factory() -> tuple[AsyncEngine, async_sessionmaker[AsyncSession]]:
+    global _engine, _session_factory
+    if _engine is None:
+        settings = get_settings()
+        logger.info("Creating database engine: %s", settings.database_url)
+        _engine = create_async_engine(settings.database_url, echo=False)
+        _session_factory = async_sessionmaker(_engine, expire_on_commit=False)
+    assert _engine is not None
+    assert _session_factory is not None
+    return _engine, _session_factory
+
+
+_COLUMN_MIGRATIONS: dict[str, dict[str, str]] = {
+    # Hand-rolled additive migrations for SQLite. Each entry is
+    # `<table>: {column_name: SQL ALTER fragment}`. We check the existing
+    # columns at startup and ADD any that are missing — never drop or
+    # rename. Move to Alembic if migrations get more complex.
+    "threads": {
+        "user_id": "TEXT REFERENCES users(id) ON DELETE SET NULL",
+        "workflow": "TEXT",
+    },
+    "users": {
+        # Phase B: Cognito identity binding. SQLite can't ADD COLUMN with a
+        # UNIQUE constraint inline, so uniqueness is enforced separately via
+        # _INDEX_MIGRATIONS below (portable across SQLite + Postgres).
+        "cognito_sub": "TEXT",
+    },
+    "passages": {
+        # R2 embeddings on a table that already existed from R0. These ALTERs
+        # only ever run against the live Postgres (test DBs are created fresh
+        # by create_all, which adds these columns directly), so Postgres
+        # syntax is safe here. `vector` needs the pgvector extension (enabled
+        # in init.sql). Must match models.EMBEDDING_DIM.
+        "embedding": "vector(1024)",
+        "embedding_model": "TEXT",
+        "embedded_at": "TIMESTAMPTZ",
+    },
+}
+
+# Index DDL applied after column migrations. Each must be idempotent
+# (CREATE ... IF NOT EXISTS) — works on both SQLite and Postgres, and both
+# treat NULLs as distinct so multiple NULL cognito_sub rows are allowed.
+_INDEX_MIGRATIONS: list[str] = [
+    "CREATE UNIQUE INDEX IF NOT EXISTS ix_users_cognito_sub ON users (cognito_sub)",
+]
+
+# Columns removed from the model that must be dropped from pre-existing
+# databases. `<table>: [column, ...]`. Existence-guarded via the inspector
+# (SQLite ≥3.35 + Postgres both support ALTER TABLE DROP COLUMN). Phase D
+# dropped `users.is_admin` in favour of role-based auth (user_roles).
+_DROP_COLUMNS: dict[str, list[str]] = {
+    "users": ["is_admin"],
+}
+
+# DDL that only makes sense on Postgres (pgvector). Skipped on SQLite (tests),
+# whose `create_all` happily creates the VECTOR column as an inert type but
+# can't build an HNSW index. Run after create_all so the table exists. The
+# `vector` extension itself is enabled by deploy/compose/init.sql.
+_PG_ONLY_DDL: list[str] = [
+    "CREATE INDEX IF NOT EXISTS ix_passages_embedding_hnsw "
+    "ON passages USING hnsw (embedding vector_cosine_ops)",
+]
+
+
+async def _apply_pg_only_ddl(engine: Any) -> None:
+    """Create pgvector indexes — Postgres only, no-op elsewhere."""
+    if engine.dialect.name != "postgresql":
+        return
+    async with engine.begin() as conn:
+        for ddl in _PG_ONLY_DDL:
+            await conn.exec_driver_sql(ddl)
+
+
+async def _apply_additive_migrations(engine: Any) -> None:
+    """ALTER TABLE ADD/DROP COLUMN + CREATE INDEX to reconcile an existing DB."""
+
+    def _migrate(sync_conn: Any) -> None:
+        insp = inspect(sync_conn)
+        for table, columns in _COLUMN_MIGRATIONS.items():
+            if not insp.has_table(table):
+                # create_all will have made it with the new columns already.
+                continue
+            existing = {c["name"] for c in insp.get_columns(table)}
+            for col, ddl in columns.items():
+                if col not in existing:
+                    logger.info("Migrating: ALTER %s ADD COLUMN %s", table, col)
+                    sync_conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}")
+        # Columns exist now; add any missing indexes.
+        for ddl in _INDEX_MIGRATIONS:
+            sync_conn.exec_driver_sql(ddl)
+        # Drop removed columns from databases that still have them.
+        for table, cols in _DROP_COLUMNS.items():
+            if not insp.has_table(table):
+                continue
+            existing = {c["name"] for c in insp.get_columns(table)}
+            for col in cols:
+                if col in existing:
+                    logger.info("Migrating: ALTER %s DROP COLUMN %s", table, col)
+                    sync_conn.exec_driver_sql(f"ALTER TABLE {table} DROP COLUMN {col}")
+
+    async with engine.begin() as conn:
+        await conn.run_sync(_migrate)
+
+
+async def init_db() -> None:
+    """Create all tables if they don't exist; seed the default user."""
+    engine, factory = _get_engine_and_factory()
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    # Apply lightweight schema upgrades for existing databases that pre-date
+    # the User/Thread.user_id/Thread.workflow additions.
+    await _apply_additive_migrations(engine)
+
+    # pgvector indexes (Postgres only; no-op on SQLite test DBs).
+    await _apply_pg_only_ddl(engine)
+
+    # Seed a default user so existing single-user installs can keep
+    # creating threads without auth wired up. When auth lands the
+    # default-user row stays, but new threads will be tied to logged-in
+    # users instead.
+    async with factory() as session:
+        existing = await session.get(User, DEFAULT_USER_ID)
+        if existing is None:
+            session.add(User(id=DEFAULT_USER_ID, name="Default User"))
+            await session.commit()
+            logger.info("Seeded default user %r", DEFAULT_USER_ID)
+
+        # Backfill: existing threads get the default user.
+        await session.execute(
+            text("UPDATE threads SET user_id = :uid WHERE user_id IS NULL"),
+            {"uid": DEFAULT_USER_ID},
+        )
+        await session.commit()
+
+        # Seed paper-source configs. Idempotent: existing rows are left
+        # alone so admin edits survive restarts.
+        for defaults in _SOURCE_CONFIG_DEFAULTS:
+            existing_src = await session.get(SourceConfig, defaults["id"])
+            if existing_src is None:
+                session.add(SourceConfig(**defaults))
+                logger.info("Seeded source_config %r", defaults["id"])
+        await session.commit()
+
+    logger.info("Database tables initialised")
+
+
+_SOURCE_CONFIG_DEFAULTS: list[dict[str, Any]] = [
+    {
+        "id": "pubmed",
+        "display_name": "PubMed (NCBI E-utilities)",
+        "enabled": True,
+        # api_key intentionally empty — falls back to settings.ncbi_api_key.
+        "api_key": None,
+        "contact_email": None,
+    },
+    {
+        "id": "europepmc",
+        "display_name": "Europe PMC",
+        "enabled": True,
+        "api_key": None,
+        "contact_email": None,
+    },
+]
+
+
+def reset_engine() -> None:
+    """Tear down the cached engine/factory. Used by tests to force re-init."""
+    global _engine, _session_factory
+    _engine = None
+    _session_factory = None
+
+
+@asynccontextmanager
+async def get_db_session() -> AsyncIterator[AsyncSession]:
+    """Yield an async session; commits on success, rolls back on error."""
+    _, factory = _get_engine_and_factory()
+    async with factory() as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            logger.error("Database session error — rolling back", exc_info=True)
+            await session.rollback()
+            raise
