@@ -62,7 +62,7 @@ def _container_to_host_path(path: Path) -> str:
         # tempfile.mkdtemp returned a path outside the configured root —
         # usually a misconfiguration. Pass through; daemon will reject.
         return s
-    return host_root + s[len(container_root):]
+    return host_root + s[len(container_root) :]
 
 
 @dataclass
@@ -186,9 +186,7 @@ async def _impl(
                 shutil.copyfile(fpath, dest)
                 output_files[fpath.name] = f"{_IMAGE_URL_PREFIX}/{stored_name}"
             elif fpath.stat().st_size < 50_000:
-                output_files[fpath.name] = fpath.read_text(
-                    encoding="utf-8", errors="replace"
-                )
+                output_files[fpath.name] = fpath.read_text(encoding="utf-8", errors="replace")
 
         logger.info(
             "Sandbox produced %d output files: %s",
@@ -239,13 +237,15 @@ def register(agent: Agent[AgentDeps]) -> None:
         URL — the LLM never sees the bytes.
         No network access is available inside the sandbox.
         """
-        await ctx.deps.event_queue.put({
-            "type": "tool_start",
-            "tool": "sandbox_exec",
-            "icon": "D",
-            "args": {"code": truncate(code, 200)},
-            "description": "Running code in Docker sandbox...",
-        })
+        await ctx.deps.event_queue.put(
+            {
+                "type": "tool_start",
+                "tool": "sandbox_exec",
+                "icon": "D",
+                "args": {"code": truncate(code, 200)},
+                "description": "Running code in Docker sandbox...",
+            }
+        )
 
         result = await _impl(code, input_data, input_format)
 
@@ -256,22 +256,26 @@ def register(agent: Agent[AgentDeps]) -> None:
             if isinstance(content, str) and content.startswith(f"{_IMAGE_URL_PREFIX}/"):
                 logger.info("Image artifact: %s -> %s", fname, content)
                 ctx.deps.artifacts[fname] = content
-                await ctx.deps.event_queue.put({
-                    "type": "artifact",
-                    "tool": "sandbox_exec",
-                    "filename": fname,
-                    "artifact_type": "image",
-                    "url": content,
-                })
+                await ctx.deps.event_queue.put(
+                    {
+                        "type": "artifact",
+                        "tool": "sandbox_exec",
+                        "filename": fname,
+                        "artifact_type": "image",
+                        "url": content,
+                    }
+                )
             elif isinstance(content, str):
                 logger.info("Text artifact: %s (%d bytes)", fname, len(content))
-                await ctx.deps.event_queue.put({
-                    "type": "artifact",
-                    "tool": "sandbox_exec",
-                    "filename": fname,
-                    "artifact_type": "text",
-                    "content": content,
-                })
+                await ctx.deps.event_queue.put(
+                    {
+                        "type": "artifact",
+                        "tool": "sandbox_exec",
+                        "filename": fname,
+                        "artifact_type": "text",
+                        "content": content,
+                    }
+                )
 
         # Build the string returned to the LLM.
         # Strip large base64 data — the LLM doesn't need image bytes,
@@ -283,10 +287,12 @@ def register(agent: Agent[AgentDeps]) -> None:
             llm_result["files_generated"] = list(result.files.keys())
         llm_json = json.dumps(llm_result, ensure_ascii=False)
 
-        await ctx.deps.event_queue.put({
-            "type": "tool_end",
-            "tool": "sandbox_exec",
-            "result_preview": truncate(llm_json),
-        })
+        await ctx.deps.event_queue.put(
+            {
+                "type": "tool_end",
+                "tool": "sandbox_exec",
+                "result_preview": truncate(llm_json),
+            }
+        )
 
         return llm_json

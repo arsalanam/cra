@@ -16,12 +16,27 @@ from pydantic_ai import Agent, RunContext
 from ...agent.deps import AgentDeps
 from .._emit import emit_run
 
-_SAFE_NODES: frozenset[type[ast.AST]] = frozenset({
-    ast.Expression, ast.BinOp, ast.UnaryOp, ast.Num, ast.Constant,
-    ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Pow, ast.Mod,
-    ast.FloorDiv, ast.USub, ast.UAdd, ast.Call, ast.Name,
-    ast.Load,
-})
+_SAFE_NODES: frozenset[type[ast.AST]] = frozenset(
+    {
+        ast.Expression,
+        ast.BinOp,
+        ast.UnaryOp,
+        ast.Num,
+        ast.Constant,
+        ast.Add,
+        ast.Sub,
+        ast.Mult,
+        ast.Div,
+        ast.Pow,
+        ast.Mod,
+        ast.FloorDiv,
+        ast.USub,
+        ast.UAdd,
+        ast.Call,
+        ast.Name,
+        ast.Load,
+    }
+)
 
 _SAFE_NAMES: dict[str, object] = {
     "pi": math.pi,

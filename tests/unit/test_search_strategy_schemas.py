@@ -96,16 +96,12 @@ def test_strategy_result_full_round_trip() -> None:
                     "AND MeSH descriptor: [Acute Coronary Syndrome] explode all trees"
                 ),
                 executable=False,
-                caveats=[
-                    "Run inside Cochrane Library — limit to CENTRAL trial register"
-                ],
+                caveats=["Run inside Cochrane Library — limit to CENTRAL trial register"],
             ),
             QueryPlan(
                 database="embase",
                 syntax_dialect="Emtree + Embase syntax",
-                composed_query=(
-                    "'proton pump inhibitor'/exp AND 'acute coronary syndrome'/exp"
-                ),
+                composed_query=("'proton pump inhibitor'/exp AND 'acute coronary syndrome'/exp"),
                 executable=False,
                 caveats=[
                     "Emtree terms are unverified — confirm against Embase Emtree "
@@ -149,8 +145,7 @@ def test_executable_false_plan_can_omit_estimated_hits() -> None:
         composed_query="...",
         executable=False,
         caveats=[
-            "Emtree terms are unverified — confirm against Embase Emtree thesaurus "
-            "before running."
+            "Emtree terms are unverified — confirm against Embase Emtree thesaurus before running."
         ],
     )
     assert plan.estimated_hits is None
@@ -159,9 +154,7 @@ def test_executable_false_plan_can_omit_estimated_hits() -> None:
 def test_refinement_continuation_must_be_present() -> None:
     """Refinement requires continuation — schema enforces presence (not prefix)."""
     with pytest.raises(ValidationError):
-        Refinement.model_validate(
-            {"direction": "narrow", "label": "x", "rationale": "y"}
-        )
+        Refinement.model_validate({"direction": "narrow", "label": "x", "rationale": "y"})
 
 
 def test_target_band_is_a_tuple() -> None:

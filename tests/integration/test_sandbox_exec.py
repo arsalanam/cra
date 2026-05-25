@@ -15,7 +15,8 @@ def _sandbox_image_exists() -> bool:
     try:
         result = subprocess.run(
             ["docker", "image", "inspect", "pydantic-sandbox:latest"],
-            capture_output=True, timeout=10,
+            capture_output=True,
+            timeout=10,
         )
         return result.returncode == 0
     except Exception:
@@ -80,4 +81,5 @@ print('plot saved')
     # The file is actually on disk under the configured images_dir.
     stored_name = url.removeprefix("/images/")
     from pathlib import Path
+
     assert (Path(images_dir) / stored_name).exists()

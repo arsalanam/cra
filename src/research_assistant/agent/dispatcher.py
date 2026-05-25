@@ -43,18 +43,18 @@ logger = logging.getLogger(__name__)
 
 
 _SLASH_COMMANDS: dict[str, str] = {
-    "meta":          meta_analysis.WORKFLOW_NAME,
+    "meta": meta_analysis.WORKFLOW_NAME,
     "meta-analysis": meta_analysis.WORKFLOW_NAME,
-    "ma":            meta_analysis.WORKFLOW_NAME,
-    "search":        search_strategy.WORKFLOW_NAME,
-    "strategy":      search_strategy.WORKFLOW_NAME,
-    "protocol":      sr_protocol.WORKFLOW_NAME,
-    "sr":            sr_protocol.WORKFLOW_NAME,
-    "prisma":        sr_protocol.WORKFLOW_NAME,
-    "rob":           risk_of_bias.WORKFLOW_NAME,
-    "bias":          risk_of_bias.WORKFLOW_NAME,
-    "general":       general_qa.WORKFLOW_NAME,
-    "ask":           general_qa.WORKFLOW_NAME,
+    "ma": meta_analysis.WORKFLOW_NAME,
+    "search": search_strategy.WORKFLOW_NAME,
+    "strategy": search_strategy.WORKFLOW_NAME,
+    "protocol": sr_protocol.WORKFLOW_NAME,
+    "sr": sr_protocol.WORKFLOW_NAME,
+    "prisma": sr_protocol.WORKFLOW_NAME,
+    "rob": risk_of_bias.WORKFLOW_NAME,
+    "bias": risk_of_bias.WORKFLOW_NAME,
+    "general": general_qa.WORKFLOW_NAME,
+    "ask": general_qa.WORKFLOW_NAME,
     # Future: "gap" -> "research_gap", "ecrf" -> "ecrf_design"
 }
 
@@ -84,8 +84,8 @@ _WORKFLOW_CONTINUATIONS: dict[str, tuple[str, ...]] = {
     risk_of_bias.WORKFLOW_NAME: (
         "RoB confirmed",
         "Finalize RoB",
-        "Run RoB on PMID",                  # explicit ad-hoc trigger
-        "Run risk of bias on extracted",    # handoff seed from data_extraction
+        "Run RoB on PMID",  # explicit ad-hoc trigger
+        "Run risk of bias on extracted",  # handoff seed from data_extraction
     ),
     # Future: research_gap / ecrf continuations
 }
@@ -110,46 +110,58 @@ _DEFINITIONAL_OPENINGS = re.compile(
 _TRIGGER_KEYWORDS: list[tuple[str, list[re.Pattern[str]]]] = [
     # risk_of_bias checked first: "assess risk of bias for these studies"
     # mentions studies but the user wants the RoB tool, not meta_analysis.
-    (risk_of_bias.WORKFLOW_NAME, [
-        re.compile(r"\brisk[-\s]of[-\s]bias\b", re.I),
-        re.compile(r"\bRoB\s*(2(\.0)?|2|assessment|analysis)?\b", re.I),
-        re.compile(r"\bROBINS[-\s]?I\b", re.I),
-        re.compile(r"\bNewcastle[-\s]Ottawa\b", re.I),
-        re.compile(r"\bQUADAS[-\s]?2\b", re.I),
-    ]),
+    (
+        risk_of_bias.WORKFLOW_NAME,
+        [
+            re.compile(r"\brisk[-\s]of[-\s]bias\b", re.I),
+            re.compile(r"\bRoB\s*(2(\.0)?|2|assessment|analysis)?\b", re.I),
+            re.compile(r"\bROBINS[-\s]?I\b", re.I),
+            re.compile(r"\bNewcastle[-\s]Ottawa\b", re.I),
+            re.compile(r"\bQUADAS[-\s]?2\b", re.I),
+        ],
+    ),
     # sr_protocol checked before search_strategy/meta_analysis: phrases like
     # "draft a protocol for a meta-analysis on X" mention meta-analysis but
     # the user wants the protocol drafter, not the analysis runner.
-    (sr_protocol.WORKFLOW_NAME, [
-        re.compile(r"\bPRISMA[-\s]?P?\b", re.I),
-        re.compile(r"\bPROSPERO\b", re.I),
-        re.compile(r"\b(systematic review|meta[-\s]analysis) protocol\b", re.I),
-        re.compile(r"\bdraft (a |me a |the )?protocol\b", re.I),
-        re.compile(r"\bregister (a |an )?(systematic|protocol)\b", re.I),
-    ]),
-    (search_strategy.WORKFLOW_NAME, [
-        re.compile(r"\bsearch strategy\b", re.I),
-        re.compile(r"\b(pubmed|embase|cochrane) (query|search)\b", re.I),
-        re.compile(r"\bbuild (a |me a |the )?(search|query)\b", re.I),
-        re.compile(r"\bboolean (query|search|string)\b", re.I),
-        re.compile(r"\bMeSH (terms|query|strategy)\b", re.I),
-    ]),
-    (meta_analysis.WORKFLOW_NAME, [
-        re.compile(r"\bmeta[\s-]analysis\b", re.I),
-        re.compile(r"\bsystematic review\b", re.I),
-        re.compile(r"\bPICO\b"),
-        re.compile(r"\bPRISMA\b"),
-        re.compile(r"\bpooled (effect|odds|risk)\b", re.I),
-        re.compile(r"\bevidence (says|shows|suggests|on)\b", re.I),
-        # "Does X reduce/increase/improve/prevent/treat Y" is the canonical
-        # research-question shape.
-        re.compile(
-            r"\bdoes\s+\w+.*\b(reduce|increase|improve|prevent|cause|treat|compared?)\b",
-            re.I,
-        ),
-        # "Compare/efficacy of/effect of …"
-        re.compile(r"\b(compare|efficacy of|effect of|risk of)\s+\w", re.I),
-    ]),
+    (
+        sr_protocol.WORKFLOW_NAME,
+        [
+            re.compile(r"\bPRISMA[-\s]?P?\b", re.I),
+            re.compile(r"\bPROSPERO\b", re.I),
+            re.compile(r"\b(systematic review|meta[-\s]analysis) protocol\b", re.I),
+            re.compile(r"\bdraft (a |me a |the )?protocol\b", re.I),
+            re.compile(r"\bregister (a |an )?(systematic|protocol)\b", re.I),
+        ],
+    ),
+    (
+        search_strategy.WORKFLOW_NAME,
+        [
+            re.compile(r"\bsearch strategy\b", re.I),
+            re.compile(r"\b(pubmed|embase|cochrane) (query|search)\b", re.I),
+            re.compile(r"\bbuild (a |me a |the )?(search|query)\b", re.I),
+            re.compile(r"\bboolean (query|search|string)\b", re.I),
+            re.compile(r"\bMeSH (terms|query|strategy)\b", re.I),
+        ],
+    ),
+    (
+        meta_analysis.WORKFLOW_NAME,
+        [
+            re.compile(r"\bmeta[\s-]analysis\b", re.I),
+            re.compile(r"\bsystematic review\b", re.I),
+            re.compile(r"\bPICO\b"),
+            re.compile(r"\bPRISMA\b"),
+            re.compile(r"\bpooled (effect|odds|risk)\b", re.I),
+            re.compile(r"\bevidence (says|shows|suggests|on)\b", re.I),
+            # "Does X reduce/increase/improve/prevent/treat Y" is the canonical
+            # research-question shape.
+            re.compile(
+                r"\bdoes\s+\w+.*\b(reduce|increase|improve|prevent|cause|treat|compared?)\b",
+                re.I,
+            ),
+            # "Compare/efficacy of/effect of …"
+            re.compile(r"\b(compare|efficacy of|effect of|risk of)\s+\w", re.I),
+        ],
+    ),
     # Future:
     # ("research_gap", [re.compile(r"\bresearch gap\b", re.I), ...]),
     # ("ecrf_design", [re.compile(r"\beCRF\b"), re.compile(r"\bcase report form\b", re.I), ...]),
@@ -178,7 +190,8 @@ def classify(user_message: str, current_workflow: str | None) -> str:
     for workflow, prefixes in _WORKFLOW_CONTINUATIONS.items():
         if any(msg.startswith(p) for p in prefixes):
             logger.info(
-                "Dispatcher: continuation prefix matched -> %s", workflow,
+                "Dispatcher: continuation prefix matched -> %s",
+                workflow,
             )
             return workflow
 
@@ -192,7 +205,8 @@ def classify(user_message: str, current_workflow: str | None) -> str:
     # 4. If already pinned to a workflow, stay there
     if current_workflow and current_workflow in SPECIALISTS:
         logger.debug(
-            "Dispatcher: thread pinned to %r, staying", current_workflow,
+            "Dispatcher: thread pinned to %r, staying",
+            current_workflow,
         )
         return current_workflow
 
@@ -200,7 +214,8 @@ def classify(user_message: str, current_workflow: str | None) -> str:
     for workflow, patterns in _TRIGGER_KEYWORDS:
         if any(p.search(msg_lower) for p in patterns):
             logger.info(
-                "Dispatcher: keyword match -> %s", workflow,
+                "Dispatcher: keyword match -> %s",
+                workflow,
             )
             return workflow
 

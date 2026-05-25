@@ -115,10 +115,12 @@ async def _impl(url: str) -> str:
             doc_type = _detect_type(url, content_type)
 
             if doc_type is None:
-                return json.dumps({
-                    "error": f"Unsupported file type. Content-Type: {content_type}. "
-                    "Supported: PDF, DOCX, PPTX.",
-                })
+                return json.dumps(
+                    {
+                        "error": f"Unsupported file type. Content-Type: {content_type}. "
+                        "Supported: PDF, DOCX, PPTX.",
+                    }
+                )
 
             extractor = _EXTRACTORS[doc_type]
             result = await asyncio.to_thread(extractor, resp.content)

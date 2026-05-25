@@ -63,31 +63,31 @@ async def _impl(url: str) -> str:
 
         response = bedrock.converse(
             modelId=settings.vision_model_id,
-            messages=[{
-                "role": "user",
-                "content": [
-                    {
-                        "image": {
-                            "format": fmt,
-                            "source": {"bytes": image_bytes},
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "image": {
+                                "format": fmt,
+                                "source": {"bytes": image_bytes},
+                            },
                         },
-                    },
-                    {
-                        "text": (
-                            "Describe this image in detail. Include: the main subject, "
-                            "visual elements, any text visible in the image, colors, "
-                            "composition, and context. Be factual and thorough."
-                        ),
-                    },
-                ],
-            }],
+                        {
+                            "text": (
+                                "Describe this image in detail. Include: the main subject, "
+                                "visual elements, any text visible in the image, colors, "
+                                "composition, and context. Be factual and thorough."
+                            ),
+                        },
+                    ],
+                }
+            ],
             inferenceConfig={"maxTokens": 1024, "temperature": 0.2},
         )
 
         output_parts = response.get("output", {}).get("message", {}).get("content", [])
-        description = " ".join(
-            part["text"] for part in output_parts if "text" in part
-        )
+        description = " ".join(part["text"] for part in output_parts if "text" in part)
 
         logger.info("Image described: %s (%d chars)", url[:80], len(description))
         return description or "No description generated."

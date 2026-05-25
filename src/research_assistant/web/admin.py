@@ -107,9 +107,7 @@ def create_admin_router() -> APIRouter:
         async with get_db_session() as session:
             repo = UserRepository(session)
             inviter = await repo.get_by_sub(admin.sub)
-            await repo.create_invitation(
-                email, roles, invited_by=inviter.id if inviter else None
-            )
+            await repo.create_invitation(email, roles, invited_by=inviter.id if inviter else None)
 
         logger.info("Admin invited %s with roles %s (cognito=%s)", email, roles, cognito_status)
         return InviteUserOut(email=email, roles=roles, cognito_status=cognito_status)

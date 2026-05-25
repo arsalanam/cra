@@ -128,18 +128,18 @@ async def migrate(source_url: str, target_url: str) -> None:
     # Sanity: the target must already have the schema. We don't create
     # tables here — agent's init_db owns that.
     async with tgt_engine.begin() as conn:
+
         def _check(sync_conn: Any) -> None:
             from sqlalchemy import inspect
+
             insp = inspect(sync_conn)
-            missing = [
-                t for t in (m.__tablename__ for m in _COPY_ORDER)
-                if not insp.has_table(t)
-            ]
+            missing = [t for t in (m.__tablename__ for m in _COPY_ORDER) if not insp.has_table(t)]
             if missing:
                 raise RuntimeError(
                     f"Target DB is missing tables: {missing}. "
                     "Run `docker compose up agent` first so init_db creates them."
                 )
+
         await conn.run_sync(_check)
 
     totals_copied = 0

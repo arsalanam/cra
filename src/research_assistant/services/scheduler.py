@@ -70,9 +70,7 @@ async def start_scheduler() -> None:
             register_watch(watch)
             registered += 1
         except Exception:
-            logger.exception(
-                "Could not register watch %s on startup; skipping", watch.id
-            )
+            logger.exception("Could not register watch %s on startup; skipping", watch.id)
     logger.info("Scheduler re-registered %d active watch(es) from DB", registered)
 
 
@@ -109,13 +107,15 @@ def register_watch(watch: LiteratureWatch) -> None:
         args=[watch.id],
         replace_existing=True,
         max_instances=1,  # don't stack a watch on top of itself if a run runs long
-        coalesce=True,    # if missed firings stack up, only run once
+        coalesce=True,  # if missed firings stack up, only run once
         misfire_grace_time=600,  # tolerate a 10-min late firing
     )
     next_fire = sched.get_job(_job_id(watch.id)).next_run_time
     logger.info(
         "Scheduler: registered watch %s (cron=%r, next=%s)",
-        watch.id, watch.schedule_cron, next_fire,
+        watch.id,
+        watch.schedule_cron,
+        next_fire,
     )
 
 
@@ -139,6 +139,7 @@ def trigger_now(watch_id: str) -> None:
     """Fire the watch immediately (out-of-schedule). Used by /run-now endpoint."""
     sched = get_scheduler()
     from .watch_runner import run_watch
+
     sched.add_job(
         run_watch,
         args=[watch_id],

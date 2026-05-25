@@ -76,7 +76,4 @@ def test_pinned_search_strategy_thread_stays_pinned() -> None:
 def test_definitional_question_breaks_out_to_general_qa() -> None:
     """Definitional openings always go to general_qa, even mid-strategy thread."""
     msg = "what is a MeSH term?"
-    assert (
-        classify(msg, current_workflow=search_strategy.WORKFLOW_NAME)
-        == general_qa.WORKFLOW_NAME
-    )
+    assert classify(msg, current_workflow=search_strategy.WORKFLOW_NAME) == general_qa.WORKFLOW_NAME

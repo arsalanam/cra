@@ -104,8 +104,7 @@ class StudyRobAssessment(BaseModel):
     title: str
     study_design: str = Field(
         description=(
-            "e.g. 'Randomized Controlled Trial', 'Cohort study'. "
-            "Drives RoB tool selection."
+            "e.g. 'Randomized Controlled Trial', 'Cohort study'. Drives RoB tool selection."
         ),
     )
     domains: list[RobDomain] = Field(

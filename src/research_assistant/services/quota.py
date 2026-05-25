@@ -58,9 +58,7 @@ class DailyTokenQuotaExceeded(Exception):
         current: int,
         day_start: datetime,
     ) -> None:
-        super().__init__(
-            f"Daily {dimension}-token quota exceeded: {current} >= {limit}"
-        )
+        super().__init__(f"Daily {dimension}-token quota exceeded: {current} >= {limit}")
         self.dimension = dimension
         self.limit = limit
         self.current = current
@@ -115,6 +113,7 @@ def build_quota_payload(totals: DailyTokenTotals, settings: Settings) -> dict[st
     When a limit is 0 (enforcement disabled for that axis), `remaining` is
     null and `percent` is 0.
     """
+
     def _axis(used: int, limit: int) -> dict[str, Any]:
         if limit <= 0:
             return {"used": used, "limit": 0, "remaining": None, "percent": 0.0}
@@ -137,8 +136,7 @@ def build_quota_payload(totals: DailyTokenTotals, settings: Settings) -> dict[st
         "day_start_utc": totals.day_start.isoformat(),
         "hours_until_reset": round(hours_until_reset, 2),
         "enforcement_enabled": (
-            settings.max_input_tokens_per_day > 0
-            or settings.max_output_tokens_per_day > 0
+            settings.max_input_tokens_per_day > 0 or settings.max_output_tokens_per_day > 0
         ),
     }
 

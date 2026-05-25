@@ -11,6 +11,7 @@ Run:
 
 Assumes the FastAPI dev server is running on http://localhost:8000.
 """
+
 from __future__ import annotations
 
 import sys

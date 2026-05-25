@@ -84,7 +84,10 @@ async def test_valid_token_accepted() -> None:
     token = _sign(pem, sub="u1", email="alice@example.com")
 
     claims = await validate_id_token(
-        token, region=REGION, user_pool_id=POOL_ID, client_id=CLIENT_ID,
+        token,
+        region=REGION,
+        user_pool_id=POOL_ID,
+        client_id=CLIENT_ID,
     )
     assert claims.sub == "u1"
     assert claims.email == "alice@example.com"
@@ -98,7 +101,10 @@ async def test_expired_token_rejected() -> None:
 
     with pytest.raises(TokenValidationError, match="expired"):
         await validate_id_token(
-            token, region=REGION, user_pool_id=POOL_ID, client_id=CLIENT_ID,
+            token,
+            region=REGION,
+            user_pool_id=POOL_ID,
+            client_id=CLIENT_ID,
         )
 
 
@@ -109,7 +115,10 @@ async def test_wrong_audience_rejected() -> None:
 
     with pytest.raises(TokenValidationError, match="claim check failed"):
         await validate_id_token(
-            token, region=REGION, user_pool_id=POOL_ID, client_id=CLIENT_ID,
+            token,
+            region=REGION,
+            user_pool_id=POOL_ID,
+            client_id=CLIENT_ID,
         )
 
 
@@ -120,7 +129,10 @@ async def test_wrong_issuer_rejected() -> None:
 
     with pytest.raises(TokenValidationError, match="claim check failed"):
         await validate_id_token(
-            token, region=REGION, user_pool_id=POOL_ID, client_id=CLIENT_ID,
+            token,
+            region=REGION,
+            user_pool_id=POOL_ID,
+            client_id=CLIENT_ID,
         )
 
 
@@ -134,7 +146,10 @@ async def test_signed_with_unknown_key_rejected() -> None:
 
     with pytest.raises(TokenValidationError, match="signature"):
         await validate_id_token(
-            token, region=REGION, user_pool_id=POOL_ID, client_id=CLIENT_ID,
+            token,
+            region=REGION,
+            user_pool_id=POOL_ID,
+            client_id=CLIENT_ID,
         )
 
 
@@ -143,14 +158,22 @@ async def test_missing_kid_rejected() -> None:
     # Hand-craft a token with no kid in the header.
     token = jwt.encode(
         {
-            "sub": "u1", "email": "a@b.c", "aud": CLIENT_ID, "iss": ISSUER,
-            "iat": int(time.time()), "exp": int(time.time()) + 600,
+            "sub": "u1",
+            "email": "a@b.c",
+            "aud": CLIENT_ID,
+            "iss": ISSUER,
+            "iat": int(time.time()),
+            "exp": int(time.time()) + 600,
         },
-        pem, algorithm="RS256",
+        pem,
+        algorithm="RS256",
     )
     with pytest.raises(TokenValidationError, match="kid"):
         await validate_id_token(
-            token, region=REGION, user_pool_id=POOL_ID, client_id=CLIENT_ID,
+            token,
+            region=REGION,
+            user_pool_id=POOL_ID,
+            client_id=CLIENT_ID,
         )
 
 
@@ -161,14 +184,23 @@ async def test_token_missing_email_claim_rejected() -> None:
     now = int(time.time())
     token = jwt.encode(
         {
-            "sub": "u1", "aud": CLIENT_ID, "iss": ISSUER,
-            "iat": now, "exp": now + 600, "token_use": "id",
+            "sub": "u1",
+            "aud": CLIENT_ID,
+            "iss": ISSUER,
+            "iat": now,
+            "exp": now + 600,
+            "token_use": "id",
         },
-        pem, algorithm="RS256", headers={"kid": KID},
+        pem,
+        algorithm="RS256",
+        headers={"kid": KID},
     )
     with pytest.raises(TokenValidationError, match="required claims"):
         await validate_id_token(
-            token, region=REGION, user_pool_id=POOL_ID, client_id=CLIENT_ID,
+            token,
+            region=REGION,
+            user_pool_id=POOL_ID,
+            client_id=CLIENT_ID,
         )
 
 
@@ -209,7 +241,10 @@ async def test_at_hash_present_but_no_access_token_rejected() -> None:
 
     with pytest.raises(TokenValidationError, match="claim check failed"):
         await validate_id_token(
-            token, region=REGION, user_pool_id=POOL_ID, client_id=CLIENT_ID,
+            token,
+            region=REGION,
+            user_pool_id=POOL_ID,
+            client_id=CLIENT_ID,
         )
 
 

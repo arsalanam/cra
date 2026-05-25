@@ -38,6 +38,7 @@ _BASE_URLS: dict[str, str] = {
     "europepmc": "https://www.ebi.ac.uk/europepmc/webservices/rest",
 }
 
+
 # Per-source auth-strategy builders. Each callable receives the resolved
 # credential string (DB row → env fallback) and returns the right strategy.
 # Adding a new source = add one entry here (plus base URL + DB seed).

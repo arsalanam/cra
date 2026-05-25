@@ -76,9 +76,7 @@ _cache: JwksCache | None = None
 def get_jwks_cache(region: str, user_pool_id: str) -> JwksCache:
     """Process-wide singleton (rebuilt if region/pool changes — e.g. in tests)."""
     global _cache
-    if _cache is None or (
-        _cache._region != region or _cache._user_pool_id != user_pool_id
-    ):
+    if _cache is None or (_cache._region != region or _cache._user_pool_id != user_pool_id):
         _cache = JwksCache(region=region, user_pool_id=user_pool_id)
     return _cache
 

@@ -56,18 +56,14 @@ async def run_watch(watch_id: str) -> None:
             try:
                 async with get_db_session() as session:
                     repo = WatchRepository(session)
-                    await repo.finish_run(
-                        run_id, status="error", error_message=str(e)[:500]
-                    )
+                    await repo.finish_run(run_id, status="error", error_message=str(e)[:500])
                     await repo.update_watch(
                         watch_id,
                         last_run_at=_utcnow(),
                         last_run_status="error",
                     )
             except Exception:
-                logger.exception(
-                    "run_watch: also failed to record error state for %s", watch_id
-                )
+                logger.exception("run_watch: also failed to record error state for %s", watch_id)
 
 
 async def _execute_run(watch_id: str, run_id: str) -> None:
@@ -98,9 +94,7 @@ async def _execute_run(watch_id: str, run_id: str) -> None:
                 status="error",
                 error_message=str(envelope["error"])[:500],
             )
-            await repo.update_watch(
-                watch_id, last_run_at=_utcnow(), last_run_status="error"
-            )
+            await repo.update_watch(watch_id, last_run_at=_utcnow(), last_run_status="error")
         return
 
     studies = envelope.get("studies") or []
@@ -113,7 +107,10 @@ async def _execute_run(watch_id: str, run_id: str) -> None:
 
     logger.info(
         "run_watch %s: total=%d new=%d removed=%d",
-        watch_id, len(current_pmids), len(new_pmids), len(removed_pmids),
+        watch_id,
+        len(current_pmids),
+        len(new_pmids),
+        len(removed_pmids),
     )
 
     if not new_pmids:
@@ -157,7 +154,8 @@ async def _execute_run(watch_id: str, run_id: str) -> None:
             logger.warning(
                 "run_watch %s: skipped triage — daily token quota exceeded "
                 "(%s); will retry next scheduled run",
-                watch_id, quota_exc,
+                watch_id,
+                quota_exc,
             )
             return
 
@@ -200,20 +198,17 @@ async def _execute_run(watch_id: str, run_id: str) -> None:
             baseline_pmids_json=json.dumps(sorted(current_pmids)),
         )
         if summary.notify:
-            material_count = sum(
-                1 for t in summary.triages if t.materiality >= triage_threshold
-            )
+            material_count = sum(1 for t in summary.triages if t.materiality >= triage_threshold)
             await repo.add_notification(
                 watch_id=watch_id,
                 run_id=run_id,
-                title=(
-                    f"{material_count} material new paper(s) for "
-                    f"{watch_name!r}"
-                ),
+                title=(f"{material_count} material new paper(s) for {watch_name!r}"),
                 summary=summary.significance_summary,
                 new_paper_count=len(new_pmids),
             )
             logger.info(
                 "run_watch %s: notification raised (%d material of %d new)",
-                watch_id, material_count, len(new_pmids),
+                watch_id,
+                material_count,
+                len(new_pmids),
             )

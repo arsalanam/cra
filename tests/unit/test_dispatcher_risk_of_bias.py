@@ -83,16 +83,10 @@ def test_protocol_question_still_routes_to_sr_protocol() -> None:
 
 def test_pinned_risk_of_bias_thread_stays_pinned() -> None:
     msg = "what about being stricter on the missing-data domain"
-    assert (
-        classify(msg, current_workflow=risk_of_bias.WORKFLOW_NAME)
-        == risk_of_bias.WORKFLOW_NAME
-    )
+    assert classify(msg, current_workflow=risk_of_bias.WORKFLOW_NAME) == risk_of_bias.WORKFLOW_NAME
 
 
 def test_definitional_question_breaks_out_to_general_qa() -> None:
     """Definitional openings always go to general_qa, even mid-RoB thread."""
     msg = "what is RoB 2.0?"
-    assert (
-        classify(msg, current_workflow=risk_of_bias.WORKFLOW_NAME)
-        == general_qa.WORKFLOW_NAME
-    )
+    assert classify(msg, current_workflow=risk_of_bias.WORKFLOW_NAME) == general_qa.WORKFLOW_NAME

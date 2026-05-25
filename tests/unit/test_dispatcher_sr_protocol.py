@@ -77,16 +77,10 @@ def test_search_strategy_question_still_routes_to_search_strategy() -> None:
 
 def test_pinned_sr_protocol_thread_stays_pinned() -> None:
     msg = "what about including observational studies"
-    assert (
-        classify(msg, current_workflow=sr_protocol.WORKFLOW_NAME)
-        == sr_protocol.WORKFLOW_NAME
-    )
+    assert classify(msg, current_workflow=sr_protocol.WORKFLOW_NAME) == sr_protocol.WORKFLOW_NAME
 
 
 def test_definitional_question_breaks_out_to_general_qa() -> None:
     """Definitional openings always go to general_qa, even mid-protocol thread."""
     msg = "what is GRADE?"
-    assert (
-        classify(msg, current_workflow=sr_protocol.WORKFLOW_NAME)
-        == general_qa.WORKFLOW_NAME
-    )
+    assert classify(msg, current_workflow=sr_protocol.WORKFLOW_NAME) == general_qa.WORKFLOW_NAME

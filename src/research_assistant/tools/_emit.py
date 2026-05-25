@@ -32,20 +32,24 @@ async def emit_run(
     preview: Callable[[str], str] | None = None,
 ) -> str:
     """Emit `tool_start`, await `impl()`, emit `tool_end`, return the result."""
-    await ctx.deps.event_queue.put({
-        "type": "tool_start",
-        "tool": tool,
-        "icon": icon,
-        "args": args,
-        "description": description,
-    })
+    await ctx.deps.event_queue.put(
+        {
+            "type": "tool_start",
+            "tool": tool,
+            "icon": icon,
+            "args": args,
+            "description": description,
+        }
+    )
 
     result = await impl()
     preview_text = preview(result) if preview else truncate(result, preview_len)
 
-    await ctx.deps.event_queue.put({
-        "type": "tool_end",
-        "tool": tool,
-        "result_preview": preview_text,
-    })
+    await ctx.deps.event_queue.put(
+        {
+            "type": "tool_end",
+            "tool": tool,
+            "result_preview": preview_text,
+        }
+    )
     return result

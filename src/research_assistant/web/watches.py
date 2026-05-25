@@ -76,9 +76,7 @@ def _run_to_view(r: WatchRun) -> WatchRunView:
     )
 
 
-async def _notif_to_view(
-    n: Notification, watch_lookup: dict[str, str]
-) -> NotificationView:
+async def _notif_to_view(n: Notification, watch_lookup: dict[str, str]) -> NotificationView:
     return NotificationView(
         id=n.id,
         watch_id=n.watch_id,
@@ -131,11 +129,14 @@ def create_watches_router() -> APIRouter:
             try:
                 envelope = json.loads(await _fan_out(spec.search_query, max_results=50))
                 studies = envelope.get("studies") or []
-                baseline = sorted({
-                    s["pmid"] for s in studies if s.get("pmid") and (
-                        not spec.sources or s.get("source") in set(spec.sources)
-                    )
-                })
+                baseline = sorted(
+                    {
+                        s["pmid"]
+                        for s in studies
+                        if s.get("pmid")
+                        and (not spec.sources or s.get("source") in set(spec.sources))
+                    }
+                )
                 logger.info(
                     "create_watch: pre-populated baseline with %d PMIDs from initial search",
                     len(baseline),

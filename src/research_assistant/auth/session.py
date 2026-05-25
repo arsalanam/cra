@@ -52,14 +52,17 @@ def write_session(
 ) -> None:
     """Set the signed session cookie on the outgoing response."""
     serializer = _serializer(secret)
-    encoded = serializer.dumps({
-        "sub": payload.sub,
-        "email": payload.email,
-        "expires_at": payload.expires_at,
-    })
+    encoded = serializer.dumps(
+        {
+            "sub": payload.sub,
+            "email": payload.email,
+            "expires_at": payload.expires_at,
+        }
+    )
     # The cookie max_age tracks the Cognito ID-token lifetime in seconds.
     # We pass it both here and to itsdangerous.loads() in read_session.
     import time
+
     max_age = max(0, payload.expires_at - int(time.time()))
     response.set_cookie(
         key=_COOKIE_NAME,

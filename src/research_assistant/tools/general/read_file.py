@@ -25,17 +25,14 @@ def _parse(content: str, filename: str) -> str:
             lines = content.strip().split("\n")
             preview_lines = lines[:10]
             row_count = len(lines) - 1
-            return (
-                f"CSV file with {row_count} data rows.\n"
-                f"Preview (first 10 lines):\n" + "\n".join(preview_lines)
+            return f"CSV file with {row_count} data rows.\nPreview (first 10 lines):\n" + "\n".join(
+                preview_lines
             )
 
         word_count = len(content.split())
         preview = content[:1000]
-        return (
-            f"Text file ({word_count} words).\n"
-            f"Content preview:\n{preview}"
-            + ("..." if len(content) > 1000 else "")
+        return f"Text file ({word_count} words).\nContent preview:\n{preview}" + (
+            "..." if len(content) > 1000 else ""
         )
 
     except Exception as e:

@@ -20,22 +20,25 @@ from research_assistant.domain.living_review import PaperTriage, WatchRunSummary
 from research_assistant.persistence.repository import WatchRepository
 from research_assistant.services import watch_runner
 
-PICO_JSON = json.dumps({
-    "population": "Adults with T2DM",
-    "intervention": "SGLT2 inhibitor",
-    "comparison": "Placebo",
-    "outcomes": ["HF hospitalization"],
-    "inclusion_criteria": [],
-    "exclusion_criteria": [],
-    "study_types": ["Randomized Controlled Trial"],
-    "age_range": "≥18 years",
-    "notes": None,
-})
+PICO_JSON = json.dumps(
+    {
+        "population": "Adults with T2DM",
+        "intervention": "SGLT2 inhibitor",
+        "comparison": "Placebo",
+        "outcomes": ["HF hospitalization"],
+        "inclusion_criteria": [],
+        "exclusion_criteria": [],
+        "study_types": ["Randomized Controlled Trial"],
+        "age_range": "≥18 years",
+        "notes": None,
+    }
+)
 
 
 @pytest.fixture
 async def runner_db(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> AsyncIterator[async_sessionmaker[AsyncSession]]:
     """Set up a file-based SQLite both the test and the runner can see."""
     db_path = tmp_path / "watch_test.db"
@@ -44,9 +47,11 @@ async def runner_db(
 
     # Reset the cached global engine so init_db / get_db_session pick up the new URL.
     from research_assistant.persistence import database as db_mod
+
     db_mod.reset_engine()
 
     from research_assistant.persistence.database import init_db
+
     await init_db()
 
     # Hand back a session factory pointing at the same DB so the test can seed.
@@ -59,19 +64,26 @@ async def runner_db(
 
 def _make_envelope(studies: Iterable[dict[str, Any]]) -> str:
     studies_list = list(studies)
-    return json.dumps({
-        "query": "x",
-        "sources_used": ["pubmed"],
-        "totals_by_source": {"pubmed": len(studies_list)},
-        "returned": len(studies_list),
-        "studies": studies_list,
-    })
+    return json.dumps(
+        {
+            "query": "x",
+            "sources_used": ["pubmed"],
+            "totals_by_source": {"pubmed": len(studies_list)},
+            "returned": len(studies_list),
+            "studies": studies_list,
+        }
+    )
 
 
 def _study(pmid: str, title: str = "T", source: str = "pubmed") -> dict[str, Any]:
     return {
-        "source": source, "source_id": pmid, "pmid": pmid,
-        "title": title, "abstract": "Sample abstract.", "journal": "J", "year": 2026,
+        "source": source,
+        "source_id": pmid,
+        "pmid": pmid,
+        "title": title,
+        "abstract": "Sample abstract.",
+        "journal": "J",
+        "year": 2026,
     }
 
 
@@ -84,8 +96,11 @@ async def _create_watch(
     async with factory() as session:
         repo = WatchRepository(session)
         watch = await repo.create_watch(
-            name="W", pico_json=PICO_JSON, search_query="q",
-            sources_json='["pubmed"]', schedule_cron="0 9 * * 1",
+            name="W",
+            pico_json=PICO_JSON,
+            search_query="q",
+            sources_json='["pubmed"]',
+            schedule_cron="0 9 * * 1",
             triage_threshold=threshold,
             baseline_pmids_json=json.dumps(baseline),
         )
@@ -95,19 +110,23 @@ async def _create_watch(
 
 @pytest.mark.asyncio
 async def test_no_change_when_no_new_pmids(
-    runner_db: async_sessionmaker[AsyncSession], monkeypatch: pytest.MonkeyPatch,
+    runner_db: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     watch_id = await _create_watch(runner_db, baseline=["111", "222"])
 
     async def _fake_fanout(query: str, max_results: int) -> str:
         return _make_envelope([_study("111"), _study("222")])
+
     monkeypatch.setattr(watch_runner, "_fan_out", _fake_fanout)
 
     triage_called = False
+
     async def _fake_triage(**kwargs: Any) -> tuple[WatchRunSummary, dict[str, Any]]:
         nonlocal triage_called
         triage_called = True
         return WatchRunSummary(triages=[], significance_summary="x", notify=False), {}
+
     monkeypatch.setattr(watch_runner, "triage_run", _fake_triage)
 
     await watch_runner.run_watch(watch_id)
@@ -125,26 +144,35 @@ async def test_no_change_when_no_new_pmids(
 
 @pytest.mark.asyncio
 async def test_new_pmids_triaged_below_threshold_no_notification(
-    runner_db: async_sessionmaker[AsyncSession], monkeypatch: pytest.MonkeyPatch,
+    runner_db: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     watch_id = await _create_watch(runner_db, baseline=["111"], threshold=0.6)
 
     async def _fake_fanout(query: str, max_results: int) -> str:
         return _make_envelope([_study("111"), _study("999", title="New paper")])
+
     monkeypatch.setattr(watch_runner, "_fan_out", _fake_fanout)
 
     async def _fake_triage(**kwargs: Any) -> tuple[WatchRunSummary, dict[str, Any]]:
         return (
             WatchRunSummary(
-                triages=[PaperTriage(
-                    pmid="999", title="New paper", relevance="moderate",
-                    design_fit="partial", materiality=0.3, note="Underpowered.",
-                )],
+                triages=[
+                    PaperTriage(
+                        pmid="999",
+                        title="New paper",
+                        relevance="moderate",
+                        design_fit="partial",
+                        materiality=0.3,
+                        note="Underpowered.",
+                    )
+                ],
                 significance_summary="One new paper, low materiality.",
                 notify=False,
             ),
             {},
         )
+
     monkeypatch.setattr(watch_runner, "triage_run", _fake_triage)
 
     await watch_runner.run_watch(watch_id)
@@ -165,27 +193,35 @@ async def test_new_pmids_triaged_below_threshold_no_notification(
 
 @pytest.mark.asyncio
 async def test_material_new_paper_creates_notification(
-    runner_db: async_sessionmaker[AsyncSession], monkeypatch: pytest.MonkeyPatch,
+    runner_db: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     watch_id = await _create_watch(runner_db, baseline=["111"], threshold=0.6)
 
     async def _fake_fanout(query: str, max_results: int) -> str:
         return _make_envelope([_study("111"), _study("999", title="Big RCT")])
+
     monkeypatch.setattr(watch_runner, "_fan_out", _fake_fanout)
 
     async def _fake_triage(**kwargs: Any) -> tuple[WatchRunSummary, dict[str, Any]]:
         return (
             WatchRunSummary(
-                triages=[PaperTriage(
-                    pmid="999", title="Big RCT", relevance="high",
-                    design_fit="matches", materiality=0.85,
-                    note="Multicenter RCT n=10000 in scope.",
-                )],
+                triages=[
+                    PaperTriage(
+                        pmid="999",
+                        title="Big RCT",
+                        relevance="high",
+                        design_fit="matches",
+                        materiality=0.85,
+                        note="Multicenter RCT n=10000 in scope.",
+                    )
+                ],
                 significance_summary="One material new RCT (n=10k).",
                 notify=True,
             ),
             {},
         )
+
     monkeypatch.setattr(watch_runner, "triage_run", _fake_triage)
 
     await watch_runner.run_watch(watch_id)
@@ -201,7 +237,8 @@ async def test_material_new_paper_creates_notification(
 
 @pytest.mark.asyncio
 async def test_paused_watch_skips_run(
-    runner_db: async_sessionmaker[AsyncSession], monkeypatch: pytest.MonkeyPatch,
+    runner_db: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     watch_id = await _create_watch(runner_db, baseline=[])
     async with runner_db() as session:
@@ -210,10 +247,12 @@ async def test_paused_watch_skips_run(
         await session.commit()
 
     fan_out_called = False
+
     async def _fake_fanout(query: str, max_results: int) -> str:
         nonlocal fan_out_called
         fan_out_called = True
         return _make_envelope([])
+
     monkeypatch.setattr(watch_runner, "_fan_out", _fake_fanout)
 
     await watch_runner.run_watch(watch_id)

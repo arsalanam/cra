@@ -59,6 +59,8 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 # Long prompt strings and sample-question text are intentionally verbose.
 "src/research_assistant/agent/prompts.py" = ["E501"]
 "src/research_assistant/data/sample_questions.py" = ["E501"]
+# Feature-PDF generator: long reportlab string literals the formatter won't split.
+"scripts/generate_feature_pdf.py" = ["E501"]
 # FastAPI relies on call-in-default for Form/File dependency injection.
 "src/research_assistant/web/app.py" = ["B008"]
 

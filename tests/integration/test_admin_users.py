@@ -91,9 +91,7 @@ async def test_invite_user_records_pending_invitation() -> None:
     async with get_db_session() as session:
         inv = (
             await session.execute(
-                select(PendingInvitation).where(
-                    PendingInvitation.email == "invitee@example.com"
-                )
+                select(PendingInvitation).where(PendingInvitation.email == "invitee@example.com")
             )
         ).scalar_one()
         assert inv.consumed_at is None

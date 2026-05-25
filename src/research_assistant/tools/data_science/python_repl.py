@@ -23,8 +23,18 @@ from .._emit import emit_run
 
 _DENY = {"open", "exec", "eval", "compile", "input", "breakpoint", "exit", "quit"}
 _ALLOWED_IMPORTS = {
-    "math", "json", "random", "statistics", "itertools", "functools",
-    "collections", "re", "datetime", "decimal", "fractions", "string",
+    "math",
+    "json",
+    "random",
+    "statistics",
+    "itertools",
+    "functools",
+    "collections",
+    "re",
+    "datetime",
+    "decimal",
+    "fractions",
+    "string",
 }
 
 
@@ -42,8 +52,7 @@ def _build_namespace() -> dict[str, Any]:
         root = name.split(".")[0]
         if root not in _ALLOWED_IMPORTS:
             raise ImportError(
-                f"Import of {name!r} is not allowed. "
-                f"Allowed: {sorted(_ALLOWED_IMPORTS)}"
+                f"Import of {name!r} is not allowed. Allowed: {sorted(_ALLOWED_IMPORTS)}"
             )
         return real_import(name, globals, locals, fromlist, level)
 

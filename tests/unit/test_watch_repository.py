@@ -50,12 +50,18 @@ async def test_pause_and_list_active_only(db_session: AsyncSession) -> None:
     await _seed_default_user(db_session)
     repo = WatchRepository(db_session)
     a = await repo.create_watch(
-        name="A", pico_json="{}", search_query="x",
-        sources_json="[]", schedule_cron="0 9 * * 1",
+        name="A",
+        pico_json="{}",
+        search_query="x",
+        sources_json="[]",
+        schedule_cron="0 9 * * 1",
     )
     b = await repo.create_watch(
-        name="B", pico_json="{}", search_query="y",
-        sources_json="[]", schedule_cron="0 10 * * 1",
+        name="B",
+        pico_json="{}",
+        search_query="y",
+        sources_json="[]",
+        schedule_cron="0 10 * * 1",
     )
     await repo.update_watch(b.id, status="paused")
 
@@ -70,8 +76,11 @@ async def test_run_lifecycle(db_session: AsyncSession) -> None:
     await _seed_default_user(db_session)
     repo = WatchRepository(db_session)
     watch = await repo.create_watch(
-        name="W", pico_json="{}", search_query="x",
-        sources_json="[]", schedule_cron="0 9 * * 1",
+        name="W",
+        pico_json="{}",
+        search_query="x",
+        sources_json="[]",
+        schedule_cron="0 9 * * 1",
     )
     run = await repo.add_run(watch.id)
     assert run.status == "running"
@@ -100,8 +109,11 @@ async def test_notification_lifecycle(db_session: AsyncSession) -> None:
     await _seed_default_user(db_session)
     repo = WatchRepository(db_session)
     watch = await repo.create_watch(
-        name="W", pico_json="{}", search_query="x",
-        sources_json="[]", schedule_cron="0 9 * * 1",
+        name="W",
+        pico_json="{}",
+        search_query="x",
+        sources_json="[]",
+        schedule_cron="0 9 * * 1",
     )
     run = await repo.add_run(watch.id)
     notif = await repo.add_notification(
@@ -128,12 +140,19 @@ async def test_delete_watch_cascades_runs_and_notifications(
     await _seed_default_user(db_session)
     repo = WatchRepository(db_session)
     watch = await repo.create_watch(
-        name="W", pico_json="{}", search_query="x",
-        sources_json="[]", schedule_cron="0 9 * * 1",
+        name="W",
+        pico_json="{}",
+        search_query="x",
+        sources_json="[]",
+        schedule_cron="0 9 * * 1",
     )
     run = await repo.add_run(watch.id)
     await repo.add_notification(
-        watch_id=watch.id, run_id=run.id, title="t", summary="s", new_paper_count=1,
+        watch_id=watch.id,
+        run_id=run.id,
+        title="t",
+        summary="s",
+        new_paper_count=1,
     )
 
     assert await repo.delete_watch(watch.id) is True

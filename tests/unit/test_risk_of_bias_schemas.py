@@ -80,8 +80,16 @@ def test_summary_round_trip_with_distribution() -> None:
         tool="RoB 2.0",
         assessments=[_sample_assessment()],
         domain_distribution=[
-            DomainDistribution(domain="Randomization process", low=4, some_concerns=1, high=0, no_information=0),
-            DomainDistribution(domain="Selection of the reported result", low=0, some_concerns=2, high=0, no_information=3),
+            DomainDistribution(
+                domain="Randomization process", low=4, some_concerns=1, high=0, no_information=0
+            ),
+            DomainDistribution(
+                domain="Selection of the reported result",
+                low=0,
+                some_concerns=2,
+                high=0,
+                no_information=3,
+            ),
         ],
         summary_plot_image="rob_summary.png",
         narrative="Most studies low for randomization; selective reporting under-described.",
@@ -100,16 +108,12 @@ def test_summary_round_trip_with_distribution() -> None:
 def test_judgment_constrained_to_literal() -> None:
     """A made-up judgment value must be rejected — the UI relies on these four."""
     with pytest.raises(ValidationError):
-        RobDomain.model_validate(
-            {"domain": "x", "judgment": "very high", "justification": "y"}
-        )
+        RobDomain.model_validate({"domain": "x", "judgment": "very high", "justification": "y"})
 
 
 def test_tool_constrained_to_literal() -> None:
     with pytest.raises(ValidationError):
-        RobAssessments.model_validate(
-            {"tool": "GRADE", "assessments": [], "summary": "x"}
-        )
+        RobAssessments.model_validate({"tool": "GRADE", "assessments": [], "summary": "x"})
 
 
 def test_no_information_judgment_is_valid() -> None:

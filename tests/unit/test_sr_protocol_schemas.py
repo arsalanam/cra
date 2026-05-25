@@ -108,8 +108,7 @@ def test_protocol_document_round_trip() -> None:
             ),
         ],
         full_markdown=(
-            "# Title\n\n## Background\nText with [1] and [2].\n\n## References\n"
-            "1. ...\n2. ...\n"
+            "# Title\n\n## Background\nText with [1] and [2].\n\n## References\n1. ...\n2. ...\n"
         ),
         prospero_field_map=[
             ProsperoFieldMap(field="Review title", content=_sample_methods().title),
@@ -136,9 +135,7 @@ def test_protocol_document_round_trip() -> None:
 
 def test_citation_origin_is_constrained() -> None:
     with pytest.raises(ValidationError):
-        Citation.model_validate(
-            {"text": "x", "origin": "training_data"}
-        )
+        Citation.model_validate({"text": "x", "origin": "training_data"})
 
 
 def test_rob_tool_constrained() -> None:

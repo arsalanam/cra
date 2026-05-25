@@ -28,6 +28,7 @@ Requirements:
   • The hosted-UI domain-prefix must be GLOBALLY unique within the region.
     If creation fails with "already exists", pick a different prefix.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -108,9 +109,7 @@ def _find_client_by_name(client: Any, pool_id: str, name: str) -> dict[str, Any]
     for page in paginator.paginate(UserPoolId=pool_id, MaxResults=60):
         for c in page.get("UserPoolClients", []):
             if c["ClientName"] == name:
-                full = client.describe_user_pool_client(
-                    UserPoolId=pool_id, ClientId=c["ClientId"]
-                )
+                full = client.describe_user_pool_client(UserPoolId=pool_id, ClientId=c["ClientId"])
                 return dict(full["UserPoolClient"])
     return None
 
@@ -168,7 +167,9 @@ def _ensure_domain(client: Any, pool_id: str, domain_prefix: str) -> str:
         resp = client.describe_user_pool_domain(Domain=domain_prefix)
         info = resp.get("DomainDescription", {})
         if info.get("UserPoolId") == pool_id and info.get("Status") in (
-            "ACTIVE", "CREATING", "UPDATING"
+            "ACTIVE",
+            "CREATING",
+            "UPDATING",
         ):
             log.info("Hosted-UI domain %r already configured (reusing)", domain_prefix)
             return domain_prefix
@@ -214,7 +215,7 @@ def _print_env_block(
     print(f"COGNITO_CLIENT_SECRET={client_secret}")
     print(f"COGNITO_DOMAIN={domain_url}")
     print(f"COGNITO_REDIRECT_URI={callback_url}")
-    print("# Generate with:  python -c \"import secrets; print(secrets.token_urlsafe(64))\"")
+    print('# Generate with:  python -c "import secrets; print(secrets.token_urlsafe(64))"')
     print("SESSION_COOKIE_SECRET=<paste-a-random-64-byte-string>")
     print("=" * 78)
 
@@ -246,7 +247,11 @@ def main(argv: list[str] | None = None) -> int:
 
     pool_id = _ensure_pool(client, args.pool_name)
     client_info = _ensure_app_client(
-        client, pool_id, args.client_name, args.callback_url, args.logout_url,
+        client,
+        pool_id,
+        args.client_name,
+        args.callback_url,
+        args.logout_url,
     )
     _ensure_domain(client, pool_id, args.domain_prefix)
 

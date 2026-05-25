@@ -44,11 +44,7 @@ async def _impl(topic: str, sentences: int = 5) -> str:
                 "Try a different spelling or use web_search instead."
             )
 
-        return (
-            f"Wikipedia: {result['title']}\n"
-            f"URL: {result['url']}\n\n"
-            f"{result['summary']}"
-        )
+        return f"Wikipedia: {result['title']}\nURL: {result['url']}\n\n{result['summary']}"
 
     except Exception as e:
         return f"Wikipedia error: {e}"

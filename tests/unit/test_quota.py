@@ -29,9 +29,7 @@ async def _seed_done_event(
     """Seed one (thread → message → done stream event) tuple with usage."""
     repo = ThreadRepository(session)
     thread = await repo.create_thread(title="t")
-    msg = await repo.add_message(
-        thread_id=thread.id, role="assistant", final_answer="{}"
-    )
+    msg = await repo.add_message(thread_id=thread.id, role="assistant", final_answer="{}")
     evt = await repo.add_stream_event(
         message_id=msg.id,
         event_type="done",
@@ -154,9 +152,7 @@ async def test_enforce_disabled_with_zero(
 def test_hours_until_reset_is_nonneg() -> None:
     """The reset countdown is always >= 0 (even at the exact UTC boundary)."""
     day_start = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
-    exc = DailyTokenQuotaExceeded(
-        dimension="input", limit=1, current=1, day_start=day_start
-    )
+    exc = DailyTokenQuotaExceeded(dimension="input", limit=1, current=1, day_start=day_start)
     h = exc.hours_until_reset()
     assert 0.0 <= h <= 24.0
 
@@ -172,16 +168,20 @@ def _settings(in_limit: int, out_limit: int) -> Settings:
 
 
 def test_build_quota_payload_under_limits() -> None:
-    totals = DailyTokenTotals(
-        input_tokens=1000, output_tokens=200, day_start=today_utc_start()
-    )
+    totals = DailyTokenTotals(input_tokens=1000, output_tokens=200, day_start=today_utc_start())
     payload = build_quota_payload(totals, _settings(10_000, 2_000))
 
     assert payload["input_tokens"] == {
-        "used": 1000, "limit": 10_000, "remaining": 9000, "percent": 10.0,
+        "used": 1000,
+        "limit": 10_000,
+        "remaining": 9000,
+        "percent": 10.0,
     }
     assert payload["output_tokens"] == {
-        "used": 200, "limit": 2_000, "remaining": 1800, "percent": 10.0,
+        "used": 200,
+        "limit": 2_000,
+        "remaining": 1800,
+        "percent": 10.0,
     }
     assert payload["enforcement_enabled"] is True
     assert 0.0 <= payload["hours_until_reset"] <= 24.0
@@ -189,9 +189,7 @@ def test_build_quota_payload_under_limits() -> None:
 
 def test_build_quota_payload_at_limit_clamps_to_100() -> None:
     """percent is capped at 100 even when used > limit."""
-    totals = DailyTokenTotals(
-        input_tokens=15_000, output_tokens=0, day_start=today_utc_start()
-    )
+    totals = DailyTokenTotals(input_tokens=15_000, output_tokens=0, day_start=today_utc_start())
     payload = build_quota_payload(totals, _settings(10_000, 0))
     assert payload["input_tokens"]["percent"] == 100.0
     assert payload["input_tokens"]["remaining"] == 0
@@ -199,9 +197,7 @@ def test_build_quota_payload_at_limit_clamps_to_100() -> None:
 
 def test_build_quota_payload_disabled_axis() -> None:
     """limit=0 → remaining None, percent 0, enforcement_enabled reflects the OTHER axis."""
-    totals = DailyTokenTotals(
-        input_tokens=9_999_999, output_tokens=5, day_start=today_utc_start()
-    )
+    totals = DailyTokenTotals(input_tokens=9_999_999, output_tokens=5, day_start=today_utc_start())
     payload = build_quota_payload(totals, _settings(0, 100))
     assert payload["input_tokens"]["remaining"] is None
     assert payload["input_tokens"]["percent"] == 0.0
@@ -210,8 +206,6 @@ def test_build_quota_payload_disabled_axis() -> None:
 
 
 def test_build_quota_payload_fully_disabled() -> None:
-    totals = DailyTokenTotals(
-        input_tokens=1, output_tokens=1, day_start=today_utc_start()
-    )
+    totals = DailyTokenTotals(input_tokens=1, output_tokens=1, day_start=today_utc_start())
     payload = build_quota_payload(totals, _settings(0, 0))
     assert payload["enforcement_enabled"] is False

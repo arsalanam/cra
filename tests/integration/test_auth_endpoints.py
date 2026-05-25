@@ -19,6 +19,7 @@ from httpx import ASGITransport, AsyncClient
 @pytest.fixture(autouse=True)
 def _use_memory_db(monkeypatch: pytest.MonkeyPatch) -> None:
     from research_assistant.persistence.database import reset_engine
+
     monkeypatch.setenv("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
     reset_engine()
 
@@ -42,13 +43,17 @@ async def _client(monkeypatch: pytest.MonkeyPatch, env: dict[str, str]) -> Async
 @pytest.fixture
 async def disabled_client(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[AsyncClient]:
     """Cognito unset → auth disabled."""
-    client = await _client(monkeypatch, {
-        "COGNITO_USER_POOL_ID": "",
-        "COGNITO_CLIENT_ID": "",
-    })
+    client = await _client(
+        monkeypatch,
+        {
+            "COGNITO_USER_POOL_ID": "",
+            "COGNITO_CLIENT_ID": "",
+        },
+    )
     async with client as c:
         yield c
     from research_assistant.persistence.database import reset_engine
+
     reset_engine()
 
 
@@ -89,6 +94,7 @@ async def enabled_client(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[Async
     async with client as c:
         yield c
     from research_assistant.persistence.database import reset_engine
+
     reset_engine()
 
 
@@ -139,7 +145,11 @@ def _stub_token_exchange(monkeypatch: pytest.MonkeyPatch, *, sub: str, email: st
     from research_assistant.auth import IdentityClaims
 
     async def fake_validate(
-        token: str, *, region: str, user_pool_id: str, client_id: str,
+        token: str,
+        *,
+        region: str,
+        user_pool_id: str,
+        client_id: str,
         access_token: str | None = None,
     ) -> IdentityClaims:
         return IdentityClaims(sub=sub, email=email, expires_at=9_999_999_999)
@@ -155,8 +165,10 @@ def _stub_token_exchange(monkeypatch: pytest.MonkeyPatch, *, sub: str, email: st
         def __init__(self, *a: object, **k: object) -> None: ...
         async def __aenter__(self) -> _Client:
             return self
+
         async def __aexit__(self, *a: object) -> bool:
             return False
+
         async def post(self, *a: object, **k: object) -> _Resp:
             return _Resp()
 

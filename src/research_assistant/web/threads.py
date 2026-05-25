@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 
 # ── Request / Response schemas ────────────────────────────────────────────
 
+
 class ThreadCreate(BaseModel):
     title: str = "New conversation"
 
@@ -53,9 +54,7 @@ class MessageOut(BaseModel):
 
 
 def _thread_out(thread: Thread, message_count: int) -> ThreadOut:
-    return ThreadOut.model_validate(thread).model_copy(
-        update={"message_count": message_count}
-    )
+    return ThreadOut.model_validate(thread).model_copy(update={"message_count": message_count})
 
 
 class EventOut(BaseModel):
@@ -66,6 +65,7 @@ class EventOut(BaseModel):
 
 
 # ── Router factory ────────────────────────────────────────────────────────
+
 
 def create_thread_router() -> APIRouter:
     router = APIRouter(prefix="/threads", tags=["threads"])
@@ -85,9 +85,7 @@ def create_thread_router() -> APIRouter:
         async with get_db_session() as session:
             repo = ThreadRepository(session)
             threads = await repo.list_threads(limit=limit, offset=offset)
-            return [
-                _thread_out(t, await repo.count_messages(t.id)) for t in threads
-            ]
+            return [_thread_out(t, await repo.count_messages(t.id)) for t in threads]
 
     # ── Usage Aggregation (must be before /{thread_id} routes) ──────
 

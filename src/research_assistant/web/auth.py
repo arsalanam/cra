@@ -213,9 +213,7 @@ def create_auth_router() -> APIRouter:
         # only: a first login with no pending invitation is refused.
         async with get_db_session() as db:
             try:
-                await UserRepository(db).resolve_login(
-                    cognito_sub=claims.sub, email=claims.email
-                )
+                await UserRepository(db).resolve_login(cognito_sub=claims.sub, email=claims.email)
             except NoInvitationError as e:
                 logger.warning("Login rejected — no invitation for %s", e.email)
                 raise HTTPException(

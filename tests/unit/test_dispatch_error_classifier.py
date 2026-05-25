@@ -41,9 +41,7 @@ def test_unrecognized_error_falls_through_to_500() -> None:
 def test_daily_quota_check_beats_generic_throttle_check() -> None:
     """A daily-quota error also matches the generic ThrottlingException pattern;
     classifier must return the more specific message."""
-    exc = Exception(
-        "ThrottlingException: Too many tokens per day, please wait"
-    )
+    exc = Exception("ThrottlingException: Too many tokens per day, please wait")
     status, detail = _classify_agent_error(exc)
     assert status == 429
     assert "daily token quota" in detail

@@ -143,7 +143,8 @@ async def test_get_done_events_since(db_session: AsyncSession) -> None:
     msg = await repo.add_message(thread.id, role="assistant")
     await repo.add_stream_event(msg.id, "text_delta", {"content": "x"}, 0)
     await repo.add_stream_event(
-        msg.id, "done",
+        msg.id,
+        "done",
         {"usage": {"input_tokens": 100, "output_tokens": 50}},
         1,
     )

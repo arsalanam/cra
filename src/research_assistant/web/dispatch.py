@@ -91,9 +91,7 @@ def _classify_agent_error(exc: Exception) -> tuple[int, str]:
     # time this exception bubbles up here.
     if "Too many tokens per day" in msg:
         now = datetime.now(UTC)
-        reset = (now + timedelta(days=1)).replace(
-            hour=0, minute=0, second=0, microsecond=0
-        )
+        reset = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
         hours = (reset - now).total_seconds() / 3600
         return (
             429,
@@ -238,9 +236,7 @@ def create_dispatch_router() -> APIRouter:
                 raise HTTPException(status, detail) from quota_exc
 
             if thread.title == "New conversation":
-                await repo.update_thread(
-                    body.thread_id, title=body.user_message[:120]
-                )
+                await repo.update_thread(body.thread_id, title=body.user_message[:120])
 
             user_msg = await repo.add_message(
                 thread_id=body.thread_id,
@@ -252,15 +248,11 @@ def create_dispatch_router() -> APIRouter:
             context_msgs = await repo.get_messages(
                 body.thread_id, limit=settings.context_window_messages
             )
-            history = messages_to_history(
-                context_msgs, thread_summary=thread.summary
-            )
+            history = messages_to_history(context_msgs, thread_summary=thread.summary)
             last_kind = _last_assistant_kind(context_msgs)
             current_workflow = thread.workflow
 
-            summarizer = StubThreadSummarizer(
-                threshold=settings.summarize_after_messages
-            )
+            summarizer = StubThreadSummarizer(threshold=settings.summarize_after_messages)
             if await summarizer.should_summarize(body.thread_id, session):
                 await summarizer.summarize_and_truncate(body.thread_id, session)
 

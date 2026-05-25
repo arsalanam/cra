@@ -161,9 +161,7 @@ async def triage_run(
         f"{json.dumps(new_papers, ensure_ascii=False, indent=2)}"
     )
 
-    logger.info(
-        "watch_triage: %d new papers, threshold=%.2f", len(new_papers), triage_threshold
-    )
+    logger.info("watch_triage: %d new papers, threshold=%.2f", len(new_papers), triage_threshold)
     result = await asyncio.wait_for(
         agent.run(user_message, deps=deps, usage_limits=usage_limits),
         timeout=settings.agent_timeout_seconds,

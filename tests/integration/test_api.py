@@ -148,16 +148,30 @@ async def test_usage_monthly_aggregates_done_events(live_client: AsyncClient) ->
         m1 = await repo.add_message(thread_id=thread.id, role="assistant", final_answer="{}")
         m2 = await repo.add_message(thread_id=thread.id, role="assistant", final_answer="{}")
         await repo.add_stream_event(
-            message_id=m1.id, event_type="done", sequence_num=0,
+            message_id=m1.id,
+            event_type="done",
+            sequence_num=0,
             data={
-                "usage": {"input_tokens": 1200, "output_tokens": 400, "requests": 3, "tool_calls": 2},
+                "usage": {
+                    "input_tokens": 1200,
+                    "output_tokens": 400,
+                    "requests": 3,
+                    "tool_calls": 2,
+                },
                 "tool_usage": {"mesh_lookup": 1, "search_papers": 1},
             },
         )
         await repo.add_stream_event(
-            message_id=m2.id, event_type="done", sequence_num=0,
+            message_id=m2.id,
+            event_type="done",
+            sequence_num=0,
             data={
-                "usage": {"input_tokens": 800, "output_tokens": 200, "requests": 2, "tool_calls": 3},
+                "usage": {
+                    "input_tokens": 800,
+                    "output_tokens": 200,
+                    "requests": 2,
+                    "tool_calls": 3,
+                },
                 "tool_usage": {"search_papers": 2, "fetch_pmc_fulltext": 1},
             },
         )
@@ -172,13 +186,13 @@ async def test_usage_monthly_aggregates_done_events(live_client: AsyncClient) ->
     assert data["model_requests"] == 5
     assert data["tool_calls"] == 5
     assert data["tool_breakdown"] == {
-        "mesh_lookup": 1, "search_papers": 3, "fetch_pmc_fulltext": 1,
+        "mesh_lookup": 1,
+        "search_papers": 3,
+        "fetch_pmc_fulltext": 1,
     }
 
 
-async def test_usage_today_empty(
-    live_client: AsyncClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_usage_today_empty(live_client: AsyncClient, monkeypatch: pytest.MonkeyPatch) -> None:
     """No done events yet → zero usage but quota gauge shape is well-formed."""
     monkeypatch.setenv("MAX_INPUT_TOKENS_PER_DAY", "10000")
     monkeypatch.setenv("MAX_OUTPUT_TOKENS_PER_DAY", "2000")
@@ -188,10 +202,16 @@ async def test_usage_today_empty(
     data = resp.json()
 
     assert data["input_tokens"] == {
-        "used": 0, "limit": 10_000, "remaining": 10_000, "percent": 0.0,
+        "used": 0,
+        "limit": 10_000,
+        "remaining": 10_000,
+        "percent": 0.0,
     }
     assert data["output_tokens"] == {
-        "used": 0, "limit": 2_000, "remaining": 2_000, "percent": 0.0,
+        "used": 0,
+        "limit": 2_000,
+        "remaining": 2_000,
+        "percent": 0.0,
     }
     assert data["enforcement_enabled"] is True
     assert "day_start_utc" in data
@@ -211,11 +231,11 @@ async def test_usage_today_aggregates_today_only(
     async with get_db_session() as session:
         repo = ThreadRepository(session)
         thread = await repo.create_thread(title="Quota seed")
-        msg = await repo.add_message(
-            thread_id=thread.id, role="assistant", final_answer="{}"
-        )
+        msg = await repo.add_message(thread_id=thread.id, role="assistant", final_answer="{}")
         await repo.add_stream_event(
-            message_id=msg.id, event_type="done", sequence_num=0,
+            message_id=msg.id,
+            event_type="done",
+            sequence_num=0,
             data={"usage": {"input_tokens": 2500, "output_tokens": 500}},
         )
 
@@ -243,9 +263,7 @@ async def test_errored_turn_persists_done_event(
     async def _raise(*_: object, **__: object) -> None:
         raise RuntimeError("simulated agent failure")
 
-    monkeypatch.setattr(
-        "research_assistant.web.dispatch.dispatch", _raise
-    )
+    monkeypatch.setattr("research_assistant.web.dispatch.dispatch", _raise)
 
     # Seed a thread and fire a turn against it.
     create = await live_client.post("/api/threads", json={"title": "errored-turn"})
@@ -268,6 +286,7 @@ async def test_errored_turn_persists_done_event(
 
     assert len(events) == 1, "exactly one done event should have been written"
     import json as _json
+
     data = _json.loads(events[0].data)
     assert data["workflow"] == "errored"
     assert "simulated agent failure" in data["error"]
