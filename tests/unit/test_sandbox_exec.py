@@ -72,7 +72,9 @@ async def test_docker_error_handled() -> None:
 
 async def test_docker_image_missing() -> None:
     mock_client = MagicMock()
-    mock_client.containers.run.side_effect = Exception("No such image: pydantic-sandbox:latest")
+    mock_client.containers.run.side_effect = Exception(
+        "No such image: research-assistant-sandbox:latest"
+    )
 
     with patch("docker.from_env", return_value=mock_client):
         result = await _impl("print('test')")

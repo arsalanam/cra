@@ -1,4 +1,4 @@
-"""Integration tests for sandbox_exec — requires Docker + pydantic-sandbox image."""
+"""Integration tests for sandbox_exec — requires Docker + research-assistant-sandbox image."""
 
 from __future__ import annotations
 
@@ -9,12 +9,12 @@ import pytest
 
 
 def _sandbox_image_exists() -> bool:
-    """Check if the pydantic-sandbox:latest Docker image is available."""
+    """Check if the research-assistant-sandbox:latest Docker image is available."""
     if shutil.which("docker") is None:
         return False
     try:
         result = subprocess.run(
-            ["docker", "image", "inspect", "pydantic-sandbox:latest"],
+            ["docker", "image", "inspect", "research-assistant-sandbox:latest"],
             capture_output=True,
             timeout=10,
         )
@@ -25,7 +25,7 @@ def _sandbox_image_exists() -> bool:
 
 pytestmark = pytest.mark.skipif(
     not _sandbox_image_exists(),
-    reason="Docker not available or pydantic-sandbox:latest image not built",
+    reason="Docker not available or research-assistant-sandbox:latest image not built",
 )
 
 

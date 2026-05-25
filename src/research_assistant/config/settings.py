@@ -76,7 +76,7 @@ class Settings(BaseSettings):
     ncbi_api_key: str = ""
 
     # Docker sandbox for data science / meta-analysis
-    sandbox_image: str = "pydantic-sandbox:latest"
+    sandbox_image: str = "research-assistant-sandbox:latest"
     sandbox_timeout_seconds: int = 60
     sandbox_memory_limit: str = "512m"
     sandbox_cpu_count: float = 1.0

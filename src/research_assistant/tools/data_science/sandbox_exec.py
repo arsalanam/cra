@@ -200,7 +200,10 @@ async def _impl(
         err = str(e)
         hint = ""
         if "No such image" in err or "not found" in err.lower():
-            hint = " Build the image first: docker build -t pydantic-sandbox:latest ./sandbox"
+            hint = (
+                " Build the image first: "
+                "docker build -t research-assistant-sandbox:latest ./sandbox"
+            )
         elif "connect" in err.lower() or "pipe" in err.lower() or "daemon" in err.lower():
             hint = " Docker Desktop does not appear to be running. Start it and try again."
         return SandboxResult(stdout="", files={}, error=f"Sandbox execution failed: {e}.{hint}")

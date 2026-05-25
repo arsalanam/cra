@@ -51,7 +51,7 @@ Key modules:
 - `web/admin.py` — `GET/PUT /api/admin/sources` for runtime source config. Gated on `User.is_admin` against the seeded `default-user` row (placeholder for real auth).
 - `web/static/admin.html` — vanilla settings page served at `/admin.html`; sidebar link in `index.html`.
 - `persistence/{database,models,repository}.py` — async SQLAlchemy on aiosqlite. Hand-rolled additive migrations in `_COLUMN_MIGRATIONS`. `init_db` idempotently seeds `source_configs` for `pubmed` + `europepmc`.
-- `tools/data_science/sandbox_exec.py` — Docker-isolated Python execution; image is `pydantic-sandbox:latest` (`sandbox/Dockerfile`). Network disabled, RO script + input mounts, RW output mount.
+- `tools/data_science/sandbox_exec.py` — Docker-isolated Python execution; image is `research-assistant-sandbox:latest` (`sandbox/Dockerfile`). Network disabled, RO script + input mounts, RW output mount.
 
 ## Tools by category
 
@@ -76,7 +76,7 @@ The app is **compose-only** for the runtime path. Plain `uv run` is reserved for
 ```bash
 # One-time prerequisites
 uv sync --all-extras                                 # local venv for tests + tooling
-docker build -t pydantic-sandbox:latest ./sandbox    # sandbox image (built separately)
+docker build -t research-assistant-sandbox:latest ./sandbox    # sandbox image (built separately)
 cp deploy/compose/.env.example deploy/compose/.env   # fill in AWS / TAVILY / NCBI keys
                                                      # AND set HOST_SANDBOX_WORK_DIR to the
                                                      # absolute host path of ./sandbox-work

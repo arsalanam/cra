@@ -7,13 +7,18 @@
 # Prerequisites on the host:
 #   1. Docker Desktop running.
 #   2. The sandbox image built locally:
-#        docker build -t pydantic-sandbox:latest ../../sandbox
+#        docker build -t research-assistant-sandbox:latest ../../sandbox
 #      The agent shells out to the host docker daemon (via the mounted
 #      socket) to spawn sandbox containers — see architecture.md, the
 #      "Sandbox execution dispatch" decision record.
 #   3. A `.env` file in this directory (copy `.env.example`).
 #   4. HOST_SANDBOX_WORK_DIR in .env set to the absolute path of the
 #      sibling `sandbox-work/` directory on YOUR host.
+
+# Project name — fixes container/volume prefixes to `research-assistant-*`
+# regardless of the directory the compose file lives in (otherwise Compose
+# derives it from the parent dir, `compose`).
+name: research-assistant
 
 services:
   postgres:

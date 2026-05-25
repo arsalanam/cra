@@ -27,7 +27,7 @@ sandbox-work/*
 # Tests + scripts (not needed in the runtime image)
 tests/
 scripts/
-sandbox/      # built separately into pydantic-sandbox:latest
+sandbox/      # built separately into research-assistant-sandbox:latest
 demoguide.md
 feature-guide.md
 feature-guide.pdf
