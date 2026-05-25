@@ -1,3 +1,4 @@
+
 """Phase B schema tests: cognito_sub, user_roles, pending_invitations.
 
 Covers both the ORM-level behaviour (uniqueness, role constraint, cascade)

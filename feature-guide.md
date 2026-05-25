@@ -14,7 +14,7 @@ The Clinical Research Assistant compresses the methodological scaffolding into a
 
 ## What the assistant does
 
-Five guided workflows, a continuous-monitoring service, and a local research store that grows in value the more you use it. Each workflow launches from natural language or a slash command and produces a structured, citation-anchored output you can take into a manuscript, a registration, or a grant application.
+Five guided evidence workflows, a continuous-monitoring service, a local research store that grows in value the more you use it, and a regulatory-grade **electronic data-capture (eCRF/EDC)** subsystem for running your own studies. Each workflow launches from natural language or a slash command and produces a structured, citation-anchored output you can take into a manuscript, a registration, or a grant application.
 
 ### 1. Meta-analysis workflow
 
@@ -52,6 +52,20 @@ A meta-analysis or systematic review doesn't have to be a snapshot. Pin a PICO a
 
 **Outcome:** "living" reviews stop drifting out of date. Guideline committees and HTA bodies get alerted to practice-changing evidence as it lands.
 
+### 7. Electronic data capture (eCRF / EDC)
+
+Beyond synthesising *other people's* evidence, the assistant runs **your own studies' data collection** — an electronic case-report-form (eCRF) and data-capture (EDC) subsystem built to **CDISC** and **21 CFR Part 11 / ALCOA+** conventions.
+
+- **AI-drafted CRFs from a protocol.** Paste a study protocol; the assistant drafts a full set of CDASH-aligned forms (demographics, vitals, adverse events, the protocol's outcomes) plus a visit schedule — a designer reviews and edits, never an auto-publish.
+- **Versioned, immutable form definitions** with a draft → publish → supersede lifecycle, and **CDISC ODM-XML export** for interoperability.
+- **Two capture surfaces:** a **site EDC** screen for coordinators/investigators (renders each form from its definition, validates on entry) and a **participant ePRO** surface (magic-link, consent-gated) for patient-reported outcomes.
+- **Edit checks at the point of entry** — hard checks block invalid saves; soft checks raise **queries**; a full query/discrepancy workflow (open → answered → closed, auto-resolving) sits on top.
+- **PHI isolation:** subject data lives in a **separate clinical-data store** with its own credentials — never mixed with the research database, and never sent to the model.
+- **Electronic signatures + lock hierarchy:** sign a completed form (binding the signature to the exact data), lock it against edits, and sign off a whole subject casebook; unlocking voids the signature and is itself recorded.
+- **Source-data verification (SDV)** for monitors, and a **tamper-proof audit trail** — append-only, enforced by the database itself, capturing every create/change with who, when, old→new value, and reason.
+
+**Outcome:** the weeks-long investigator↔data-manager round-trip at study start-up collapses to a guided session, and the resulting capture system is audit-ready by construction.
+
 ---
 
 ## What makes it different
@@ -63,6 +77,7 @@ A meta-analysis or systematic review doesn't have to be a snapshot. Pin a PICO a
 | **Local research cache + RAG over pulled content** | Every abstract, full-text article, MeSH lookup, and extraction table you pull lands in the local research store. A retrieval-augmented pipeline searches that store first, so the same paper isn't re-fetched — or re-billed — across reviews. Pull paid content once; reuse it across the entire research programme. |
 | **Sandboxed statistical compute** | All Python analysis runs inside a Docker container with networking disabled, read-only inputs, and capped CPU/memory. The model can run a random-effects meta-analysis without ever touching the host or the wider internet. |
 | **Workflow-gated tools** | The assistant cannot skip ahead. It can't run a meta-analysis before a PICO is confirmed; it can't fetch full text before studies are selected. The methodology *is* the guardrail. |
+| **Regulatory-grade data capture built in** | The eCRF/EDC subsystem follows **CDISC** (ODM-XML export, CDASH naming) and **21 CFR Part 11 / ALCOA+**: subject PHI in a separate store, e-signatures bound to the signed data, source-data verification, and an **append-only audit trail enforced by the database** — not just application code. Author a CRF, deploy it, and collect site + participant data without leaving the platform. |
 | **Flexible, secure deployment** | Deploy on-premises or in your cloud. **OAuth2 / OpenID Connect** integrates with your existing identity provider; **role-based access control** scopes each workflow per user; sensitive material (API keys, PHI) lives in your **secrets manager**, never in plaintext config. |
 | **Full conversation persistence** | Every turn — PICO, included studies, extraction table, generated code, plot — is stored. Reproducing an analysis a year later means re-opening the thread. |
 
@@ -105,12 +120,13 @@ A token-heavy day still lands comfortably **below the cost of an equivalent huma
 
 Beyond the v1 capability set above, the architecture was built to absorb these without rebuilding the core. Each is a tractable next increment, not a moonshot.
 
-### Automated clinical data collection
+### Source-document extraction
 
-Two pieces, addressing two distinct pain points:
+The eCRF / EDC subsystem (§7 above) now ships. The remaining piece of automated data collection is **source-document extraction** — point the assistant at structured exports from your EHR / registry / trial-management system and have it populate the extraction table (or pre-fill eCRF instances) for retrospective studies or patient-level meta-analyses, with an audit trail of which source row produced which output cell.
 
-- **eCRF designer** — generate a draft electronic case-report form directly from a study protocol, with field types, validation rules, and skip logic mapped to the protocol's data items. Reduces the weeks-long round-trip between investigator and data manager at study start-up.
-- **Source-document extraction** — point the assistant at structured exports from your EHR / registry / trial-management system and have it populate the extraction table for retrospective studies or meta-analyses of patient-level data, with the audit trail of which source row produced which output cell.
+### Deepening eCRF compliance toward a formal validation pack
+
+The eCRF subsystem is built to Part 11 / ALCOA+ conventions; the next increments formalise it for an audited deployment: full password re-authentication at signing, study-level (not just subject-level) lock, and a documented computer-system-validation (IQ/OQ/PQ) package.
 
 ### Patient-facing research handouts
 
@@ -143,6 +159,9 @@ If your researchers spend more time **finding and formatting evidence** than **i
 | **Risk of Bias** | "risk of bias…", "RoB 2", `/rob` | Tool choice + per-study source | `fetch_pmc_fulltext`, `rag_search`, `read_file` | Domain-by-domain judgements with rationale | Operator must confirm each judgement |
 | **General Q&A** | Everything else, `/general` | Free-form question | `web_search`, `wikipedia`, `fetch_document`, `rag_search`, `read_file`, `describe_image` | Cited prose answer | Regex validator blocks unsupported clinical claims |
 | **Watch triage** *(background)* | Configured per-PICO schedule | New PMIDs since last run | (none — text-only) | Per-paper triage + run summary + optional notification | Same anti-hallucination posture as user-facing flows |
+| **eCRF authoring** | Form Builder UI · "draft CRFs from protocol" | Protocol text → form definitions | `ecrf_design` specialist | Versioned form definitions, ODM-XML export | Integrity-validated definitions; human review before publish; AI never auto-publishes |
+| **EDC capture** *(site)* | Data Capture UI | Subject data against deployed forms | (collection API) | Captured item data, queries, signatures | Edit-checks (hard block / soft query); signed forms edit-locked; append-only audit (DB-enforced) |
+| **ePRO capture** *(participant)* | Magic-link `/epro` | Patient-reported outcomes | (token-scoped API) | Captured item data | Consent gate; per-subject token scope; same edit-checks + audit |
 
 ## Tool inventory
 
