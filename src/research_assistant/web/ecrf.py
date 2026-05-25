@@ -16,7 +16,8 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel, ConfigDict
 
-from ..domain.ecrf import FormDefinition, VisitSchedule
+from ..agent.specialists import ecrf_design
+from ..domain.ecrf import FormDefinition, StudyDraft, VisitSchedule
 from ..ecrf import form_to_odm_xml
 from ..persistence.database import get_db_session
 from ..persistence.ecrf_repository import EcrfError, EcrfRepository
@@ -77,8 +78,24 @@ def _form_detail(form: EcrfFormDefinition) -> FormDetailOut:
     )
 
 
+class DraftIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    protocol_text: str
+    instructions: str | None = None
+
+
 def create_ecrf_router() -> APIRouter:
     router = APIRouter(prefix="/ecrf", tags=["ecrf"])
+
+    # ── AI draft-from-protocol (E3) ────────────────────────────────────────
+
+    @router.post("/draft", response_model=StudyDraft)
+    async def draft_forms(body: DraftIn, admin: AdminUser) -> StudyDraft:
+        """Draft a study's CRFs from protocol text (review-only; saves nothing)."""
+        if not body.protocol_text.strip():
+            raise HTTPException(422, "protocol_text is required")
+        draft, _meta = await ecrf_design.draft_from_protocol(body.protocol_text, body.instructions)
+        return draft
 
     # ── studies ──────────────────────────────────────────────────────────
 

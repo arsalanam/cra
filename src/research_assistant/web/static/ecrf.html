@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Form Builder · Clinical Research Assistant</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, Segoe UI, Roboto, sans-serif; background: #0f1115; color: #e6e6e6; min-height: 100vh; }
+  .header { padding: 14px 24px; border-bottom: 1px solid #262a33; display: flex; justify-content: space-between; align-items: center; background: #171a21; }
+  .header h1 { margin: 0; font-size: 16px; }
+  .header a { color: #8b93a7; text-decoration: none; font-size: 13px; }
+  .header a:hover { color: #e6e6e6; }
+  .container { max-width: 1080px; margin: 22px auto; padding: 0 24px; }
+  h2 { font-size: 13px; text-transform: uppercase; color: #8b93a7; letter-spacing: .6px; margin: 0 0 10px; font-weight: 700; }
+  .lead { color: #8b93a7; font-size: 13px; margin: 0 0 18px; line-height: 1.5; }
+  .grid { display: grid; grid-template-columns: 320px 1fr; gap: 20px; }
+  .card { background: #171a21; border: 1px solid #262a33; border-radius: 8px; padding: 16px 18px; margin-bottom: 16px; }
+  input[type=text], textarea, select { width: 100%; background: #0f1115; color: #e6e6e6; border: 1px solid #2a2f3a; border-radius: 5px; padding: 8px 10px; font: inherit; font-size: 13px; }
+  textarea { font-family: 'Consolas','Monaco',monospace; font-size: 12px; line-height: 1.45; resize: vertical; }
+  label { font-size: 11px; text-transform: uppercase; color: #5a6070; font-weight: 600; letter-spacing: .5px; display: block; margin: 8px 0 3px; }
+  .btn { background: #4a7fd9; color: #fff; border: 0; border-radius: 6px; padding: 8px 14px; font-weight: 600; font-size: 13px; cursor: pointer; }
+  .btn:hover { background: #5a8fe9; }
+  .btn.secondary { background: #2a2f3a; color: #cdd3df; }
+  .btn.secondary:hover { background: #353b48; }
+  .btn:disabled { background: #333; color: #777; cursor: not-allowed; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+  .study { padding: 8px 10px; border-radius: 5px; cursor: pointer; font-size: 13px; }
+  .study:hover { background: #1f232c; }
+  .study.active { background: #1f2937; color: #fff; }
+  .form-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; border-radius: 5px; cursor: pointer; font-size: 13px; }
+  .form-row:hover { background: #1f232c; }
+  .badge { font-family: monospace; font-size: 10px; padding: 1px 6px; border-radius: 4px; background: #0f1115; border: 1px solid #2a2f3a; color: #8b93a7; }
+  .badge.published { color: #6bcf7f; border-color: #2a3f2f; }
+  .badge.draft { color: #d9b87a; border-color: #3f372a; }
+  .badge.superseded { color: #5a6070; }
+  .status { font-size: 12px; margin-top: 8px; min-height: 16px; }
+  .status.ok { color: #6bcf7f; } .status.err { color: #d97a7a; } .status.muted { color: #8b93a7; }
+  .muted { color: #5a6070; font-size: 12px; }
+  pre.err { white-space: pre-wrap; color: #d97a7a; font-size: 12px; background:#1a1113; border:1px solid #3a2a2a; border-radius:5px; padding:8px; margin-top:8px; }
+</style>
+</head>
+<body>
+  <div class="header"><h1>Form Builder · eCRF</h1><a href="/">← Back to assistant</a></div>
+  <div class="container">
+    <p class="lead">Author study CRFs, draft them from a protocol with AI, then publish versioned forms. Editing/publishing requires the <code>admin</code> role. Forms export to CDISC ODM-XML.</p>
+    <div class="grid">
+      <div>
+        <div class="card">
+          <h2>Studies</h2>
+          <div id="studies" class="muted">Loading…</div>
+          <label>New study name</label>
+          <input type="text" id="new-study" placeholder="e.g. SGLT2 in HFpEF" />
+          <div class="row"><button class="btn" onclick="createStudy()">Create study</button></div>
+        </div>
+        <div class="card">
+          <h2>Forms <span id="study-label" class="muted"></span></h2>
+          <div id="forms" class="muted">Select a study.</div>
+        </div>
+        <div class="card">
+          <h2>Draft from protocol (AI)</h2>
+          <textarea id="protocol" rows="6" placeholder="Paste the study protocol text…"></textarea>
+          <div class="row"><button class="btn" id="draft-btn" onclick="draft()">Draft CRFs</button></div>
+          <div id="draft-status" class="status muted"></div>
+          <div id="draft-forms"></div>
+        </div>
+      </div>
+      <div>
+        <div class="card">
+          <h2>Form definition <span id="form-label" class="muted"></span></h2>
+          <textarea id="editor" rows="26" placeholder="Select or draft a form, or paste a FormDefinition JSON here.">{
+  "name": "demographics",
+  "title": "Demographics",
+  "sections": [
+    { "id": "main", "title": "Main", "items": [
+      { "id": "age", "label": "Age", "data_type": "integer", "cdash_var": "AGE", "required": true }
+    ] }
+  ],
+  "code_lists": []
+}</textarea>
+          <div class="row">
+            <button class="btn" onclick="saveForm()">Save draft</button>
+            <button class="btn secondary" onclick="publishForm()">Publish</button>
+            <button class="btn secondary" onclick="newVersion()">New version</button>
+            <button class="btn secondary" onclick="exportOdm()">Export ODM</button>
+          </div>
+          <div id="status" class="status"></div>
+          <pre id="err" class="err" style="display:none"></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+  let studyId = null, formId = null, formStatus = null;
+
+  async function api(path, opts) {
+    const r = await fetch(path, opts);
+    if (r.status === 401) { window.location.href = "/auth/login"; throw new Error("unauthorized"); }
+    return r;
+  }
+  function esc(s){return (s==null?"":String(s)).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+  function setStatus(msg, kind){ const e=document.getElementById("status"); e.className="status "+(kind||"muted"); e.textContent=msg; }
+  function showErr(obj){ const e=document.getElementById("err"); e.style.display="block"; e.textContent=typeof obj==="string"?obj:JSON.stringify(obj,null,2); }
+  function clearErr(){ document.getElementById("err").style.display="none"; }
+
+  async function loadStudies() {
+    const studies = await (await api("/api/ecrf/studies")).json();
+    document.getElementById("studies").innerHTML = studies.length
+      ? studies.map(s => `<div class="study ${s.id===studyId?'active':''}" onclick="selectStudy('${s.id}','${esc(s.name)}')">${esc(s.name)}</div>`).join("")
+      : `<div class="muted">No studies yet.</div>`;
+  }
+  async function createStudy() {
+    const name = document.getElementById("new-study").value.trim();
+    if (!name) return;
+    const r = await api("/api/ecrf/studies", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({name})});
+    if (r.ok) { document.getElementById("new-study").value=""; await loadStudies(); }
+    else setStatus("Create failed: "+(await r.json()).detail, "err");
+  }
+  async function selectStudy(id, name) {
+    studyId = id; document.getElementById("study-label").textContent = "· "+name;
+    await loadStudies(); await loadForms();
+  }
+  async function loadForms() {
+    if (!studyId) return;
+    const forms = await (await api(`/api/ecrf/studies/${studyId}/forms`)).json();
+    document.getElementById("forms").innerHTML = forms.length
+      ? forms.map(f => `<div class="form-row" onclick="loadForm('${f.id}')"><span>${esc(f.name)}</span><span><span class="badge">v${f.version}</span> <span class="badge ${f.status}">${f.status}</span></span></div>`).join("")
+      : `<div class="muted">No forms yet — draft or write one, then Save.</div>`;
+  }
+  async function loadForm(id) {
+    const f = await (await api(`/api/ecrf/forms/${id}`)).json();
+    formId = f.id; formStatus = f.status;
+    document.getElementById("editor").value = JSON.stringify(f.definition, null, 2);
+    document.getElementById("form-label").textContent = `· ${f.name} v${f.version} (${f.status})`;
+    setStatus(f.status === "draft" ? "Editing draft." : "Published/superseded — Save creates a new version via New version.", "muted");
+    clearErr();
+  }
+  function parseEditor() {
+    clearErr();
+    try { return JSON.parse(document.getElementById("editor").value); }
+    catch (e) { showErr("Invalid JSON: "+e.message); return null; }
+  }
+  async function saveForm() {
+    if (!studyId) { setStatus("Select a study first.", "err"); return; }
+    const def = parseEditor(); if (!def) return;
+    let r;
+    if (formId && formStatus === "draft") {
+      r = await api(`/api/ecrf/forms/${formId}`, {method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify(def)});
+    } else {
+      r = await api(`/api/ecrf/studies/${studyId}/forms`, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(def)});
+    }
+    const out = await r.json();
+    if (r.ok) { formId = out.id; formStatus = out.status; setStatus(`Saved ${out.name} v${out.version} (${out.status}).`, "ok"); await loadForms(); clearErr(); }
+    else { setStatus("Save failed.", "err"); showErr(out.detail); }
+  }
+  async function publishForm() {
+    if (!formId) { setStatus("Save the draft first.", "err"); return; }
+    const r = await api(`/api/ecrf/forms/${formId}/publish`, {method:"POST"});
+    const out = await r.json();
+    if (r.ok) { formStatus = out.status; setStatus(`Published v${out.version}.`, "ok"); await loadForms(); }
+    else { setStatus("Publish failed.", "err"); showErr(out.detail); }
+  }
+  async function newVersion() {
+    if (!formId) return;
+    const r = await api(`/api/ecrf/forms/${formId}/new-version`, {method:"POST"});
+    const out = await r.json();
+    if (r.ok) { await loadForms(); await loadForm(out.id); setStatus(`New draft v${out.version} created.`, "ok"); }
+    else { setStatus("New version failed.", "err"); showErr(out.detail); }
+  }
+  function exportOdm() {
+    if (!formId) { setStatus("Select a saved form first.", "err"); return; }
+    window.location.href = `/api/ecrf/forms/${formId}/export.odm.xml`;
+  }
+  async function draft() {
+    const text = document.getElementById("protocol").value.trim();
+    if (!text) return;
+    const btn = document.getElementById("draft-btn"); btn.disabled = true;
+    const ds = document.getElementById("draft-status"); ds.className="status muted"; ds.textContent="Drafting… (this calls the model, ~10-30s)";
+    try {
+      const r = await api("/api/ecrf/draft", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({protocol_text:text})});
+      const out = await r.json();
+      if (!r.ok) { ds.className="status err"; ds.textContent="Draft failed: "+JSON.stringify(out.detail); return; }
+      window._draft = out;
+      ds.className="status ok"; ds.textContent=`Drafted ${out.forms.length} form(s). ${out.notes||""}`;
+      document.getElementById("draft-forms").innerHTML = out.forms.map((f,i)=>
+        `<div class="form-row" onclick="loadDraftForm(${i})"><span>${esc(f.title)} <span class="muted">(${esc(f.name)})</span></span><span class="badge draft">load →</span></div>`).join("");
+    } catch (e) { ds.className="status err"; ds.textContent="Draft failed: "+e.message; }
+    finally { btn.disabled = false; }
+  }
+  function loadDraftForm(i) {
+    const f = window._draft.forms[i];
+    document.getElementById("editor").value = JSON.stringify(f, null, 2);
+    formId = null; formStatus = null;
+    document.getElementById("form-label").textContent = "· (new draft from AI — review then Save)";
+    setStatus("Loaded AI draft into the editor. Review, then Save to create it under the selected study.", "muted");
+    clearErr();
+  }
+  loadStudies();
+</script>
+</body>
+</html>

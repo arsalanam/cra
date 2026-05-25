@@ -173,3 +173,26 @@ class VisitSchedule(BaseModel):
 
     events: list[ScheduledEvent] = Field(default_factory=list)
     form_event_map: list[FormEventMapping] = Field(default_factory=list)
+
+
+class StudyDraft(BaseModel):
+    """An AI-generated draft of a study's CRFs for human review (E3).
+
+    Produced by the `ecrf_design` specialist from a protocol. It is always
+    reviewed/edited by a designer and saved through the normal draft→publish
+    lifecycle — never auto-published. Each `FormDefinition` is validated by its
+    own integrity validator, so a malformed draft fails loudly.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    forms: list[FormDefinition] = Field(
+        default_factory=list, description="One CRF per measurable data-collection need."
+    )
+    visit_schedule: VisitSchedule | None = Field(
+        default=None, description="Planned events + which forms are collected at each."
+    )
+    notes: str = Field(
+        default="",
+        description="Assumptions, gaps, or caveats the reviewer should check.",
+    )

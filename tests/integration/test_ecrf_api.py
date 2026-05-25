@@ -111,3 +111,51 @@ async def test_invalid_definition_rejected(client: AsyncClient) -> None:
     bad["sections"][0]["items"][1]["code_list_ref"] = "missing"  # unknown code list
     r = await client.post(f"/api/ecrf/studies/{study['id']}/forms", json=bad)
     assert r.status_code == 422
+
+
+# ── E3: AI draft-from-protocol (specialist mocked — no Bedrock call) ───────────
+
+
+async def _fake_draft(protocol_text: str, instructions: str | None = None):  # type: ignore[no-untyped-def]
+    from research_assistant.domain.ecrf import FormDefinition, Item, Section, StudyDraft
+
+    draft = StudyDraft(
+        forms=[
+            FormDefinition(
+                name="demographics",
+                title="Demographics",
+                sections=[
+                    Section(
+                        id="main",
+                        title="Main",
+                        items=[Item(id="age", label="Age", data_type="integer", cdash_var="AGE")],
+                    )
+                ],
+            )
+        ],
+        notes="drafted from protocol",
+    )
+    return draft, {"usage": {}}
+
+
+async def test_draft_endpoint_and_roundtrip(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "research_assistant.agent.specialists.ecrf_design.draft_from_protocol", _fake_draft
+    )
+    r = await client.post("/api/ecrf/draft", json={"protocol_text": "A trial of X in Y."})
+    assert r.status_code == 200, r.text
+    out = r.json()
+    assert out["forms"][0]["name"] == "demographics"
+    assert out["notes"] == "drafted from protocol"
+
+    # The drafted form is a valid FormDefinition that saves under a study.
+    sid = (await client.post("/api/ecrf/studies", json={"name": "S"})).json()["id"]
+    created = await client.post(f"/api/ecrf/studies/{sid}/forms", json=out["forms"][0])
+    assert created.status_code == 201
+
+
+async def test_draft_empty_protocol_422(client: AsyncClient) -> None:
+    r = await client.post("/api/ecrf/draft", json={"protocol_text": "   "})
+    assert r.status_code == 422
