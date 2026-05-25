@@ -169,6 +169,32 @@ class SignatureOut(BaseModel):
     voided: bool
 
 
+class VerifyIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    item_ids: list[str]
+
+
+class VerificationOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    item_id: str
+    verified_by: str | None
+    verified_at: datetime
+
+
+class SubjectSignIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    meaning: str
+
+
+class SubjectSignatureOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    signer_sub: str | None
+    meaning: str
+    signed_at: datetime
+    voided: bool
+
+
 class AuditEntryOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     action: str
@@ -452,5 +478,58 @@ def create_edc_router() -> APIRouter:
         async with get_clinical_session() as s:
             sigs = await ClinicalRepository(s).list_signatures(form_instance_id)
             return [SignatureOut.model_validate(x) for x in sigs]
+
+    # ── source-data verification (E6) ───────────────────────────────────────
+
+    @router.post("/form-instances/{form_instance_id}/verify")
+    async def verify(form_instance_id: str, body: VerifyIn, user: DataEntryUser) -> dict[str, int]:
+        async with get_clinical_session() as s:
+            try:
+                n = await ClinicalRepository(s).verify_items(
+                    form_instance_id, body.item_ids, verifier_sub=user.sub
+                )
+            except ClinicalError as e:
+                raise HTTPException(404, str(e)) from e
+            return {"verified": n}
+
+    @router.get(
+        "/form-instances/{form_instance_id}/verifications", response_model=list[VerificationOut]
+    )
+    async def list_verifications(form_instance_id: str) -> list[VerificationOut]:
+        async with get_clinical_session() as s:
+            vs = await ClinicalRepository(s).list_verifications(form_instance_id)
+            return [VerificationOut.model_validate(v) for v in vs]
+
+    # ── subject-casebook sign-off + lock (E6) ───────────────────────────────
+
+    @router.post("/subjects/{subject_id}/sign", response_model=SubjectSignatureOut)
+    async def sign_subject(
+        subject_id: str, body: SubjectSignIn, user: DataEntryUser
+    ) -> SubjectSignatureOut:
+        async with get_clinical_session() as s:
+            try:
+                sig = await ClinicalRepository(s).sign_subject(
+                    subject_id, meaning=body.meaning, signer_sub=user.sub
+                )
+            except ClinicalError as e:
+                raise HTTPException(409, str(e)) from e
+            return SubjectSignatureOut.model_validate(sig)
+
+    @router.post("/subjects/{subject_id}/unlock", response_model=SubjectOut)
+    async def unlock_subject(subject_id: str, body: UnlockIn, admin: AdminUser) -> SubjectOut:
+        async with get_clinical_session() as s:
+            try:
+                subject = await ClinicalRepository(s).unlock_subject(
+                    subject_id, reason=body.reason, actor_sub=admin.sub
+                )
+            except ClinicalError as e:
+                raise HTTPException(409, str(e)) from e
+            return SubjectOut.model_validate(subject)
+
+    @router.get("/subjects/{subject_id}/signatures", response_model=list[SubjectSignatureOut])
+    async def list_subject_signatures(subject_id: str) -> list[SubjectSignatureOut]:
+        async with get_clinical_session() as s:
+            sigs = await ClinicalRepository(s).list_subject_signatures(subject_id)
+            return [SubjectSignatureOut.model_validate(x) for x in sigs]
 
     return router

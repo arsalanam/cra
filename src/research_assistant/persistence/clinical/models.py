@@ -283,6 +283,43 @@ class Signature(ClinicalBase):
     )
 
 
+class Verification(ClinicalBase):
+    """Source-data verification of a captured item by a monitor (eCRF E6, SDV).
+
+    A separate table (not a column on ItemData) so the clinical store gains the
+    feature via create_all without an ItemData migration."""
+
+    __tablename__ = "verifications"
+    __table_args__ = (UniqueConstraint("form_instance_id", "item_id", name="uq_verification"),)
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    form_instance_id: Mapped[str] = mapped_column(
+        ForeignKey("form_instances.id", ondelete="CASCADE"), index=True
+    )
+    item_id: Mapped[str] = mapped_column(Text)
+    verified_by: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    verified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class SubjectSignature(ClinicalBase):
+    """A subject-casebook sign-off (eCRF E6) — the next level of the lock
+    hierarchy above the form-instance Signature."""
+
+    __tablename__ = "subject_signatures"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    subject_id: Mapped[str] = mapped_column(
+        ForeignKey("subjects.id", ondelete="CASCADE"), index=True
+    )
+    signer_sub: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    meaning: Mapped[str] = mapped_column(Text)
+    signed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    voided: Mapped[bool] = mapped_column(Boolean, default=False)
+    voided_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
+
+
 class AuditEntry(ClinicalBase):
     """Append-only audit trail (ALCOA+ / 21 CFR Part 11 §11.10(e)).
 

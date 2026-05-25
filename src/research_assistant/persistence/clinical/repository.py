@@ -34,6 +34,8 @@ from .models import (
     Site,
     StudyDeployment,
     Subject,
+    SubjectSignature,
+    Verification,
 )
 
 logger = logging.getLogger(__name__)
@@ -665,6 +667,138 @@ class ClinicalRepository:
             select(Signature)
             .where(Signature.form_instance_id == form_instance_id)
             .order_by(Signature.signed_at)
+        )
+        return list(rows.all())
+
+    # ── source-data verification (E6) ────────────────────────────────────────
+
+    async def verify_items(
+        self, form_instance_id: str, item_ids: Sequence[str], *, verifier_sub: str | None = None
+    ) -> int:
+        """Mark items source-verified (idempotent per item). Returns count added."""
+        if await self._s.get(FormInstance, form_instance_id) is None:
+            raise ClinicalError(f"Form instance {form_instance_id!r} not found")
+        already = {
+            v.item_id
+            for v in (
+                await self._s.scalars(
+                    select(Verification).where(Verification.form_instance_id == form_instance_id)
+                )
+            ).all()
+        }
+        added = 0
+        for item_id in item_ids:
+            if item_id in already:
+                continue
+            self._s.add(
+                Verification(
+                    form_instance_id=form_instance_id, item_id=item_id, verified_by=verifier_sub
+                )
+            )
+            self._audit(
+                entity_type="verification",
+                entity_id=f"{form_instance_id}:{item_id}",
+                form_instance_id=form_instance_id,
+                action="verify",
+                item_id=item_id,
+                actor_sub=verifier_sub,
+            )
+            added += 1
+        await self._s.flush()
+        return added
+
+    async def list_verifications(self, form_instance_id: str) -> list[Verification]:
+        rows = await self._s.scalars(
+            select(Verification).where(Verification.form_instance_id == form_instance_id)
+        )
+        return list(rows.all())
+
+    # ── subject-casebook sign-off + lock (E6) ────────────────────────────────
+
+    async def sign_subject(
+        self, subject_id: str, *, meaning: str, signer_sub: str | None = None
+    ) -> SubjectSignature:
+        """Sign off a subject casebook and lock all its form instances.
+
+        Requires the subject to have at least one form instance and all of them
+        to be complete or signed (none blank/in-progress)."""
+        subject = await self._s.get(Subject, subject_id)
+        if subject is None:
+            raise ClinicalError(f"Subject {subject_id!r} not found")
+        instances = await self.list_form_instances(subject_id)
+        if not instances:
+            raise ClinicalError("Subject has no form instances to sign off")
+        unfinished = [fi for fi in instances if fi.status not in ("complete", "signed")]
+        if unfinished:
+            raise ClinicalError("All form instances must be complete or signed before sign-off")
+
+        sig = SubjectSignature(subject_id=subject_id, signer_sub=signer_sub, meaning=meaning)
+        self._s.add(sig)
+        for fi in instances:
+            fi.status = "locked"
+        subject.status = "locked"
+        await self._s.flush()
+        self._audit(
+            entity_type="subject",
+            entity_id=subject_id,
+            action="sign_subject",
+            new_value="locked",
+            reason=meaning,
+            actor_sub=signer_sub,
+        )
+        return sig
+
+    async def unlock_subject(
+        self, subject_id: str, *, reason: str, actor_sub: str | None = None
+    ) -> Subject:
+        """Reopen a locked subject casebook: void signatures, reopen instances."""
+        subject = await self._s.get(Subject, subject_id)
+        if subject is None:
+            raise ClinicalError(f"Subject {subject_id!r} not found")
+        if subject.status != "locked":
+            raise ClinicalError(f"Subject is {subject.status}, not locked")
+        now = datetime.now(UTC)
+        instances = await self.list_form_instances(subject_id)
+        for fi in instances:
+            fi.status = "in_progress"
+            for sig in (
+                await self._s.scalars(
+                    select(Signature).where(
+                        Signature.form_instance_id == fi.id,
+                        Signature.voided == False,  # noqa: E712
+                    )
+                )
+            ).all():
+                sig.voided = True
+                sig.voided_at = now
+        for ssig in (
+            await self._s.scalars(
+                select(SubjectSignature).where(
+                    SubjectSignature.subject_id == subject_id,
+                    SubjectSignature.voided == False,  # noqa: E712
+                )
+            )
+        ).all():
+            ssig.voided = True
+            ssig.voided_at = now
+        subject.status = "enrolled"
+        await self._s.flush()
+        self._audit(
+            entity_type="subject",
+            entity_id=subject_id,
+            action="unlock_subject",
+            old_value="locked",
+            new_value="enrolled",
+            reason=reason,
+            actor_sub=actor_sub,
+        )
+        return subject
+
+    async def list_subject_signatures(self, subject_id: str) -> list[SubjectSignature]:
+        rows = await self._s.scalars(
+            select(SubjectSignature)
+            .where(SubjectSignature.subject_id == subject_id)
+            .order_by(SubjectSignature.signed_at)
         )
         return list(rows.all())
 

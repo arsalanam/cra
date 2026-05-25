@@ -39,11 +39,41 @@ def _get_engine_and_factory() -> tuple[AsyncEngine, async_sessionmaker[AsyncSess
     return _engine, _session_factory
 
 
+# Postgres-only DDL enforcing the audit trail's append-only guarantee at the
+# engine (eCRF E6). Skipped on SQLite (tests). Idempotent.
+_AUDIT_IMMUTABLE_DDL = """
+CREATE OR REPLACE FUNCTION audit_entries_immutable() RETURNS trigger AS $$
+BEGIN
+    RAISE EXCEPTION 'audit_entries is append-only; UPDATE/DELETE is not permitted';
+END;
+$$ LANGUAGE plpgsql;
+"""
+
+_AUDIT_IMMUTABLE_TRIGGER = """
+CREATE TRIGGER trg_audit_entries_immutable
+    BEFORE UPDATE OR DELETE ON audit_entries
+    FOR EACH ROW EXECUTE FUNCTION audit_entries_immutable();
+"""
+
+
+async def _apply_clinical_pg_ddl(engine: AsyncEngine) -> None:
+    """Install the append-only audit trigger — Postgres only, no-op elsewhere."""
+    if engine.dialect.name != "postgresql":
+        return
+    async with engine.begin() as conn:
+        await conn.exec_driver_sql(_AUDIT_IMMUTABLE_DDL)
+        await conn.exec_driver_sql(
+            "DROP TRIGGER IF EXISTS trg_audit_entries_immutable ON audit_entries"
+        )
+        await conn.exec_driver_sql(_AUDIT_IMMUTABLE_TRIGGER)
+
+
 async def init_clinical_db() -> None:
-    """Create the clinical-store tables if they don't exist."""
+    """Create the clinical-store tables if they don't exist; harden the audit trail."""
     engine, _ = _get_engine_and_factory()
     async with engine.begin() as conn:
         await conn.run_sync(ClinicalBase.metadata.create_all)
+    await _apply_clinical_pg_ddl(engine)
     logger.info("Clinical-data tables initialised")
 
 

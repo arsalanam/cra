@@ -285,6 +285,81 @@ async def test_cannot_sign_incomplete_form(client: AsyncClient) -> None:
     assert r.status_code == 409
 
 
+# ── E6: SDV + subject-casebook sign-off ───────────────────────────────────────
+
+
+async def _deployed_subject(client: AsyncClient) -> tuple[str, str]:
+    """Returns (subject_id, deployed_form_id) for a deployed checked form."""
+    sid = (await client.post("/api/ecrf/studies", json={"name": "S6"})).json()["id"]
+    fid = (await client.post(f"/api/ecrf/studies/{sid}/forms", json=_form_with_checks())).json()[
+        "id"
+    ]
+    await client.post(f"/api/ecrf/forms/{fid}/publish")
+    dep = (await client.post("/api/edc/deployments", json={"research_study_id": sid})).json()["id"]
+    form_id = (await client.get(f"/api/edc/deployments/{dep}/forms")).json()[0]["id"]
+    site = (await client.post(f"/api/edc/deployments/{dep}/sites", json={"name": "A"})).json()["id"]
+    subj = (
+        await client.post(
+            f"/api/edc/deployments/{dep}/subjects", json={"site_id": site, "subject_code": "S1"}
+        )
+    ).json()["id"]
+    return subj, form_id
+
+
+async def test_sdv_verification(client: AsyncClient) -> None:
+    subj, form_id = await _deployed_subject(client)
+    fi = (
+        await client.post(f"/api/edc/subjects/{subj}/forms", json={"deployed_form_id": form_id})
+    ).json()["id"]
+    await client.put(f"/api/edc/form-instances/{fi}/data", json={"values": {"age": "45"}})
+
+    assert (
+        await client.post(f"/api/edc/form-instances/{fi}/verify", json={"item_ids": ["age"]})
+    ).json()["verified"] == 1
+    # Idempotent — re-verifying the same item adds nothing.
+    assert (
+        await client.post(f"/api/edc/form-instances/{fi}/verify", json={"item_ids": ["age"]})
+    ).json()["verified"] == 0
+    vs = (await client.get(f"/api/edc/form-instances/{fi}/verifications")).json()
+    assert any(v["item_id"] == "age" for v in vs)
+
+
+async def test_subject_signoff_locks_then_unlock(client: AsyncClient) -> None:
+    subj, form_id = await _deployed_subject(client)
+    fi = (
+        await client.post(f"/api/edc/subjects/{subj}/forms", json={"deployed_form_id": form_id})
+    ).json()["id"]
+
+    # Can't sign off with an incomplete form instance.
+    assert (
+        await client.post(f"/api/edc/subjects/{subj}/sign", json={"meaning": "PI"})
+    ).status_code == 409
+
+    # Complete -> sign off the casebook -> instance locked -> edits blocked.
+    await client.put(
+        f"/api/edc/form-instances/{fi}/data", json={"values": {"age": "45"}, "mark_complete": True}
+    )
+    assert (
+        await client.post(f"/api/edc/subjects/{subj}/sign", json={"meaning": "PI casebook"})
+    ).status_code == 200
+    assert (
+        await client.put(f"/api/edc/form-instances/{fi}/data", json={"values": {"age": "46"}})
+    ).status_code == 409
+
+    # Admin unlock reopens the casebook and voids the subject signature.
+    assert (
+        await client.post(f"/api/edc/subjects/{subj}/unlock", json={"reason": "fix"})
+    ).status_code == 200
+    assert (
+        await client.put(
+            f"/api/edc/form-instances/{fi}/data",
+            json={"values": {"age": "46"}, "reason": "correction"},
+        )
+    ).status_code == 200
+    ssigs = (await client.get(f"/api/edc/subjects/{subj}/signatures")).json()
+    assert ssigs[0]["voided"] is True
+
+
 async def test_manual_query_workflow_via_api(client: AsyncClient) -> None:
     fi_id = await _open_instance_with_checks(client)
     await client.put(f"/api/edc/form-instances/{fi_id}/data", json={"values": {"age": "45"}})
