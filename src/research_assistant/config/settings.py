@@ -117,6 +117,13 @@ class Settings(BaseSettings):
     # managed Postgres).
     database_url: str = "postgresql+asyncpg://cra:cra@postgres:5432/cra"
 
+    # Clinical-data store (eCRF E1+). A SEPARATE Postgres for subject PHI
+    # (decision D2 — isolation: own credentials/backup/residency), distinct
+    # from the research-app `database_url` above. The agent holds both
+    # connections; the Data Collector (E4) reaches this store only via the
+    # agent API. Tests override to a second in-memory SQLite.
+    clinical_database_url: str = "postgresql+asyncpg://cra:cra@clinical-postgres:5432/cra_clinical"
+
     # AWS Cognito (identity). Populated by scripts/cognito_setup.py; all
     # blank in dev/test environments — the auth middleware short-circuits
     # when cognito_user_pool_id is empty so non-auth code paths keep

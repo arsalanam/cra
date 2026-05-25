@@ -48,6 +48,27 @@ services:
       timeout: 3s
       retries: 20
 
+  # Separate clinical-data (PHI) store — eCRF E1, decision D2. Own
+  # credentials/volume, isolated from the research-app `postgres` above.
+  clinical-postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${CLINICAL_POSTGRES_USER:-cra}
+      POSTGRES_PASSWORD: ${CLINICAL_POSTGRES_PASSWORD:-cra}
+      POSTGRES_DB: ${CLINICAL_POSTGRES_DB:-cra_clinical}
+    volumes:
+      - clinical-postgres-data:/var/lib/postgresql/data
+    networks:
+      default:
+        aliases:
+          - clinical-postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${CLINICAL_POSTGRES_USER:-cra} -d ${CLINICAL_POSTGRES_DB:-cra_clinical}"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
   agent:
     build:
       context: ../..
@@ -55,6 +76,8 @@ services:
     restart: unless-stopped
     depends_on:
       postgres:
+        condition: service_healthy
+      clinical-postgres:
         condition: service_healthy
     environment:
       # — Bedrock —
@@ -68,6 +91,8 @@ services:
       BEDROCK_MODEL_ID: ${BEDROCK_MODEL_ID:-us.anthropic.claude-haiku-4-5-20251001-v1:0}
       # — DB —
       DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://cra:cra@postgres:5432/cra}
+      # — Clinical-data (PHI) store, eCRF E1 (separate Postgres, D2) —
+      CLINICAL_DATABASE_URL: ${CLINICAL_DATABASE_URL:-postgresql+asyncpg://cra:cra@clinical-postgres:5432/cra_clinical}
       # — External APIs —
       TAVILY_API_KEY: ${TAVILY_API_KEY}
       NCBI_API_KEY: ${NCBI_API_KEY}
@@ -124,3 +149,4 @@ services:
 
 volumes:
   postgres-data:
+  clinical-postgres-data:

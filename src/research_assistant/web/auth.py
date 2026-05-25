@@ -114,6 +114,26 @@ async def require_admin(user: CurrentUser) -> SessionPayload:
 AdminUser = Annotated[SessionPayload, Depends(require_admin)]
 
 
+async def require_data_entry(user: CurrentUser) -> SessionPayload:
+    """FastAPI dependency: require the 'data_entry' or 'admin' role (eCRF E1).
+
+    Gates clinical-data capture writes. Per-site scoping (a coordinator only
+    seeing their own site's subjects) is deferred to E4. Short-circuits open
+    when auth is disabled, mirroring `require_admin`.
+    """
+    settings = get_settings()
+    if not settings.auth_enabled:
+        return user
+    async with get_db_session() as db:
+        roles = await UserRepository(db).roles_for_sub(user.sub)
+    if "data_entry" not in roles and "admin" not in roles:
+        raise HTTPException(status_code=403, detail="data_entry or admin role required.")
+    return user
+
+
+DataEntryUser = Annotated[SessionPayload, Depends(require_data_entry)]
+
+
 def create_auth_router() -> APIRouter:
     router = APIRouter(prefix="/auth", tags=["auth"])
 
