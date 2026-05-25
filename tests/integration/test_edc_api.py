@@ -243,6 +243,48 @@ async def test_deployed_form_definition_and_subject_forms(client: AsyncClient) -
     assert len(instances) == 1 and instances[0]["deployed_form_id"] == form["id"]
 
 
+async def test_sign_lock_and_unlock(client: AsyncClient) -> None:
+    fi_id = await _open_instance_with_checks(client)
+    # Complete the form (required age present).
+    await client.put(
+        f"/api/edc/form-instances/{fi_id}/data",
+        json={"values": {"age": "45"}, "mark_complete": True},
+    )
+
+    # Sign it -> locked.
+    sig = await client.post(
+        f"/api/edc/form-instances/{fi_id}/sign", json={"meaning": "PI sign-off"}
+    )
+    assert sig.status_code == 200 and sig.json()["voided"] is False
+
+    # Editing a signed form is blocked.
+    blocked = await client.put(
+        f"/api/edc/form-instances/{fi_id}/data", json={"values": {"age": "46"}}
+    )
+    assert blocked.status_code == 409
+
+    # Unlock (elevated) voids the signature and reopens the form.
+    un = await client.post(
+        f"/api/edc/form-instances/{fi_id}/unlock", json={"reason": "correction needed"}
+    )
+    assert un.status_code == 200 and un.json()["status"] == "in_progress"
+    sigs = (await client.get(f"/api/edc/form-instances/{fi_id}/signatures")).json()
+    assert sigs[0]["voided"] is True
+
+    # Editing works again after unlock.
+    again = await client.put(
+        f"/api/edc/form-instances/{fi_id}/data", json={"values": {"age": "46"}, "reason": "fix"}
+    )
+    assert again.status_code == 200
+
+
+async def test_cannot_sign_incomplete_form(client: AsyncClient) -> None:
+    fi_id = await _open_instance_with_checks(client)
+    # Not completed -> signing is rejected.
+    r = await client.post(f"/api/edc/form-instances/{fi_id}/sign", json={"meaning": "x"})
+    assert r.status_code == 409
+
+
 async def test_manual_query_workflow_via_api(client: AsyncClient) -> None:
     fi_id = await _open_instance_with_checks(client)
     await client.put(f"/api/edc/form-instances/{fi_id}/data", json={"values": {"age": "45"}})

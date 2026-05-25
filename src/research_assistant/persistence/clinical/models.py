@@ -18,7 +18,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -189,6 +189,28 @@ class ItemData(ClinicalBase):
     form_instance: Mapped[FormInstance] = relationship(back_populates="items")
 
 
+class ParticipantAccess(ClinicalBase):
+    """A magic-link/token grant letting a participant fill their own ePRO forms
+    (eCRF E4b, design O1). Token is stored HASHED; the raw token only ever lives
+    in the issued link. Scoped to a single subject; consent is captured before
+    first entry."""
+
+    __tablename__ = "participant_access"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    subject_id: Mapped[str] = mapped_column(
+        ForeignKey("subjects.id", ondelete="CASCADE"), index=True
+    )
+    deployment_id: Mapped[str] = mapped_column(Text, index=True)
+    token_hash: Mapped[str] = mapped_column(Text, unique=True, index=True)
+    status: Mapped[str] = mapped_column(Text, default="active", doc="active | revoked")
+    consent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
+    created_by: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
 class Query(ClinicalBase):
     """A data discrepancy/query against a captured item (eCRF E2, design §12).
 
@@ -234,6 +256,31 @@ class QueryResponse(ClinicalBase):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
     query: Mapped[Query] = relationship(back_populates="responses")
+
+
+class Signature(ClinicalBase):
+    """An electronic signature on a form instance (eCRF E5; Part 11 §11.50/70).
+
+    Records the signer, the meaning of the signature, when it was applied, and
+    a `content_hash` binding it to the exact data state signed. Editing a signed
+    form is blocked; unlocking voids the signature (`voided=True`) and is
+    audited — so any change invalidates the signature.
+    """
+
+    __tablename__ = "signatures"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    form_instance_id: Mapped[str] = mapped_column(
+        ForeignKey("form_instances.id", ondelete="CASCADE"), index=True
+    )
+    signer_sub: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    meaning: Mapped[str] = mapped_column(Text, doc="e.g. 'PI sign-off: data accurate & complete'.")
+    content_hash: Mapped[str] = mapped_column(Text, doc="SHA-256 of the signed item values.")
+    signed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    voided: Mapped[bool] = mapped_column(Boolean, default=False)
+    voided_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
 
 
 class AuditEntry(ClinicalBase):

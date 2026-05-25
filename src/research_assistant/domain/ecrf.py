@@ -125,6 +125,10 @@ class FormDefinition(BaseModel):
     title: str = Field(description="Human-readable form title, e.g. 'Demographics'.")
     sections: list[Section] = Field(default_factory=list)
     code_lists: list[CodeList] = Field(default_factory=list)
+    epro: bool = Field(
+        default=False,
+        description="If true, participants can fill this form directly (ePRO); else staff-only.",
+    )
 
     @model_validator(mode="after")
     def _check_integrity(self) -> FormDefinition:

@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>My Study Questionnaires</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, Segoe UI, Roboto, sans-serif; background: #f4f6fb; color: #1c2330; }
+  .top { background: #2c4a86; color: #fff; padding: 16px 22px; }
+  .top h1 { margin: 0; font-size: 17px; }
+  .wrap { max-width: 680px; margin: 22px auto; padding: 0 18px; }
+  .card { background: #fff; border: 1px solid #dde3ee; border-radius: 10px; padding: 20px 22px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(20,30,60,.05); }
+  h2 { font-size: 15px; margin: 0 0 12px; }
+  label { display: block; font-size: 13px; font-weight: 600; margin: 12px 0 4px; }
+  .req { color: #c0392b; }
+  input, select { width: 100%; border: 1px solid #c6cfe0; border-radius: 6px; padding: 9px 11px; font: inherit; font-size: 14px; }
+  .btn { background: #2c4a86; color: #fff; border: 0; border-radius: 7px; padding: 10px 18px; font-weight: 600; font-size: 14px; cursor: pointer; }
+  .btn:hover { background: #35589c; } .btn.ghost { background: #eef1f8; color: #2c4a86; }
+  .form-pick { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border: 1px solid #dde3ee; border-radius: 7px; margin-bottom: 8px; cursor: pointer; }
+  .form-pick:hover { background: #f4f6fb; }
+  .pill { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: #eef1f8; color: #5a6680; }
+  .pill.complete { background: #e3f6e8; color: #2e7d44; }
+  .fail { color: #c0392b; font-size: 12.5px; margin-top: 4px; }
+  .status { font-size: 13px; margin-top: 10px; } .status.ok { color: #2e7d44; } .status.err { color: #c0392b; }
+  .muted { color: #7a869d; font-size: 13px; }
+  .sec-title { font-weight: 700; font-size: 14px; margin: 16px 0 6px; color: #2c4a86; }
+</style>
+</head>
+<body>
+  <div class="top"><h1>My Study Questionnaires</h1></div>
+  <div class="wrap" id="root"><div class="card muted">Loading…</div></div>
+
+<script>
+  const token = new URLSearchParams(location.search).get("token") || "";
+  let definition = null, fiId = null;
+
+  async function api(path, opts) {
+    const sep = path.includes("?") ? "&" : "?";
+    return fetch(path + sep + "token=" + encodeURIComponent(token), opts);
+  }
+  function esc(s){return (s==null?"":String(s)).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+  const root = () => document.getElementById("root");
+
+  async function start() {
+    if (!token) { root().innerHTML = `<div class="card err">This link is missing its access token.</div>`; return; }
+    const r = await api("/api/epro/session");
+    if (r.status === 401) { root().innerHTML = `<div class="card"><h2>Link not valid</h2><p class="muted">This access link is invalid or has been revoked. Please contact your study site.</p></div>`; return; }
+    const s = await r.json();
+    if (s.consent_required) { renderConsent(s); return; }
+    renderForms(s);
+  }
+  function renderConsent(s) {
+    root().innerHTML = `<div class="card"><h2>Welcome${s.subject_code?`, participant ${esc(s.subject_code)}`:""}</h2>
+      <p class="muted">Before entering data, please confirm your consent to provide study information through this questionnaire.</p>
+      <button class="btn" onclick="consent()">I consent — continue</button></div>`;
+  }
+  async function consent() { await api("/api/epro/consent", {method:"POST"}); start(); }
+
+  async function renderForms(s) {
+    const forms = s.forms || [];
+    const byForm = {}; (s.instances||[]).forEach(i => { byForm[i.deployed_form_id] = i; });
+    root().innerHTML = `<div class="card"><h2>Your questionnaires</h2>${
+      forms.length ? forms.map(f => {
+        const inst = byForm[f.id];
+        const pill = inst ? `<span class="pill ${inst.status}">${inst.status}</span>` : `<span class="pill">not started</span>`;
+        return `<div class="form-pick" onclick="openForm('${f.id}', ${inst?`'${inst.id}'`:'null'})"><span>${esc(f.title)}</span>${pill}</div>`;
+      }).join("") : `<p class="muted">No questionnaires are assigned to you right now.</p>`
+    }</div><div id="form-area"></div>`;
+  }
+  async function openForm(deployedFormId, instanceId) {
+    if (!instanceId) {
+      const r = await api(`/api/epro/forms?deployed_form_id=${encodeURIComponent(deployedFormId)}`, {method:"POST"});
+      if (!r.ok) { return; }
+      instanceId = (await r.json()).id;
+    }
+    const [df, inst] = await Promise.all([
+      (await api(`/api/epro/deployed-forms/${deployedFormId}`)).json(),
+      (await api(`/api/epro/form-instances/${instanceId}`)).json(),
+    ]);
+    definition = df.definition; fiId = instanceId;
+    const values = {}; (inst.items||[]).forEach(i => values[i.item_id] = i.value);
+    let html = `<div class="card"><h2>${esc(df.title)}</h2>`;
+    for (const sec of definition.sections) {
+      html += `<div class="sec-title">${esc(sec.title)}</div>`;
+      for (const it of sec.items) {
+        html += `<div data-item="${esc(it.id)}"><label>${esc(it.label)}${it.required?' <span class="req">*</span>':''}</label>${inputFor(it, values[it.id])}<div class="fail" id="fail-${esc(it.id)}" style="display:none"></div></div>`;
+      }
+    }
+    html += `<div style="margin-top:16px"><button class="btn" onclick="submitForm(false)">Save</button> <button class="btn ghost" onclick="submitForm(true)">Save & submit</button><div id="form-status" class="status"></div></div></div>`;
+    document.getElementById("form-area").innerHTML = html;
+    document.getElementById("form-area").scrollIntoView({behavior:"smooth"});
+  }
+  function inputFor(it, v) {
+    const id = `f_${esc(it.id)}`; v = v==null?"":v;
+    const cls = (definition.code_lists||[]);
+    if (it.data_type==="single_select" || it.data_type==="multi_select") {
+      const cl = cls.find(c=>c.id===it.code_list_ref);
+      const opts = (cl?cl.items:[]).map(o=>`<option value="${esc(o.code)}" ${o.code===v?'selected':''}>${esc(o.label)}</option>`).join("");
+      return `<select id="${id}"><option value=""></option>${opts}</select>`;
+    }
+    if (it.data_type==="boolean") return `<select id="${id}"><option value=""></option><option value="true" ${v==='true'?'selected':''}>Yes</option><option value="false" ${v==='false'?'selected':''}>No</option></select>`;
+    const type = (it.data_type==="integer"||it.data_type==="decimal")?"number":it.data_type==="date"?"date":it.data_type==="datetime"?"datetime-local":"text";
+    return `<input id="${id}" type="${type}" value="${esc(v)}" ${it.data_type==='decimal'?'step=any':''} />`;
+  }
+  async function submitForm(complete) {
+    document.querySelectorAll(".fail").forEach(e=>e.style.display="none");
+    const values = {};
+    for (const sec of definition.sections) for (const it of sec.items) { const el=document.getElementById(`f_${it.id}`); if (el) values[it.id]=el.value; }
+    const st = document.getElementById("form-status");
+    const r = await api(`/api/epro/form-instances/${fiId}/data`, {method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify({values, mark_complete:complete})});
+    const out = await r.json();
+    if (r.status === 422) {
+      st.className="status err"; st.textContent = out.detail.message || "Please fix the highlighted answers.";
+      (out.detail.failures||[]).forEach(f=>{const e=document.getElementById(`fail-${f.item_id}`); if(e){e.style.display="block";e.textContent=f.message;}});
+      return;
+    }
+    if (r.ok) { st.className="status ok"; st.textContent = complete ? "Submitted — thank you!" : "Saved."; }
+    else { st.className="status err"; st.textContent = "Could not save. Please try again."; }
+  }
+  start();
+</script>
+</body>
+</html>

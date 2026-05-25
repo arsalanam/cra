@@ -23,10 +23,11 @@ from ..persistence.clinical.repository import (
     ClinicalRepository,
     FormSnapshot,
     HardCheckError,
+    LockedError,
 )
 from ..persistence.database import get_db_session
 from ..persistence.ecrf_repository import EcrfRepository
-from .auth import DataEntryUser
+from .auth import AdminUser, DataEntryUser
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +89,12 @@ class SubjectOut(BaseModel):
     status: str
 
 
+class EproAccessOut(BaseModel):
+    token: str
+    subject_id: str
+    epro_path: str
+
+
 class OpenFormIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     deployed_form_id: str
@@ -141,6 +148,25 @@ class ManualQueryIn(BaseModel):
 class QueryResponseIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     text: str
+
+
+class SignIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    meaning: str
+
+
+class UnlockIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    reason: str
+
+
+class SignatureOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    signer_sub: str | None
+    meaning: str
+    signed_at: datetime
+    voided: bool
 
 
 class AuditEntryOut(BaseModel):
@@ -267,6 +293,22 @@ def create_edc_router() -> APIRouter:
             subs = await ClinicalRepository(s).list_subjects(deployment_id)
             return [SubjectOut.model_validate(x) for x in subs]
 
+    @router.post(
+        "/subjects/{subject_id}/epro-access", response_model=EproAccessOut, status_code=201
+    )
+    async def issue_epro_access(subject_id: str, user: DataEntryUser) -> EproAccessOut:
+        """Issue a participant ePRO magic-link token for a subject (raw token shown once)."""
+        async with get_clinical_session() as s:
+            try:
+                _access, raw = await ClinicalRepository(s).issue_participant_access(
+                    subject_id, actor_sub=user.sub
+                )
+            except ClinicalError as e:
+                raise HTTPException(404, str(e)) from e
+            return EproAccessOut(
+                token=raw, subject_id=subject_id, epro_path=f"/epro.html?token={raw}"
+            )
+
     # ── form instances + data ────────────────────────────────────────────
 
     @router.get("/subjects/{subject_id}/forms", response_model=list[FormInstanceOut])
@@ -313,6 +355,8 @@ def create_edc_router() -> APIRouter:
                         ],
                     },
                 ) from e
+            except LockedError as e:
+                raise HTTPException(409, str(e)) from e
             except ClinicalError as e:
                 raise HTTPException(404, str(e)) from e
             return FormInstanceOut.model_validate(fi)
@@ -377,5 +421,36 @@ def create_edc_router() -> APIRouter:
             except ClinicalError as e:
                 raise HTTPException(404, str(e)) from e
             return QueryOut.model_validate(q)
+
+    # ── e-signatures + lock (E5) ───────────────────────────────────────────
+
+    @router.post("/form-instances/{form_instance_id}/sign", response_model=SignatureOut)
+    async def sign(form_instance_id: str, body: SignIn, user: DataEntryUser) -> SignatureOut:
+        async with get_clinical_session() as s:
+            try:
+                sig = await ClinicalRepository(s).sign_form_instance(
+                    form_instance_id, meaning=body.meaning, signer_sub=user.sub
+                )
+            except ClinicalError as e:
+                raise HTTPException(409, str(e)) from e
+            return SignatureOut.model_validate(sig)
+
+    @router.post("/form-instances/{form_instance_id}/unlock", response_model=FormInstanceOut)
+    async def unlock(form_instance_id: str, body: UnlockIn, admin: AdminUser) -> FormInstanceOut:
+        # Unlocking voids a signature — an elevated (admin) action.
+        async with get_clinical_session() as s:
+            try:
+                fi = await ClinicalRepository(s).unlock_form_instance(
+                    form_instance_id, reason=body.reason, actor_sub=admin.sub
+                )
+            except ClinicalError as e:
+                raise HTTPException(409, str(e)) from e
+            return FormInstanceOut.model_validate(fi)
+
+    @router.get("/form-instances/{form_instance_id}/signatures", response_model=list[SignatureOut])
+    async def list_signatures(form_instance_id: str) -> list[SignatureOut]:
+        async with get_clinical_session() as s:
+            sigs = await ClinicalRepository(s).list_signatures(form_instance_id)
+            return [SignatureOut.model_validate(x) for x in sigs]
 
     return router

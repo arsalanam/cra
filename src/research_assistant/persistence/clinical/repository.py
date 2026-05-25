@@ -8,10 +8,13 @@ DB-level immutability (triggers / revoked grants) is an E6 hardening step.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
+import secrets
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,8 +27,10 @@ from .models import (
     EventInstance,
     FormInstance,
     ItemData,
+    ParticipantAccess,
     Query,
     QueryResponse,
+    Signature,
     Site,
     StudyDeployment,
     Subject,
@@ -36,6 +41,10 @@ logger = logging.getLogger(__name__)
 
 class ClinicalError(Exception):
     """Invalid capture operation (e.g. unknown subject, cross-deployment site)."""
+
+
+class LockedError(ClinicalError):
+    """Edit attempted on a signed/locked form instance — unlock it first."""
 
 
 class HardCheckError(Exception):
@@ -195,6 +204,81 @@ class ClinicalRepository:
         rows = await self._s.scalars(select(Subject).where(Subject.deployment_id == deployment_id))
         return list(rows.all())
 
+    async def get_subject(self, subject_id: str) -> Subject | None:
+        return await self._s.get(Subject, subject_id)
+
+    # ── participant ePRO access (E4b) ────────────────────────────────────────
+
+    @staticmethod
+    def _hash_token(raw: str) -> str:
+        return hashlib.sha256(raw.encode()).hexdigest()
+
+    async def issue_participant_access(
+        self, subject_id: str, *, actor_sub: str | None = None
+    ) -> tuple[ParticipantAccess, str]:
+        """Create a magic-link token for a subject. Returns (row, RAW token).
+
+        The raw token is shown once (to build the participant link); only its
+        hash is stored.
+        """
+        subject = await self._s.get(Subject, subject_id)
+        if subject is None:
+            raise ClinicalError(f"Subject {subject_id!r} not found")
+        raw = secrets.token_urlsafe(32)
+        access = ParticipantAccess(
+            subject_id=subject_id,
+            deployment_id=subject.deployment_id,
+            token_hash=self._hash_token(raw),
+            created_by=actor_sub,
+        )
+        self._s.add(access)
+        await self._s.flush()
+        self._audit(
+            entity_type="participant_access",
+            entity_id=access.id,
+            action="issue",
+            actor_sub=actor_sub,
+        )
+        return access, raw
+
+    async def resolve_participant(self, raw_token: str) -> ParticipantAccess | None:
+        """Return the active access for a raw token, or None."""
+        if not raw_token:
+            return None
+        return (
+            await self._s.scalars(
+                select(ParticipantAccess).where(
+                    ParticipantAccess.token_hash == self._hash_token(raw_token),
+                    ParticipantAccess.status == "active",
+                )
+            )
+        ).first()
+
+    async def record_consent(self, access: ParticipantAccess) -> ParticipantAccess:
+        if access.consent_at is None:
+            access.consent_at = datetime.now(UTC)
+            await self._s.flush()
+            self._audit(
+                entity_type="participant_access",
+                entity_id=access.id,
+                action="consent",
+                actor_sub=f"participant:{access.subject_id}",
+                source="epro",
+            )
+        return access
+
+    async def list_epro_forms(self, deployment_id: str) -> list[DeployedForm]:
+        """Deployed forms flagged epro=true in their snapshot definition."""
+        forms = await self.list_deployed_forms(deployment_id)
+        out: list[DeployedForm] = []
+        for f in forms:
+            try:
+                if FormDefinition.model_validate(json.loads(f.definition_json)).epro:
+                    out.append(f)
+            except Exception:
+                logger.warning("Could not parse deployed form %s for ePRO filter", f.id)
+        return out
+
     # ── events / form instances / data ───────────────────────────────────────
 
     async def open_event(
@@ -259,6 +343,7 @@ class ClinicalRepository:
         actor_sub: str | None = None,
         reason: str | None = None,
         mark_complete: bool = False,
+        source: str = "edc",
     ) -> FormInstance:
         """Create/update item values, auditing each change; update form status.
 
@@ -271,6 +356,8 @@ class ClinicalRepository:
         fi = await self._s.get(FormInstance, form_instance_id)
         if fi is None:
             raise ClinicalError(f"Form instance {form_instance_id!r} not found")
+        if fi.status in ("signed", "locked"):
+            raise LockedError(f"Form instance is {fi.status}; unlock it before editing")
 
         existing = {
             d.item_id: d
@@ -322,6 +409,7 @@ class ClinicalRepository:
                     item_id=item_id,
                     new_value=value,
                     actor_sub=actor_sub,
+                    source=source,
                 )
                 changed = True
             elif current.value != value:
@@ -337,6 +425,7 @@ class ClinicalRepository:
                     new_value=value,
                     reason=reason,
                     actor_sub=actor_sub,
+                    source=source,
                 )
                 changed = True
 
@@ -354,6 +443,7 @@ class ClinicalRepository:
                 old_value=old_status,
                 new_value=new_status,
                 actor_sub=actor_sub,
+                source=source,
             )
 
         await self._reconcile_auto_queries(
@@ -490,6 +580,91 @@ class ClinicalRepository:
             select(Query)
             .where(Query.form_instance_id == form_instance_id)
             .order_by(Query.created_at)
+        )
+        return list(rows.all())
+
+    # ── e-signatures + lock (E5) ─────────────────────────────────────────────
+
+    async def _content_hash(self, form_instance_id: str) -> str:
+        items = (
+            await self._s.scalars(
+                select(ItemData).where(ItemData.form_instance_id == form_instance_id)
+            )
+        ).all()
+        payload = json.dumps(sorted((i.item_id, i.value) for i in items), ensure_ascii=False)
+        return hashlib.sha256(payload.encode()).hexdigest()
+
+    async def sign_form_instance(
+        self, form_instance_id: str, *, meaning: str, signer_sub: str | None = None
+    ) -> Signature:
+        """Sign a COMPLETE form instance, binding the signature to its data, and
+        lock it (status -> signed). Errors unless the form is complete."""
+        fi = await self._s.get(FormInstance, form_instance_id)
+        if fi is None:
+            raise ClinicalError(f"Form instance {form_instance_id!r} not found")
+        if fi.status != "complete":
+            raise ClinicalError(f"Form must be complete to sign (it is {fi.status})")
+        sig = Signature(
+            form_instance_id=form_instance_id,
+            signer_sub=signer_sub,
+            meaning=meaning,
+            content_hash=await self._content_hash(form_instance_id),
+        )
+        self._s.add(sig)
+        fi.status = "signed"
+        await self._s.flush()
+        self._audit(
+            entity_type="form_instance",
+            entity_id=fi.id,
+            form_instance_id=fi.id,
+            action="sign",
+            old_value="complete",
+            new_value="signed",
+            reason=meaning,
+            actor_sub=signer_sub,
+        )
+        return sig
+
+    async def unlock_form_instance(
+        self, form_instance_id: str, *, reason: str, actor_sub: str | None = None
+    ) -> FormInstance:
+        """Void the signature(s) and reopen a signed form for editing (audited)."""
+        fi = await self._s.get(FormInstance, form_instance_id)
+        if fi is None:
+            raise ClinicalError(f"Form instance {form_instance_id!r} not found")
+        if fi.status not in ("signed", "locked"):
+            raise ClinicalError(f"Form instance is {fi.status}, not locked")
+        sigs = (
+            await self._s.scalars(
+                select(Signature).where(
+                    Signature.form_instance_id == form_instance_id,
+                    Signature.voided == False,  # noqa: E712
+                )
+            )
+        ).all()
+        now = datetime.now(UTC)
+        for sig in sigs:
+            sig.voided = True
+            sig.voided_at = now
+        fi.status = "in_progress"
+        await self._s.flush()
+        self._audit(
+            entity_type="form_instance",
+            entity_id=fi.id,
+            form_instance_id=fi.id,
+            action="unlock",
+            old_value="signed",
+            new_value="in_progress",
+            reason=reason,
+            actor_sub=actor_sub,
+        )
+        return fi
+
+    async def list_signatures(self, form_instance_id: str) -> list[Signature]:
+        rows = await self._s.scalars(
+            select(Signature)
+            .where(Signature.form_instance_id == form_instance_id)
+            .order_by(Signature.signed_at)
         )
         return list(rows.all())
 

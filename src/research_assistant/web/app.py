@@ -30,6 +30,7 @@ from .auth import create_auth_router, current_user
 from .dispatch import create_dispatch_router
 from .ecrf import create_ecrf_router
 from .edc import create_edc_router
+from .epro import create_epro_router
 from .library import create_library_router
 from .threads import create_thread_router
 from .watches import create_notifications_router, create_watches_router
@@ -90,6 +91,9 @@ def create_app() -> FastAPI:
     app.include_router(create_library_router(), prefix="/api", dependencies=auth_dep)
     app.include_router(create_ecrf_router(), prefix="/api", dependencies=auth_dep)
     app.include_router(create_edc_router(), prefix="/api", dependencies=auth_dep)
+    # ePRO is token-authenticated (participants are not Cognito users) — no
+    # session dependency; the magic-link token is the credential.
+    app.include_router(create_epro_router(), prefix="/api")
 
     @app.get("/api/questions")
     async def get_questions() -> list[dict[str, object]]:
