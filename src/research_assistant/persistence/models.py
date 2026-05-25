@@ -431,3 +431,63 @@ class Passage(Base):
     )
 
     publication: Mapped[Publication] = relationship(back_populates="passages")
+
+
+class EcrfStudy(Base):
+    """An eCRF study — container for form definitions + the visit schedule (E0).
+
+    Metadata only (no subject PHI; that lives in the separate clinical-data
+    store from E1 onward — see ecrf-design.md D2). `schedule_json` holds a
+    serialised `domain.ecrf.VisitSchedule`.
+    """
+
+    __tablename__ = "ecrf_studies"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    name: Mapped[str] = mapped_column(Text)
+    protocol_id: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    schedule_json: Mapped[str] = mapped_column(Text, default='{"events": [], "form_event_map": []}')
+    status: Mapped[str] = mapped_column(Text, default="draft", doc="draft | active | closed")
+    created_by: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
+
+    forms: Mapped[list[EcrfFormDefinition]] = relationship(
+        back_populates="study", cascade="all, delete-orphan"
+    )
+
+
+class EcrfFormDefinition(Base):
+    """A versioned CRF form definition (E0).
+
+    The whole `domain.ecrf.FormDefinition` tree is stored validated in
+    `definition_json` (JSON-native, decision D1). Once `status='published'`
+    the row is immutable — amendments create a new version (next `version`
+    for the same `study_id` + `name`); publishing supersedes the prior
+    published version.
+    """
+
+    __tablename__ = "ecrf_form_definitions"
+    __table_args__ = (
+        UniqueConstraint("study_id", "name", "version", name="uq_ecrf_form_study_name_version"),
+    )
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    study_id: Mapped[str] = mapped_column(
+        ForeignKey("ecrf_studies.id", ondelete="CASCADE"), index=True
+    )
+    name: Mapped[str] = mapped_column(Text, doc="Machine key, unique per study across versions.")
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    status: Mapped[str] = mapped_column(Text, default="draft", doc="draft | published | superseded")
+    title: Mapped[str] = mapped_column(Text)
+    definition_json: Mapped[str] = mapped_column(Text, doc="Serialised FormDefinition.")
+    created_by: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    published_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
+
+    study: Mapped[EcrfStudy] = relationship(back_populates="forms")

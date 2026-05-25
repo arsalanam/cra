@@ -27,6 +27,7 @@ from ..services.scheduler import start_scheduler, stop_scheduler
 from .admin import create_admin_router
 from .auth import create_auth_router, current_user
 from .dispatch import create_dispatch_router
+from .ecrf import create_ecrf_router
 from .library import create_library_router
 from .threads import create_thread_router
 from .watches import create_notifications_router, create_watches_router
@@ -84,6 +85,7 @@ def create_app() -> FastAPI:
     app.include_router(create_watches_router(), prefix="/api", dependencies=auth_dep)
     app.include_router(create_notifications_router(), prefix="/api", dependencies=auth_dep)
     app.include_router(create_library_router(), prefix="/api", dependencies=auth_dep)
+    app.include_router(create_ecrf_router(), prefix="/api", dependencies=auth_dep)
 
     @app.get("/api/questions")
     async def get_questions() -> list[dict[str, object]]:
