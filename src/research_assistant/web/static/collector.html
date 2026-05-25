@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Data Capture · Clinical Research Assistant</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, Segoe UI, Roboto, sans-serif; background: #0f1115; color: #e6e6e6; }
+  .header { padding: 14px 24px; border-bottom: 1px solid #262a33; display: flex; justify-content: space-between; align-items: center; background: #171a21; }
+  .header h1 { margin: 0; font-size: 16px; } .header a { color: #8b93a7; text-decoration: none; font-size: 13px; } .header a:hover { color: #e6e6e6; }
+  .container { max-width: 1080px; margin: 22px auto; padding: 0 24px; }
+  .lead { color: #8b93a7; font-size: 13px; margin: 0 0 18px; }
+  .grid { display: grid; grid-template-columns: 330px 1fr; gap: 20px; }
+  .card { background: #171a21; border: 1px solid #262a33; border-radius: 8px; padding: 16px 18px; margin-bottom: 16px; }
+  h2 { font-size: 13px; text-transform: uppercase; color: #8b93a7; letter-spacing: .6px; margin: 0 0 10px; font-weight: 700; }
+  label { font-size: 11px; text-transform: uppercase; color: #5a6070; font-weight: 600; display: block; margin: 8px 0 3px; }
+  input, select { width: 100%; background: #0f1115; color: #e6e6e6; border: 1px solid #2a2f3a; border-radius: 5px; padding: 7px 9px; font: inherit; font-size: 13px; }
+  input[type=checkbox] { width: auto; }
+  .btn { background: #4a7fd9; color: #fff; border: 0; border-radius: 6px; padding: 7px 13px; font-weight: 600; font-size: 13px; cursor: pointer; }
+  .btn:hover { background: #5a8fe9; } .btn.secondary { background: #2a2f3a; color: #cdd3df; } .btn.secondary:hover { background: #353b48; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+  .pick { padding: 7px 9px; border-radius: 5px; cursor: pointer; font-size: 13px; }
+  .pick:hover { background: #1f232c; } .pick.active { background: #1f2937; color: #fff; }
+  .item { margin-bottom: 12px; }
+  .item .req { color: #d97a7a; } .item .hint { font-size: 11px; color: #5a6070; }
+  .item .fail { color: #d97a7a; font-size: 12px; margin-top: 3px; }
+  .sec-title { font-size: 13px; font-weight: 700; color: #cdd3df; margin: 14px 0 8px; border-bottom: 1px solid #1f232c; padding-bottom: 4px; }
+  .badge { font-family: monospace; font-size: 10px; padding: 1px 6px; border-radius: 4px; background: #0f1115; border: 1px solid #2a2f3a; color: #8b93a7; }
+  .badge.complete { color: #6bcf7f; } .badge.in_progress { color: #d9b87a; } .badge.blank { color: #5a6070; }
+  .status { font-size: 12px; margin-top: 8px; min-height: 16px; } .status.ok { color: #6bcf7f; } .status.err { color: #d97a7a; } .status.muted { color: #8b93a7; }
+  .query { border: 1px solid #3a372a; background: #1a180f; border-radius: 6px; padding: 8px 10px; margin-bottom: 8px; font-size: 12px; }
+  .query .meta { color: #8b93a7; } .muted { color: #5a6070; font-size: 12px; }
+</style>
+</head>
+<body>
+  <div class="header"><h1>Data Capture · EDC</h1><a href="/">← Back to assistant</a></div>
+  <div class="container">
+    <p class="lead">Enter subject data against deployed CRFs. Hard edit-checks block save; soft checks raise queries. All entries are audited.</p>
+    <div class="grid">
+      <div>
+        <div class="card">
+          <h2>Deployment</h2>
+          <select id="deployments" onchange="selectDeployment(this.value)"></select>
+        </div>
+        <div class="card">
+          <h2>Sites & subjects</h2>
+          <div class="row"><input type="text" id="new-site" placeholder="New site name" /><button class="btn secondary" onclick="addSite()">+ Site</button></div>
+          <label>Add subject</label>
+          <select id="site-select"></select>
+          <div class="row"><input type="text" id="new-subject" placeholder="Subject code e.g. S-001" /><button class="btn secondary" onclick="addSubject()">+ Subject</button></div>
+          <div id="subjects" style="margin-top:10px"></div>
+        </div>
+        <div class="card">
+          <h2>Open a form</h2>
+          <select id="deployed-forms"></select>
+          <div class="row"><button class="btn secondary" onclick="openForm()">Open form for subject</button></div>
+          <div id="instances" style="margin-top:10px" class="muted">Select a subject.</div>
+        </div>
+      </div>
+      <div>
+        <div class="card">
+          <h2>Form <span id="form-label" class="muted"></span></h2>
+          <div id="form-render" class="muted">Open or select a form instance.</div>
+          <div id="form-actions" class="row" style="display:none">
+            <label style="margin:0; text-transform:none; color:#cdd3df;"><input type="checkbox" id="mark-complete" /> mark complete</label>
+            <input type="text" id="reason" placeholder="Reason for change (on edits)" style="flex:1; min-width:160px" />
+            <button class="btn" onclick="saveData()">Save</button>
+          </div>
+          <div id="status" class="status"></div>
+        </div>
+        <div class="card">
+          <h2>Queries</h2>
+          <div id="queries" class="muted">—</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+  let depId=null, subjectId=null, fiId=null, fiStatus=null, definition=null;
+
+  async function api(p, o){ const r=await fetch(p,o); if(r.status===401){window.location.href="/auth/login";throw new Error("unauth");} return r; }
+  function esc(s){return (s==null?"":String(s)).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+  function setStatus(m,k){const e=document.getElementById("status");e.className="status "+(k||"muted");e.textContent=m;}
+
+  async function loadDeployments(){
+    const ds=await (await api("/api/edc/deployments")).json();
+    document.getElementById("deployments").innerHTML = `<option value="">— select —</option>`+ds.map(d=>`<option value="${d.id}">${esc(d.name)}</option>`).join("");
+  }
+  async function selectDeployment(id){
+    depId=id||null; subjectId=null; fiId=null;
+    document.getElementById("subjects").innerHTML=""; document.getElementById("instances").innerHTML="Select a subject."; document.getElementById("form-render").innerHTML="Open or select a form instance.";
+    document.getElementById("form-actions").style.display="none"; document.getElementById("queries").innerHTML="—";
+    if(!depId) return;
+    const [sites,subs,forms]=await Promise.all([
+      (await api(`/api/edc/deployments/${depId}/sites`)).json(),
+      (await api(`/api/edc/deployments/${depId}/subjects`)).json(),
+      (await api(`/api/edc/deployments/${depId}/forms`)).json(),
+    ]);
+    document.getElementById("site-select").innerHTML = sites.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join("");
+    document.getElementById("deployed-forms").innerHTML = forms.map(f=>`<option value="${f.id}">${esc(f.title)} v${f.version}</option>`).join("");
+    document.getElementById("subjects").innerHTML = subs.length? subs.map(s=>`<div class="pick ${s.id===subjectId?'active':''}" data-sid="${s.id}" onclick="selectSubject('${s.id}','${esc(s.subject_code)}')">${esc(s.subject_code)}</div>`).join("") : `<div class="muted">No subjects yet.</div>`;
+  }
+  async function addSite(){
+    const name=document.getElementById("new-site").value.trim(); if(!name||!depId) return;
+    const r=await api(`/api/edc/deployments/${depId}/sites`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name})});
+    if(r.ok){document.getElementById("new-site").value="";selectDeployment(depId);} else setStatus("Add site failed","err");
+  }
+  async function addSubject(){
+    const code=document.getElementById("new-subject").value.trim(); const site=document.getElementById("site-select").value;
+    if(!code||!site||!depId) return;
+    const r=await api(`/api/edc/deployments/${depId}/subjects`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({site_id:site,subject_code:code})});
+    if(r.ok){document.getElementById("new-subject").value="";selectDeployment(depId);} else setStatus("Add subject failed: "+(await r.json()).detail,"err");
+  }
+  async function selectSubject(id,code){
+    subjectId=id;
+    document.querySelectorAll("#subjects .pick").forEach(e=>e.classList.toggle("active", e.getAttribute("data-sid")===id));
+    await loadInstances();
+  }
+  async function loadInstances(){
+    if(!subjectId) return;
+    const inst=await (await api(`/api/edc/subjects/${subjectId}/forms`)).json();
+    document.getElementById("instances").innerHTML = inst.length? inst.map(fi=>`<div class="pick" onclick="loadInstance('${fi.id}')">form instance <span class="badge ${fi.status}">${fi.status}</span></div>`).join("") : `<div class="muted">No form instances — open one above.</div>`;
+  }
+  async function openForm(){
+    const formId=document.getElementById("deployed-forms").value; if(!formId||!subjectId){setStatus("Pick a subject and a form.","err");return;}
+    const r=await api(`/api/edc/subjects/${subjectId}/forms`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({deployed_form_id:formId})});
+    const out=await r.json();
+    if(r.ok){ await loadInstances(); await loadInstance(out.id); } else setStatus("Open failed: "+out.detail,"err");
+  }
+  async function loadInstance(id){
+    const detail=await (await api(`/api/edc/form-instances/${id}`)).json();
+    fiId=id; fiStatus=detail.status;
+    const df=await (await api(`/api/edc/deployed-forms/${detail.deployed_form_id}`)).json();
+    definition=df.definition;
+    const values={}; (detail.items||[]).forEach(i=>values[i.item_id]=i.value);
+    renderForm(values);
+    document.getElementById("form-label").textContent=`· ${esc(df.title)} v${df.version} (${detail.status})`;
+    document.getElementById("form-actions").style.display="flex";
+    setStatus("","muted"); await loadQueries();
+  }
+  function renderForm(values){
+    const codeLists={}; (definition.code_lists||[]).forEach(cl=>codeLists[cl.id]=cl);
+    let html="";
+    for(const sec of definition.sections){
+      html+=`<div class="sec-title">${esc(sec.title)}</div>`;
+      for(const it of sec.items){
+        const v=values[it.id]; html+=`<div class="item" data-item="${esc(it.id)}"><label style="text-transform:none;color:#cdd3df">${esc(it.label)}${it.required?' <span class="req">*</span>':''}</label>`;
+        html+=inputFor(it,v,codeLists);
+        html+=`<div class="fail" id="fail-${esc(it.id)}" style="display:none"></div></div>`;
+      }
+    }
+    document.getElementById("form-render").innerHTML=html;
+  }
+  function inputFor(it,v,codeLists){
+    const id=`f_${esc(it.id)}`; v=v==null?"":v;
+    if(it.data_type==="single_select"||it.data_type==="multi_select"){
+      const cl=codeLists[it.code_list_ref]; const opts=(cl?cl.items:[]).map(o=>`<option value="${esc(o.code)}" ${o.code===v?'selected':''}>${esc(o.label)}</option>`).join("");
+      return `<select id="${id}"><option value=""></option>${opts}</select>`;
+    }
+    if(it.data_type==="boolean") return `<select id="${id}"><option value=""></option><option value="true" ${v==='true'?'selected':''}>Yes</option><option value="false" ${v==='false'?'selected':''}>No</option></select>`;
+    const type = it.data_type==="integer"||it.data_type==="decimal" ? "number" : it.data_type==="date" ? "date" : it.data_type==="datetime" ? "datetime-local" : "text";
+    return `<input id="${id}" type="${type}" value="${esc(v)}" ${it.data_type==='decimal'?'step=any':''} />`;
+  }
+  function collectValues(){
+    const values={};
+    for(const sec of definition.sections) for(const it of sec.items){
+      const el=document.getElementById(`f_${it.id}`); if(el) values[it.id]=el.value;
+    }
+    return values;
+  }
+  async function saveData(){
+    if(!fiId) return;
+    document.querySelectorAll(".fail").forEach(e=>e.style.display="none");
+    const body={values:collectValues(), mark_complete:document.getElementById("mark-complete").checked, reason:document.getElementById("reason").value.trim()||null};
+    const r=await api(`/api/edc/form-instances/${fiId}/data`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    const out=await r.json();
+    if(r.status===422){
+      setStatus("Hard check(s) failed — nothing saved. Fix the flagged fields.","err");
+      (out.detail.failures||[]).forEach(f=>{const e=document.getElementById(`fail-${f.item_id}`); if(e){e.style.display="block";e.textContent=f.message;}});
+      return;
+    }
+    if(r.ok){ fiStatus=out.status; setStatus(`Saved (status: ${out.status}).`,"ok"); await loadQueries(); await loadInstances(); }
+    else setStatus("Save failed: "+(out.detail||""),"err");
+  }
+  async function loadQueries(){
+    if(!fiId) return;
+    const qs=await (await api(`/api/edc/form-instances/${fiId}/queries`)).json();
+    document.getElementById("queries").innerHTML = qs.length? qs.map(q=>`
+      <div class="query"><div><b>${esc(q.item_id)}</b> — ${esc(q.text)}</div>
+      <div class="meta">${q.query_type} · <span class="badge">${q.status}</span></div>
+      ${q.status!=="closed"?`<div class="row"><input type="text" id="resp-${q.id}" placeholder="response" style="flex:1"/><button class="btn secondary" onclick="respondQuery('${q.id}')">Respond</button><button class="btn secondary" onclick="closeQuery('${q.id}')">Close</button></div>`:""}</div>`).join("") : `<div class="muted">No queries.</div>`;
+  }
+  async function respondQuery(id){
+    const t=document.getElementById(`resp-${id}`).value.trim(); if(!t) return;
+    await api(`/api/edc/queries/${id}/respond`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:t})});
+    await loadQueries();
+  }
+  async function closeQuery(id){ await api(`/api/edc/queries/${id}/close`,{method:"POST"}); await loadQueries(); }
+
+  loadDeployments();
+</script>
+</body>
+</html>

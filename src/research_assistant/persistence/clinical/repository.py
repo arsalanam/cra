@@ -144,6 +144,9 @@ class ClinicalRepository:
         )
         return list(rows.all())
 
+    async def get_deployed_form(self, deployed_form_id: str) -> DeployedForm | None:
+        return await self._s.get(DeployedForm, deployed_form_id)
+
     async def add_site(
         self,
         deployment_id: str,
@@ -487,6 +490,14 @@ class ClinicalRepository:
             select(Query)
             .where(Query.form_instance_id == form_instance_id)
             .order_by(Query.created_at)
+        )
+        return list(rows.all())
+
+    async def list_form_instances(self, subject_id: str) -> list[FormInstance]:
+        rows = await self._s.scalars(
+            select(FormInstance)
+            .where(FormInstance.subject_id == subject_id)
+            .order_by(FormInstance.created_at)
         )
         return list(rows.all())
 

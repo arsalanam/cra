@@ -220,6 +220,29 @@ async def test_soft_check_opens_auto_query_via_api(client: AsyncClient) -> None:
     assert queries[0]["query_type"] == "auto" and queries[0]["status"] == "open"
 
 
+async def test_deployed_form_definition_and_subject_forms(client: AsyncClient) -> None:
+    rs = await _published_study(client)
+    dep = (await client.post("/api/edc/deployments", json={"research_study_id": rs})).json()["id"]
+    form = (await client.get(f"/api/edc/deployments/{dep}/forms")).json()[0]
+
+    # The collector fetches the full definition to render the form.
+    detail = (await client.get(f"/api/edc/deployed-forms/{form['id']}")).json()
+    assert detail["definition"]["sections"][0]["items"][0]["id"] == "age"
+
+    site = (await client.post(f"/api/edc/deployments/{dep}/sites", json={"name": "A"})).json()["id"]
+    subj = (
+        await client.post(
+            f"/api/edc/deployments/{dep}/subjects", json={"site_id": site, "subject_code": "S1"}
+        )
+    ).json()["id"]
+
+    # No instances yet, then one after opening.
+    assert (await client.get(f"/api/edc/subjects/{subj}/forms")).json() == []
+    await client.post(f"/api/edc/subjects/{subj}/forms", json={"deployed_form_id": form["id"]})
+    instances = (await client.get(f"/api/edc/subjects/{subj}/forms")).json()
+    assert len(instances) == 1 and instances[0]["deployed_form_id"] == form["id"]
+
+
 async def test_manual_query_workflow_via_api(client: AsyncClient) -> None:
     fi_id = await _open_instance_with_checks(client)
     await client.put(f"/api/edc/form-instances/{fi_id}/data", json={"values": {"age": "45"}})

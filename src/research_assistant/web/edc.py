@@ -9,12 +9,14 @@ this API (it never touches the database directly — D5).
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict
 
+from ..domain.ecrf import FormDefinition
 from ..persistence.clinical.database import get_clinical_session
 from ..persistence.clinical.repository import (
     ClinicalError,
@@ -66,6 +68,10 @@ class DeployedFormOut(BaseModel):
     form_name: str
     version: int
     title: str
+
+
+class DeployedFormDetailOut(DeployedFormOut):
+    definition: FormDefinition
 
 
 class SubjectIn(BaseModel):
@@ -204,6 +210,18 @@ def create_edc_router() -> APIRouter:
             forms = await ClinicalRepository(s).list_deployed_forms(deployment_id)
             return [DeployedFormOut.model_validate(f) for f in forms]
 
+    @router.get("/deployed-forms/{deployed_form_id}", response_model=DeployedFormDetailOut)
+    async def get_deployed_form(deployed_form_id: str) -> DeployedFormDetailOut:
+        """The deployed form's full definition — used by the collector to render it."""
+        async with get_clinical_session() as s:
+            df = await ClinicalRepository(s).get_deployed_form(deployed_form_id)
+            if df is None:
+                raise HTTPException(404, "Deployed form not found")
+            return DeployedFormDetailOut(
+                **DeployedFormOut.model_validate(df).model_dump(),
+                definition=FormDefinition.model_validate(json.loads(df.definition_json)),
+            )
+
     # ── sites ────────────────────────────────────────────────────────────
 
     @router.post("/deployments/{deployment_id}/sites", response_model=SiteOut, status_code=201)
@@ -250,6 +268,12 @@ def create_edc_router() -> APIRouter:
             return [SubjectOut.model_validate(x) for x in subs]
 
     # ── form instances + data ────────────────────────────────────────────
+
+    @router.get("/subjects/{subject_id}/forms", response_model=list[FormInstanceOut])
+    async def list_subject_forms(subject_id: str) -> list[FormInstanceOut]:
+        async with get_clinical_session() as s:
+            instances = await ClinicalRepository(s).list_form_instances(subject_id)
+            return [FormInstanceOut.model_validate(fi) for fi in instances]
 
     @router.post("/subjects/{subject_id}/forms", response_model=FormInstanceOut, status_code=201)
     async def open_form(subject_id: str, body: OpenFormIn, user: DataEntryUser) -> FormInstanceOut:
