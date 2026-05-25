@@ -8,26 +8,42 @@ DB-level immutability (triggers / revoked grants) is an E6 hardening step.
 
 from __future__ import annotations
 
+import json
+import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ...domain.ecrf import FormDefinition
+from ...ecrf.edit_checks import CheckResult, evaluate_form, required_blank_items
 from .models import (
     AuditEntry,
     DeployedForm,
     EventInstance,
     FormInstance,
     ItemData,
+    Query,
+    QueryResponse,
     Site,
     StudyDeployment,
     Subject,
 )
 
+logger = logging.getLogger(__name__)
+
 
 class ClinicalError(Exception):
     """Invalid capture operation (e.g. unknown subject, cross-deployment site)."""
+
+
+class HardCheckError(Exception):
+    """One or more HARD edit checks failed — the submit is rejected atomically."""
+
+    def __init__(self, failures: list[CheckResult]) -> None:
+        self.failures = failures
+        super().__init__(f"{len(failures)} hard edit-check(s) failed")
 
 
 @dataclass(frozen=True)
@@ -221,6 +237,17 @@ class ClinicalRepository:
         )
         return fi
 
+    async def _load_definition(self, fi: FormInstance) -> FormDefinition | None:
+        """Parse the snapshotted form definition for a form instance."""
+        df = await self._s.get(DeployedForm, fi.deployed_form_id)
+        if df is None:
+            return None
+        try:
+            return FormDefinition.model_validate(json.loads(df.definition_json))
+        except Exception:
+            logger.warning("Could not parse deployed form %s", fi.deployed_form_id, exc_info=True)
+            return None
+
     async def submit_item_data(
         self,
         form_instance_id: str,
@@ -232,8 +259,11 @@ class ClinicalRepository:
     ) -> FormInstance:
         """Create/update item values, auditing each change; update form status.
 
-        A `reason` is recorded on updates (required after a value's first
-        commit per Part 11); creating a value for the first time needs none.
+        Runs the form's edit checks against the merged values first: any HARD
+        failure (or a required item left blank when `mark_complete`) raises
+        `HardCheckError` and NOTHING is persisted. SOFT failures persist the
+        value and open/auto-close auto-queries. A `reason` is recorded on
+        updates (required after a value's first commit per Part 11).
         """
         fi = await self._s.get(FormInstance, form_instance_id)
         if fi is None:
@@ -247,6 +277,27 @@ class ClinicalRepository:
                 )
             ).all()
         }
+
+        # Edit-check gate — evaluate against the MERGED value set before
+        # persisting anything (atomic reject on hard failure).
+        merged: dict[str, str | None] = {iid: d.value for iid, d in existing.items()}
+        merged.update(values)
+        definition = await self._load_definition(fi)
+        results = evaluate_form(definition, merged) if definition is not None else []
+        hard_failures = [r for r in results if not r.passed and r.severity == "hard"]
+        if mark_complete and definition is not None:
+            hard_failures += [
+                CheckResult(
+                    item_id=iid,
+                    check_id="required",
+                    severity="hard",
+                    passed=False,
+                    message="This field is required to complete the form.",
+                )
+                for iid in required_blank_items(definition, merged)
+            ]
+        if hard_failures:
+            raise HardCheckError(hard_failures)
 
         changed = False
         for item_id, value in values.items():
@@ -301,8 +352,143 @@ class ClinicalRepository:
                 new_value=new_status,
                 actor_sub=actor_sub,
             )
+
+        await self._reconcile_auto_queries(
+            fi, [r for r in results if r.severity == "soft"], actor_sub
+        )
         await self._s.flush()
         return fi
+
+    # ── queries / discrepancies ──────────────────────────────────────────────
+
+    async def _reconcile_auto_queries(
+        self, fi: FormInstance, soft_results: list[CheckResult], actor_sub: str | None
+    ) -> None:
+        """Open an auto-query for each failing soft check; close ones that now pass."""
+        open_autos = {
+            (q.item_id, q.check_id): q
+            for q in (
+                await self._s.scalars(
+                    select(Query).where(
+                        Query.form_instance_id == fi.id,
+                        Query.query_type == "auto",
+                        Query.status != "closed",
+                    )
+                )
+            ).all()
+        }
+        for r in soft_results:
+            key = (r.item_id, r.check_id)
+            if not r.passed and key not in open_autos:
+                q = Query(
+                    form_instance_id=fi.id,
+                    subject_id=fi.subject_id,
+                    item_id=r.item_id,
+                    check_id=r.check_id,
+                    query_type="auto",
+                    severity="soft",
+                    status="open",
+                    text=r.message,
+                )
+                self._s.add(q)
+                await self._s.flush()
+                self._audit(
+                    entity_type="query",
+                    entity_id=q.id,
+                    form_instance_id=fi.id,
+                    action="open",
+                    item_id=r.item_id,
+                    new_value=r.message,
+                    actor_sub=actor_sub,
+                    source="system",
+                )
+            elif r.passed and key in open_autos:
+                q = open_autos[key]
+                q.status = "closed"
+                self._s.add(
+                    QueryResponse(query_id=q.id, text="Auto-resolved: edit check now passes.")
+                )
+                self._audit(
+                    entity_type="query",
+                    entity_id=q.id,
+                    form_instance_id=fi.id,
+                    action="close",
+                    item_id=r.item_id,
+                    actor_sub=actor_sub,
+                    source="system",
+                )
+
+    async def create_manual_query(
+        self, form_instance_id: str, *, item_id: str, text: str, actor_sub: str | None = None
+    ) -> Query:
+        fi = await self._s.get(FormInstance, form_instance_id)
+        if fi is None:
+            raise ClinicalError(f"Form instance {form_instance_id!r} not found")
+        q = Query(
+            form_instance_id=form_instance_id,
+            subject_id=fi.subject_id,
+            item_id=item_id,
+            query_type="manual",
+            status="open",
+            text=text,
+            created_by=actor_sub,
+        )
+        self._s.add(q)
+        await self._s.flush()
+        self._audit(
+            entity_type="query",
+            entity_id=q.id,
+            form_instance_id=form_instance_id,
+            action="open",
+            item_id=item_id,
+            new_value=text,
+            actor_sub=actor_sub,
+        )
+        return q
+
+    async def respond_query(
+        self, query_id: str, *, text: str, author_sub: str | None = None
+    ) -> Query:
+        q = await self._s.get(Query, query_id)
+        if q is None:
+            raise ClinicalError(f"Query {query_id!r} not found")
+        self._s.add(QueryResponse(query_id=query_id, text=text, author_sub=author_sub))
+        q.status = "answered"
+        await self._s.flush()
+        self._audit(
+            entity_type="query",
+            entity_id=q.id,
+            form_instance_id=q.form_instance_id,
+            action="respond",
+            item_id=q.item_id,
+            new_value=text,
+            actor_sub=author_sub,
+        )
+        return q
+
+    async def close_query(self, query_id: str, *, actor_sub: str | None = None) -> Query:
+        q = await self._s.get(Query, query_id)
+        if q is None:
+            raise ClinicalError(f"Query {query_id!r} not found")
+        q.status = "closed"
+        await self._s.flush()
+        self._audit(
+            entity_type="query",
+            entity_id=q.id,
+            form_instance_id=q.form_instance_id,
+            action="close",
+            item_id=q.item_id,
+            actor_sub=actor_sub,
+        )
+        return q
+
+    async def list_queries(self, form_instance_id: str) -> list[Query]:
+        rows = await self._s.scalars(
+            select(Query)
+            .where(Query.form_instance_id == form_instance_id)
+            .order_by(Query.created_at)
+        )
+        return list(rows.all())
 
     async def get_form_instance(
         self, form_instance_id: str

@@ -7,6 +7,20 @@ standards-export helpers (CDISC ODM-XML today, Define-XML later).
 
 from __future__ import annotations
 
+from .edit_checks import (
+    CheckResult,
+    ExpressionError,
+    evaluate_form,
+    required_blank_items,
+    validate_expression,
+)
 from .odm_export import form_to_odm_xml
 
-__all__ = ["form_to_odm_xml"]
+__all__ = [
+    "CheckResult",
+    "ExpressionError",
+    "evaluate_form",
+    "form_to_odm_xml",
+    "required_blank_items",
+    "validate_expression",
+]

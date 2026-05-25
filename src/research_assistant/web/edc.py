@@ -16,7 +16,12 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict
 
 from ..persistence.clinical.database import get_clinical_session
-from ..persistence.clinical.repository import ClinicalError, ClinicalRepository, FormSnapshot
+from ..persistence.clinical.repository import (
+    ClinicalError,
+    ClinicalRepository,
+    FormSnapshot,
+    HardCheckError,
+)
 from ..persistence.database import get_db_session
 from ..persistence.ecrf_repository import EcrfRepository
 from .auth import DataEntryUser
@@ -107,6 +112,29 @@ class SubmitDataIn(BaseModel):
     values: dict[str, str | None]
     reason: str | None = None
     mark_complete: bool = False
+
+
+class QueryOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    item_id: str
+    check_id: str | None
+    query_type: str
+    severity: str | None
+    status: str
+    text: str
+    created_at: datetime
+
+
+class ManualQueryIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    item_id: str
+    text: str
+
+
+class QueryResponseIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    text: str
 
 
 class AuditEntryOut(BaseModel):
@@ -250,6 +278,17 @@ def create_edc_router() -> APIRouter:
                     reason=body.reason,
                     mark_complete=body.mark_complete,
                 )
+            except HardCheckError as e:
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "message": "Hard edit-check(s) failed — nothing was saved.",
+                        "failures": [
+                            {"item_id": f.item_id, "check_id": f.check_id, "message": f.message}
+                            for f in e.failures
+                        ],
+                    },
+                ) from e
             except ClinicalError as e:
                 raise HTTPException(404, str(e)) from e
             return FormInstanceOut.model_validate(fi)
@@ -271,5 +310,48 @@ def create_edc_router() -> APIRouter:
         async with get_clinical_session() as s:
             entries = await ClinicalRepository(s).get_form_instance_audit(form_instance_id)
             return [AuditEntryOut.model_validate(e) for e in entries]
+
+    # ── queries / discrepancies ──────────────────────────────────────────
+
+    @router.get("/form-instances/{form_instance_id}/queries", response_model=list[QueryOut])
+    async def list_queries(form_instance_id: str) -> list[QueryOut]:
+        async with get_clinical_session() as s:
+            qs = await ClinicalRepository(s).list_queries(form_instance_id)
+            return [QueryOut.model_validate(q) for q in qs]
+
+    @router.post(
+        "/form-instances/{form_instance_id}/queries", response_model=QueryOut, status_code=201
+    )
+    async def raise_query(
+        form_instance_id: str, body: ManualQueryIn, user: DataEntryUser
+    ) -> QueryOut:
+        async with get_clinical_session() as s:
+            try:
+                q = await ClinicalRepository(s).create_manual_query(
+                    form_instance_id, item_id=body.item_id, text=body.text, actor_sub=user.sub
+                )
+            except ClinicalError as e:
+                raise HTTPException(404, str(e)) from e
+            return QueryOut.model_validate(q)
+
+    @router.post("/queries/{query_id}/respond", response_model=QueryOut)
+    async def respond_query(query_id: str, body: QueryResponseIn, user: DataEntryUser) -> QueryOut:
+        async with get_clinical_session() as s:
+            try:
+                q = await ClinicalRepository(s).respond_query(
+                    query_id, text=body.text, author_sub=user.sub
+                )
+            except ClinicalError as e:
+                raise HTTPException(404, str(e)) from e
+            return QueryOut.model_validate(q)
+
+    @router.post("/queries/{query_id}/close", response_model=QueryOut)
+    async def close_query(query_id: str, user: DataEntryUser) -> QueryOut:
+        async with get_clinical_session() as s:
+            try:
+                q = await ClinicalRepository(s).close_query(query_id, actor_sub=user.sub)
+            except ClinicalError as e:
+                raise HTTPException(404, str(e)) from e
+            return QueryOut.model_validate(q)
 
     return router

@@ -189,6 +189,53 @@ class ItemData(ClinicalBase):
     form_instance: Mapped[FormInstance] = relationship(back_populates="items")
 
 
+class Query(ClinicalBase):
+    """A data discrepancy/query against a captured item (eCRF E2, design §12).
+
+    `auto` queries are raised by the system on a failed soft edit-check and
+    auto-closed when the check later passes; `manual` queries are raised by a
+    data manager / monitor. Lifecycle: open -> answered -> closed (reopenable).
+    Every transition is recorded via the audit writer.
+    """
+
+    __tablename__ = "queries"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    form_instance_id: Mapped[str] = mapped_column(
+        ForeignKey("form_instances.id", ondelete="CASCADE"), index=True
+    )
+    subject_id: Mapped[str] = mapped_column(Text, index=True)
+    item_id: Mapped[str] = mapped_column(Text)
+    check_id: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    query_type: Mapped[str] = mapped_column(Text, default="manual", doc="auto | manual")
+    severity: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    status: Mapped[str] = mapped_column(Text, default="open", doc="open | answered | closed")
+    text: Mapped[str] = mapped_column(Text)
+    created_by: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
+
+    responses: Mapped[list[QueryResponse]] = relationship(
+        back_populates="query", cascade="all, delete-orphan", order_by="QueryResponse.created_at"
+    )
+
+
+class QueryResponse(ClinicalBase):
+    """A response/comment on a query (the answer thread)."""
+
+    __tablename__ = "query_responses"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    query_id: Mapped[str] = mapped_column(ForeignKey("queries.id", ondelete="CASCADE"), index=True)
+    text: Mapped[str] = mapped_column(Text)
+    author_sub: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    query: Mapped[Query] = relationship(back_populates="responses")
+
+
 class AuditEntry(ClinicalBase):
     """Append-only audit trail (ALCOA+ / 21 CFR Part 11 §11.10(e)).
 

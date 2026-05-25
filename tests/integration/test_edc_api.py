@@ -135,3 +135,104 @@ async def test_cross_deployment_site_rejected_via_api(client: AsyncClient) -> No
         json={"site_id": site2, "subject_code": "X1"},
     )
     assert r.status_code == 400
+
+
+# ── E2: edit checks + queries via the API ─────────────────────────────────────
+
+
+def _form_with_checks() -> dict:
+    return {
+        "name": "vitals",
+        "title": "Vitals",
+        "sections": [
+            {
+                "id": "s",
+                "title": "S",
+                "items": [
+                    {
+                        "id": "age",
+                        "label": "Age",
+                        "data_type": "integer",
+                        "required": True,
+                        "edit_checks": [
+                            {
+                                "id": "age_range",
+                                "severity": "hard",
+                                "expression": "is_blank(age) or (age >= 0 and age < 120)",
+                                "message": "Age must be 0-119",
+                            }
+                        ],
+                    },
+                    {
+                        "id": "sbp",
+                        "label": "Systolic BP",
+                        "data_type": "integer",
+                        "edit_checks": [
+                            {
+                                "id": "sbp_high",
+                                "severity": "soft",
+                                "expression": "is_blank(sbp) or sbp <= 200",
+                                "message": "Systolic BP unusually high",
+                            }
+                        ],
+                    },
+                ],
+            }
+        ],
+    }
+
+
+async def _open_instance_with_checks(client: AsyncClient) -> str:
+    sid = (await client.post("/api/ecrf/studies", json={"name": "Vitals study"})).json()["id"]
+    fid = (await client.post(f"/api/ecrf/studies/{sid}/forms", json=_form_with_checks())).json()[
+        "id"
+    ]
+    await client.post(f"/api/ecrf/forms/{fid}/publish")
+    dep = (await client.post("/api/edc/deployments", json={"research_study_id": sid})).json()["id"]
+    form_id = (await client.get(f"/api/edc/deployments/{dep}/forms")).json()[0]["id"]
+    site = (await client.post(f"/api/edc/deployments/{dep}/sites", json={"name": "A"})).json()["id"]
+    subj = (
+        await client.post(
+            f"/api/edc/deployments/{dep}/subjects", json={"site_id": site, "subject_code": "S1"}
+        )
+    ).json()["id"]
+    return (
+        await client.post(f"/api/edc/subjects/{subj}/forms", json={"deployed_form_id": form_id})
+    ).json()["id"]
+
+
+async def test_hard_check_returns_422_and_saves_nothing(client: AsyncClient) -> None:
+    fi_id = await _open_instance_with_checks(client)
+    r = await client.put(f"/api/edc/form-instances/{fi_id}/data", json={"values": {"age": "200"}})
+    assert r.status_code == 422
+    assert r.json()["detail"]["failures"][0]["check_id"] == "age_range"
+    # Nothing persisted.
+    detail = (await client.get(f"/api/edc/form-instances/{fi_id}")).json()
+    assert detail["items"] == []
+
+
+async def test_soft_check_opens_auto_query_via_api(client: AsyncClient) -> None:
+    fi_id = await _open_instance_with_checks(client)
+    ok = await client.put(f"/api/edc/form-instances/{fi_id}/data", json={"values": {"sbp": "250"}})
+    assert ok.status_code == 200
+    queries = (await client.get(f"/api/edc/form-instances/{fi_id}/queries")).json()
+    assert len(queries) == 1
+    assert queries[0]["query_type"] == "auto" and queries[0]["status"] == "open"
+
+
+async def test_manual_query_workflow_via_api(client: AsyncClient) -> None:
+    fi_id = await _open_instance_with_checks(client)
+    await client.put(f"/api/edc/form-instances/{fi_id}/data", json={"values": {"age": "45"}})
+
+    q = (
+        await client.post(
+            f"/api/edc/form-instances/{fi_id}/queries",
+            json={"item_id": "age", "text": "Verify against source"},
+        )
+    ).json()
+    assert q["status"] == "open"
+
+    assert (await client.post(f"/api/edc/queries/{q['id']}/respond", json={"text": "ok"})).json()[
+        "status"
+    ] == "answered"
+    assert (await client.post(f"/api/edc/queries/{q['id']}/close")).json()["status"] == "closed"
