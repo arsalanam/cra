@@ -30,6 +30,7 @@ class Permission(StrEnum):
     SKILL_SR_PROTOCOL = "skill.sr_protocol"
     SKILL_RISK_OF_BIAS = "skill.risk_of_bias"
     SKILL_ECRF_DESIGN = "skill.ecrf_design"
+    SKILL_SAP_DRAFTER = "skill.sap_drafter"
 
     # ── Library (cached publications + RAG) ──────────────────────────────
     LIBRARY_READ = "library.read"
@@ -132,6 +133,10 @@ _EVIDENCE_SKILLS: Final[frozenset[Permission]] = frozenset(
         Permission.SKILL_SEARCH_STRATEGY,
         Permission.SKILL_SR_PROTOCOL,
         Permission.SKILL_RISK_OF_BIAS,
+        # Prospective-trial design tools live in the same researcher tier
+        # as the literature-review skills. Restricted tiers (student) are
+        # explicitly excluded.
+        Permission.SKILL_SAP_DRAFTER,
     }
 )
 
@@ -233,12 +238,8 @@ ROLE_PERMISSIONS: Final[dict[Role, frozenset[Permission]]] = {
     # Reviewers can screen + read the project. Adjudicator is screen + the
     # tie-break permission. None of them carry `sr.manage` — that's the
     # project creator's (researcher) job.
-    Role.REVIEWER_1: frozenset(
-        {Permission.SR_READ, Permission.SR_SCREEN, Permission.PRISMA_READ}
-    ),
-    Role.REVIEWER_2: frozenset(
-        {Permission.SR_READ, Permission.SR_SCREEN, Permission.PRISMA_READ}
-    ),
+    Role.REVIEWER_1: frozenset({Permission.SR_READ, Permission.SR_SCREEN, Permission.PRISMA_READ}),
+    Role.REVIEWER_2: frozenset({Permission.SR_READ, Permission.SR_SCREEN, Permission.PRISMA_READ}),
     Role.ADJUDICATOR: frozenset(
         {
             Permission.SR_READ,
@@ -361,6 +362,7 @@ SKILL_PERMISSION: Final[dict[str, Permission]] = {
     "sr_protocol": Permission.SKILL_SR_PROTOCOL,
     "risk_of_bias": Permission.SKILL_RISK_OF_BIAS,
     "ecrf_design": Permission.SKILL_ECRF_DESIGN,
+    "sap_drafter": Permission.SKILL_SAP_DRAFTER,
 }
 
 

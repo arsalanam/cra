@@ -102,9 +102,7 @@ def create_ecrf_router() -> APIRouter:
         """Draft a study's CRFs from protocol text (review-only; saves nothing)."""
         if not body.protocol_text.strip():
             raise HTTPException(422, "protocol_text is required")
-        draft, _meta = await ecrf_design.draft_from_protocol(
-            body.protocol_text, body.instructions
-        )
+        draft, _meta = await ecrf_design.draft_from_protocol(body.protocol_text, body.instructions)
         return draft
 
     # ── studies ──────────────────────────────────────────────────────────

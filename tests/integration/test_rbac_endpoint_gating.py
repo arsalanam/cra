@@ -144,9 +144,7 @@ async def test_admin_can_do_anything_on_ecrf(client: AsyncClient) -> None:
     await _seed_user_with_role("sub-a", "a@example.com", role="admin")
     _login(client, "sub-a", "a@example.com")
     sid = (await client.post("/api/ecrf/studies", json={"name": "X"})).json()["id"]
-    fid = (
-        await client.post(f"/api/ecrf/studies/{sid}/forms", json=_form_body())
-    ).json()["id"]
+    fid = (await client.post(f"/api/ecrf/studies/{sid}/forms", json=_form_body())).json()["id"]
     assert (await client.post(f"/api/ecrf/forms/{fid}/publish")).status_code == 200
 
 
@@ -164,12 +162,8 @@ async def test_study_designer_at_one_study_cannot_publish_in_another(
     _login(client, "sub-a", "a@example.com")
     sid1 = (await client.post("/api/ecrf/studies", json={"name": "S1"})).json()["id"]
     sid2 = (await client.post("/api/ecrf/studies", json={"name": "S2"})).json()["id"]
-    f1 = (
-        await client.post(f"/api/ecrf/studies/{sid1}/forms", json=_form_body())
-    ).json()["id"]
-    f2 = (
-        await client.post(f"/api/ecrf/studies/{sid2}/forms", json=_form_body())
-    ).json()["id"]
+    f1 = (await client.post(f"/api/ecrf/studies/{sid1}/forms", json=_form_body())).json()["id"]
+    f2 = (await client.post(f"/api/ecrf/studies/{sid2}/forms", json=_form_body())).json()["id"]
 
     # Now switch to a designer scoped to sid1 only.
     await _seed_user_with_role(
@@ -196,15 +190,9 @@ async def _setup_deployment(client: AsyncClient) -> dict[str, str]:
     await _seed_user_with_role("sub-admin", "admin@example.com", role="admin")
     _login(client, "sub-admin", "admin@example.com")
     sid = (await client.post("/api/ecrf/studies", json={"name": "X"})).json()["id"]
-    fid = (
-        await client.post(f"/api/ecrf/studies/{sid}/forms", json=_form_body())
-    ).json()["id"]
+    fid = (await client.post(f"/api/ecrf/studies/{sid}/forms", json=_form_body())).json()["id"]
     await client.post(f"/api/ecrf/forms/{fid}/publish")
-    dep = (
-        await client.post(
-            "/api/edc/deployments", json={"research_study_id": sid}
-        )
-    ).json()
+    dep = (await client.post("/api/edc/deployments", json={"research_study_id": sid})).json()
     site = (
         await client.post(
             f"/api/edc/deployments/{dep['id']}/sites",

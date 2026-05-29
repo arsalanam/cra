@@ -208,20 +208,22 @@ class SrReviewRepository:
         await self._s.flush()
         return True
 
-    async def role_for_user_on_project(
-        self, project_id: str, user_id: str
-    ) -> list[str]:
+    async def role_for_user_on_project(self, project_id: str, user_id: str) -> list[str]:
         """All membership roles a user holds on a project (a user CAN hold
         more than one — e.g. R1 on the abstract phase and adjudicator on
         the full-text phase — though the UI normally enforces one at a time)."""
         rows = (
-            await self._s.execute(
-                select(SrReviewMembership.role).where(
-                    SrReviewMembership.sr_review_id == project_id,
-                    SrReviewMembership.user_id == user_id,
+            (
+                await self._s.execute(
+                    select(SrReviewMembership.role).where(
+                        SrReviewMembership.sr_review_id == project_id,
+                        SrReviewMembership.user_id == user_id,
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         return list(rows)
 
     # ── Candidate ingest ─────────────────────────────────────────────────
@@ -248,9 +250,7 @@ class SrReviewRepository:
             row
             for row in (
                 await self._s.execute(
-                    select(SrCandidate.publication_id).where(
-                        SrCandidate.sr_review_id == project_id
-                    )
+                    select(SrCandidate.publication_id).where(SrCandidate.sr_review_id == project_id)
                 )
             )
             .scalars()
@@ -608,9 +608,7 @@ class SrReviewRepository:
             "by_status": by_status,
         }
 
-    async def progress(
-        self, project_id: str, *, phase: str
-    ) -> dict[str, Any]:
+    async def progress(self, project_id: str, *, phase: str) -> dict[str, Any]:
         """Per-reviewer screened count + agreement rate + remaining queue size.
 
         Powers the screening UI's progress bar; cheap enough to refresh on
@@ -624,9 +622,7 @@ class SrReviewRepository:
             (
                 await self._s.execute(
                     select(ScreeningDecision).where(
-                        ScreeningDecision.sr_candidate_id.in_(
-                            [c.id for c in candidates] or [""]
-                        ),
+                        ScreeningDecision.sr_candidate_id.in_([c.id for c in candidates] or [""]),
                         ScreeningDecision.phase == phase,
                     )
                 )
@@ -685,9 +681,7 @@ class SrReviewRepository:
         await self._s.flush()
         return existing
 
-    async def get_ai_suggestion(
-        self, candidate_id: str, phase: str
-    ) -> AiSuggestion | None:
+    async def get_ai_suggestion(self, candidate_id: str, phase: str) -> AiSuggestion | None:
         return (
             await self._s.execute(
                 select(AiSuggestion).where(

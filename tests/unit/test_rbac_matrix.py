@@ -183,8 +183,33 @@ def test_skill_permission_covers_every_specialist() -> None:
         "risk_of_bias",
         # ecrf_design specialist exists; gated separately
         "ecrf_design",
+        # sap_drafter (sample-size + SAP)
+        "sap_drafter",
     }
     assert set(SKILL_PERMISSION) == expected_workflows
+
+
+def test_researcher_can_run_sap_drafter_but_student_cannot() -> None:
+    """Prospective-trial design lives in the researcher tier; student is
+    explicitly meta-analysis-only (per the locked decision)."""
+    assert Permission.SKILL_SAP_DRAFTER in ROLE_PERMISSIONS[Role.RESEARCHER]
+    assert Permission.SKILL_SAP_DRAFTER in ROLE_PERMISSIONS[Role.ADMIN]
+    assert Permission.SKILL_SAP_DRAFTER not in ROLE_PERMISSIONS[Role.STUDENT]
+    # eCRF-side roles + reviewers don't get evidence skills either.
+    for r in (
+        Role.STUDY_DESIGNER,
+        Role.PRINCIPAL_INVESTIGATOR,
+        Role.COORDINATOR,
+        Role.DATA_MANAGER,
+        Role.MONITOR,
+        Role.AUDITOR,
+        Role.REVIEWER_1,
+        Role.REVIEWER_2,
+        Role.ADJUDICATOR,
+    ):
+        assert Permission.SKILL_SAP_DRAFTER not in ROLE_PERMISSIONS[r], (
+            f"{r.value} should not have skill.sap_drafter"
+        )
 
 
 def test_permissions_for_role_accepts_legacy_data_entry_alias() -> None:

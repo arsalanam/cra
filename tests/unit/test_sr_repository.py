@@ -81,16 +81,26 @@ async def test_both_include_promotes_to_included_after_abstract(
     repo = SrReviewRepository(db_session)
 
     await repo.record_decision(
-        candidate_id=cand.id, reviewer_user_id=r1.id, role=ROLE_R1,
-        phase=PHASE_ABSTRACT, decision="include", reason_code=None, notes=None,
+        candidate_id=cand.id,
+        reviewer_user_id=r1.id,
+        role=ROLE_R1,
+        phase=PHASE_ABSTRACT,
+        decision="include",
+        reason_code=None,
+        notes=None,
     )
     # After R1 alone, no transition yet.
     cand_refresh = await db_session.get(SrCandidate, cand.id)
     assert cand_refresh.current_status == STATUS_PENDING_ABSTRACT
 
     await repo.record_decision(
-        candidate_id=cand.id, reviewer_user_id=r2.id, role=ROLE_R2,
-        phase=PHASE_ABSTRACT, decision="include", reason_code=None, notes=None,
+        candidate_id=cand.id,
+        reviewer_user_id=r2.id,
+        role=ROLE_R2,
+        phase=PHASE_ABSTRACT,
+        decision="include",
+        reason_code=None,
+        notes=None,
     )
     cand_refresh = await db_session.get(SrCandidate, cand.id)
     assert cand_refresh.current_status == STATUS_INCLUDED_AFTER_ABSTRACT
@@ -104,12 +114,22 @@ async def test_both_exclude_promotes_to_excluded_at_abstract(
     repo = SrReviewRepository(db_session)
 
     await repo.record_decision(
-        candidate_id=cand.id, reviewer_user_id=r1.id, role=ROLE_R1,
-        phase=PHASE_ABSTRACT, decision="exclude", reason_code="wrong_design", notes=None,
+        candidate_id=cand.id,
+        reviewer_user_id=r1.id,
+        role=ROLE_R1,
+        phase=PHASE_ABSTRACT,
+        decision="exclude",
+        reason_code="wrong_design",
+        notes=None,
     )
     await repo.record_decision(
-        candidate_id=cand.id, reviewer_user_id=r2.id, role=ROLE_R2,
-        phase=PHASE_ABSTRACT, decision="exclude", reason_code="wrong_design", notes=None,
+        candidate_id=cand.id,
+        reviewer_user_id=r2.id,
+        role=ROLE_R2,
+        phase=PHASE_ABSTRACT,
+        decision="exclude",
+        reason_code="wrong_design",
+        notes=None,
     )
     cand_refresh = await db_session.get(SrCandidate, cand.id)
     assert cand_refresh.current_status == STATUS_EXCLUDED_AT_ABSTRACT
@@ -124,12 +144,22 @@ async def test_disagreement_raises_pending_adjudication(
     repo = SrReviewRepository(db_session)
 
     await repo.record_decision(
-        candidate_id=cand.id, reviewer_user_id=r1.id, role=ROLE_R1,
-        phase=PHASE_ABSTRACT, decision="include", reason_code=None, notes=None,
+        candidate_id=cand.id,
+        reviewer_user_id=r1.id,
+        role=ROLE_R1,
+        phase=PHASE_ABSTRACT,
+        decision="include",
+        reason_code=None,
+        notes=None,
     )
     await repo.record_decision(
-        candidate_id=cand.id, reviewer_user_id=r2.id, role=ROLE_R2,
-        phase=PHASE_ABSTRACT, decision="exclude", reason_code="population_mismatch", notes=None,
+        candidate_id=cand.id,
+        reviewer_user_id=r2.id,
+        role=ROLE_R2,
+        phase=PHASE_ABSTRACT,
+        decision="exclude",
+        reason_code="population_mismatch",
+        notes=None,
     )
     cand_refresh = await db_session.get(SrCandidate, cand.id)
     assert cand_refresh.current_status == STATUS_PENDING_ADJ_ABSTRACT
@@ -143,16 +173,31 @@ async def test_adjudicator_decision_locks_phase(db_session: AsyncSession) -> Non
     repo = SrReviewRepository(db_session)
 
     await repo.record_decision(
-        candidate_id=cand.id, reviewer_user_id=r1.id, role=ROLE_R1,
-        phase=PHASE_ABSTRACT, decision="include", reason_code=None, notes=None,
+        candidate_id=cand.id,
+        reviewer_user_id=r1.id,
+        role=ROLE_R1,
+        phase=PHASE_ABSTRACT,
+        decision="include",
+        reason_code=None,
+        notes=None,
     )
     await repo.record_decision(
-        candidate_id=cand.id, reviewer_user_id=r2.id, role=ROLE_R2,
-        phase=PHASE_ABSTRACT, decision="exclude", reason_code="wrong_design", notes=None,
+        candidate_id=cand.id,
+        reviewer_user_id=r2.id,
+        role=ROLE_R2,
+        phase=PHASE_ABSTRACT,
+        decision="exclude",
+        reason_code="wrong_design",
+        notes=None,
     )
     await repo.record_decision(
-        candidate_id=cand.id, reviewer_user_id=adj.id, role=ROLE_ADJ,
-        phase=PHASE_ABSTRACT, decision="include", reason_code=None, notes="judgment call",
+        candidate_id=cand.id,
+        reviewer_user_id=adj.id,
+        role=ROLE_ADJ,
+        phase=PHASE_ABSTRACT,
+        decision="include",
+        reason_code=None,
+        notes="judgment call",
     )
     cand_refresh = await db_session.get(SrCandidate, cand.id)
     assert cand_refresh.current_status == STATUS_INCLUDED_AFTER_ABSTRACT
@@ -169,8 +214,13 @@ async def test_fulltext_phase_blocked_before_abstract_passes(
     repo = SrReviewRepository(db_session)
     with pytest.raises(SrError, match="finish the abstract phase first"):
         await repo.record_decision(
-            candidate_id=cand.id, reviewer_user_id=r1.id, role=ROLE_R1,
-            phase=PHASE_FULLTEXT, decision="include", reason_code=None, notes=None,
+            candidate_id=cand.id,
+            reviewer_user_id=r1.id,
+            role=ROLE_R1,
+            phase=PHASE_FULLTEXT,
+            decision="include",
+            reason_code=None,
+            notes=None,
         )
 
 
@@ -183,23 +233,43 @@ async def test_fulltext_phase_passes_after_abstract_inclusion(
 
     # First promote through abstract phase.
     await repo.record_decision(
-        candidate_id=cand.id, reviewer_user_id=r1.id, role=ROLE_R1,
-        phase=PHASE_ABSTRACT, decision="include", reason_code=None, notes=None,
+        candidate_id=cand.id,
+        reviewer_user_id=r1.id,
+        role=ROLE_R1,
+        phase=PHASE_ABSTRACT,
+        decision="include",
+        reason_code=None,
+        notes=None,
     )
     await repo.record_decision(
-        candidate_id=cand.id, reviewer_user_id=r2.id, role=ROLE_R2,
-        phase=PHASE_ABSTRACT, decision="include", reason_code=None, notes=None,
+        candidate_id=cand.id,
+        reviewer_user_id=r2.id,
+        role=ROLE_R2,
+        phase=PHASE_ABSTRACT,
+        decision="include",
+        reason_code=None,
+        notes=None,
     )
     # Now full-text decisions are accepted; first one transitions to pending.
     await repo.record_decision(
-        candidate_id=cand.id, reviewer_user_id=r1.id, role=ROLE_R1,
-        phase=PHASE_FULLTEXT, decision="exclude", reason_code="outcome_mismatch", notes=None,
+        candidate_id=cand.id,
+        reviewer_user_id=r1.id,
+        role=ROLE_R1,
+        phase=PHASE_FULLTEXT,
+        decision="exclude",
+        reason_code="outcome_mismatch",
+        notes=None,
     )
     cand_refresh = await db_session.get(SrCandidate, cand.id)
     assert cand_refresh.current_status == STATUS_PENDING_FULLTEXT
     await repo.record_decision(
-        candidate_id=cand.id, reviewer_user_id=r2.id, role=ROLE_R2,
-        phase=PHASE_FULLTEXT, decision="exclude", reason_code="outcome_mismatch", notes=None,
+        candidate_id=cand.id,
+        reviewer_user_id=r2.id,
+        role=ROLE_R2,
+        phase=PHASE_FULLTEXT,
+        decision="exclude",
+        reason_code="outcome_mismatch",
+        notes=None,
     )
     cand_refresh = await db_session.get(SrCandidate, cand.id)
     assert cand_refresh.current_status == STATUS_EXCLUDED_AT_FULLTEXT
@@ -215,8 +285,13 @@ async def test_queue_skips_already_decided_for_this_reviewer(
 
     # R1 decides on the only candidate.
     await repo.record_decision(
-        candidate_id=cand.id, reviewer_user_id=r1.id, role=ROLE_R1,
-        phase=PHASE_ABSTRACT, decision="include", reason_code=None, notes=None,
+        candidate_id=cand.id,
+        reviewer_user_id=r1.id,
+        role=ROLE_R1,
+        phase=PHASE_ABSTRACT,
+        decision="include",
+        reason_code=None,
+        notes=None,
     )
     next_for_r1 = await repo.next_for_reviewer(project.id, user_id=r1.id, phase=PHASE_ABSTRACT)
     assert next_for_r1 is None, "queue should be empty for r1 — they already decided"
@@ -229,12 +304,22 @@ async def test_prisma_counts_match_seeded_decisions(db_session: AsyncSession) ->
 
     # Both exclude the only candidate.
     await repo.record_decision(
-        candidate_id=cand.id, reviewer_user_id=r1.id, role=ROLE_R1,
-        phase=PHASE_ABSTRACT, decision="exclude", reason_code="wrong_design", notes=None,
+        candidate_id=cand.id,
+        reviewer_user_id=r1.id,
+        role=ROLE_R1,
+        phase=PHASE_ABSTRACT,
+        decision="exclude",
+        reason_code="wrong_design",
+        notes=None,
     )
     await repo.record_decision(
-        candidate_id=cand.id, reviewer_user_id=r2.id, role=ROLE_R2,
-        phase=PHASE_ABSTRACT, decision="exclude", reason_code="wrong_design", notes=None,
+        candidate_id=cand.id,
+        reviewer_user_id=r2.id,
+        role=ROLE_R2,
+        phase=PHASE_ABSTRACT,
+        decision="exclude",
+        reason_code="wrong_design",
+        notes=None,
     )
     counts = await repo.prisma_counts(project.id)
     assert counts["records_screened"] == 1

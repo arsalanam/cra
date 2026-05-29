@@ -217,8 +217,7 @@ def require_permission_scoped(
             raise HTTPException(
                 status_code=403,
                 detail=(
-                    f"Permission required: {perm.value} "
-                    f"({', '.join(scope_bits)})."
+                    f"Permission required: {perm.value} ({', '.join(scope_bits)})."
                     if scope_bits
                     else f"Permission required: {perm.value}."
                 ),

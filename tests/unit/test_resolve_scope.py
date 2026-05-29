@@ -113,9 +113,7 @@ async def test_resolve_form_instance_scope(clinical_session: AsyncSession) -> No
 
     ids = await _seed(clinical_session)
     with _patch_clinical_session(clinical_session):
-        study_id, site_id, sr_review_id = await resolve_form_instance_scope(
-            ids["form_instance_id"]
-        )
+        study_id, site_id, sr_review_id = await resolve_form_instance_scope(ids["form_instance_id"])
     assert study_id == ids["research_study_id"]
     assert site_id == ids["site_id"]
     assert sr_review_id is None

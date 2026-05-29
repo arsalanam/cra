@@ -169,9 +169,7 @@ def create_admin_router() -> APIRouter:
         """
         async with get_db_session() as session:
             users = list(
-                (
-                    await session.execute(select(User).order_by(User.email.is_(None), User.email))
-                )
+                (await session.execute(select(User).order_by(User.email.is_(None), User.email)))
                 .scalars()
                 .all()
             )
@@ -186,9 +184,7 @@ def create_admin_router() -> APIRouter:
                         name=u.name,
                         cognito_sub=u.cognito_sub,
                         created_at=u.created_at,
-                        role_assignments=[
-                            RoleAssignmentOut.model_validate(a) for a in assignments
-                        ],
+                        role_assignments=[RoleAssignmentOut.model_validate(a) for a in assignments],
                     )
                 )
             return out
@@ -198,9 +194,7 @@ def create_admin_router() -> APIRouter:
         response_model=RoleAssignmentOut,
         status_code=201,
     )
-    async def grant_role(
-        user_id: str, body: GrantRoleIn, admin: AdminUser
-    ) -> RoleAssignmentOut:
+    async def grant_role(user_id: str, body: GrantRoleIn, admin: AdminUser) -> RoleAssignmentOut:
         """Grant `(role, scope)` to a user. Idempotent on the same triple.
 
         Validates the role name against `auth.rbac.Role` (with legacy
@@ -210,8 +204,7 @@ def create_admin_router() -> APIRouter:
         if normalize_legacy_role(body.role) is None:
             raise HTTPException(
                 422,
-                f"Unknown role {body.role!r}. Valid roles: "
-                f"{sorted(r.value for r in Role)}.",
+                f"Unknown role {body.role!r}. Valid roles: {sorted(r.value for r in Role)}.",
             )
         if body.scope_type not in (s.value for s in ScopeType):
             raise HTTPException(

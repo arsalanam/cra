@@ -75,9 +75,7 @@ async def _seed(sub: str, email: str, role: str) -> str:
         return u.id
 
 
-async def _seed_candidates(
-    project_id: str, n: int = 3
-) -> list[str]:
+async def _seed_candidates(project_id: str, n: int = 3) -> list[str]:
     """Bypass the network search and seed n candidate papers directly."""
     from research_assistant.persistence.database import get_db_session
     from research_assistant.persistence.models import Publication, SrCandidate
@@ -152,15 +150,17 @@ async def test_dual_review_with_conflict_and_adjudication(client: AsyncClient) -
     await _seed("sub-adj", "adj@example.com", "researcher")
 
     _login(client, "sub-r", "r@example.com")
-    proj = (await client.post(
-        "/api/sr/projects",
-        json={
-            "name": "Dual review test",
-            "search_query": "test",
-            "inclusion_criteria": ["RCT"],
-            "exclusion_criteria": ["preclinical"],
-        },
-    )).json()
+    proj = (
+        await client.post(
+            "/api/sr/projects",
+            json={
+                "name": "Dual review test",
+                "search_query": "test",
+                "inclusion_criteria": ["RCT"],
+                "exclusion_criteria": ["preclinical"],
+            },
+        )
+    ).json()
     pid = proj["id"]
 
     # Add reviewer slots.
@@ -206,9 +206,7 @@ async def test_dual_review_with_conflict_and_adjudication(client: AsyncClient) -
 
     # Adjudicator sees one conflict.
     _login(client, "sub-adj", "adj@example.com")
-    conflicts = (await client.get(
-        f"/api/sr/projects/{pid}/conflicts?phase=abstract"
-    )).json()
+    conflicts = (await client.get(f"/api/sr/projects/{pid}/conflicts?phase=abstract")).json()
     assert len(conflicts) == 1
     assert conflicts[0]["candidate_id"] == candidate_ids[0]
 
@@ -234,7 +232,9 @@ async def test_reviewer_cannot_see_other_reviewers_decisions_in_queue(
     await _seed("sub-r1", "r1@example.com", "researcher")
     await _seed("sub-r2", "r2@example.com", "researcher")
     _login(client, "sub-r", "r@example.com")
-    proj = (await client.post("/api/sr/projects", json={"name": "Blind", "search_query": "x"})).json()
+    proj = (
+        await client.post("/api/sr/projects", json={"name": "Blind", "search_query": "x"})
+    ).json()
     pid = proj["id"]
     await client.post(
         f"/api/sr/projects/{pid}/members",

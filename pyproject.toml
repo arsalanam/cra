@@ -26,6 +26,7 @@ dependencies = [
     "docker>=7.0",
     "apscheduler>=3.11",
     "pgvector>=0.3",         # pgvector SQLAlchemy type + asyncpg codec (RAG embeddings)
+    "scipy>=1.13",           # sample_size tool needs scipy.stats.norm/t inverse CDFs
 ]
 
 [project.optional-dependencies]

@@ -24,6 +24,7 @@ from ..persistence.repository import ThreadRepository
 from ..persistence.user_repository import UserRepository
 from ..reports import meta_analysis as _ma_report
 from ..reports import risk_of_bias as _rob_report
+from ..reports import sap as _sap_report
 from ..reports import sr_protocol as _proto_report
 from ..services.quota import build_quota_payload, get_today_token_totals
 from .auth import CurrentUser
@@ -127,15 +128,11 @@ def create_thread_router() -> APIRouter:
             return _thread_out(thread, message_count=0)
 
     @router.get("", response_model=list[ThreadOut])
-    async def list_threads(
-        user: CurrentUser, limit: int = 50, offset: int = 0
-    ) -> list[ThreadOut]:
+    async def list_threads(user: CurrentUser, limit: int = 50, offset: int = 0) -> list[ThreadOut]:
         owner = await resolve_local_user_id(user)
         async with get_db_session() as session:
             repo = ThreadRepository(session)
-            threads = await repo.list_threads(
-                limit=limit, offset=offset, user_id=owner
-            )
+            threads = await repo.list_threads(limit=limit, offset=offset, user_id=owner)
             return [_thread_out(t, await repo.count_messages(t.id)) for t in threads]
 
     # ── Usage Aggregation (must be before /{thread_id} routes) ──────
@@ -285,6 +282,13 @@ def create_thread_router() -> APIRouter:
             _rob_report.build_docx,
             "rob",
             "risk-of-bias",
+        ),
+        "sap": (
+            _sap_report.assemble_report_data,
+            _sap_report.build_pdf,
+            _sap_report.build_docx,
+            "sap",
+            "Statistical Analysis Plan",
         ),
     }
 

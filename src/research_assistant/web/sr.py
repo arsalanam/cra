@@ -312,8 +312,7 @@ def create_sr_router() -> APIRouter:
         if body.role not in (ROLE_R1, ROLE_R2, ROLE_ADJ):
             raise HTTPException(
                 422,
-                f"Role must be one of {ROLE_R1}, {ROLE_R2}, {ROLE_ADJ}; "
-                f"got {body.role!r}.",
+                f"Role must be one of {ROLE_R1}, {ROLE_R2}, {ROLE_ADJ}; got {body.role!r}.",
             )
         granter = await resolve_local_user_id(user)
         async with get_db_session() as session:
@@ -357,9 +356,7 @@ def create_sr_router() -> APIRouter:
                 granted_at=mem.granted_at,
             )
 
-    @router.delete(
-        "/projects/{sr_project_id}/members/{membership_id}", status_code=204
-    )
+    @router.delete("/projects/{sr_project_id}/members/{membership_id}", status_code=204)
     async def remove_member(
         sr_project_id: str,
         membership_id: str,
@@ -389,9 +386,7 @@ def create_sr_router() -> APIRouter:
 
     # ── Ingest: run the search and snapshot candidates ───────────────────
 
-    @router.post(
-        "/projects/{sr_project_id}/ingest", response_model=IngestOut, status_code=201
-    )
+    @router.post("/projects/{sr_project_id}/ingest", response_model=IngestOut, status_code=201)
     async def ingest_candidates(
         sr_project_id: str,
         body: IngestIn,
@@ -454,9 +449,7 @@ def create_sr_router() -> APIRouter:
         owner = await resolve_local_user_id(user)
         async with get_db_session() as session:
             repo = SrReviewRepository(session)
-            cand = await repo.next_for_reviewer(
-                sr_project_id, user_id=owner, phase=phase
-            )
+            cand = await repo.next_for_reviewer(sr_project_id, user_id=owner, phase=phase)
             if cand is None:
                 return None
             pub = await session.get(Publication, cand.publication_id)
@@ -516,11 +509,7 @@ def create_sr_router() -> APIRouter:
             # Pick the most-authoritative role the caller holds. Adjudicator
             # outranks R1/R2 — submitting from the adjudicator chair locks
             # the phase.
-            role = (
-                ROLE_ADJ
-                if ROLE_ADJ in roles
-                else (ROLE_R1 if ROLE_R1 in roles else ROLE_R2)
-            )
+            role = ROLE_ADJ if ROLE_ADJ in roles else (ROLE_R1 if ROLE_R1 in roles else ROLE_R2)
             try:
                 decision, cand = await repo.record_decision(
                     candidate_id=body.candidate_id,
@@ -546,9 +535,7 @@ def create_sr_router() -> APIRouter:
 
     # ── Conflicts (adjudicator view) ─────────────────────────────────────
 
-    @router.get(
-        "/projects/{sr_project_id}/conflicts", response_model=list[ConflictItem]
-    )
+    @router.get("/projects/{sr_project_id}/conflicts", response_model=list[ConflictItem])
     async def list_conflicts(
         sr_project_id: str,
         phase: str = PHASE_ABSTRACT,
@@ -677,9 +664,7 @@ def create_sr_router() -> APIRouter:
                     paper_abstract=abstract,
                 )
             except Exception as exc:
-                logger.exception(
-                    "sr_screening_assist failed for candidate=%s", candidate_id
-                )
+                logger.exception("sr_screening_assist failed for candidate=%s", candidate_id)
                 errors.append({"candidate_id": candidate_id, "error": str(exc)[:200]})
                 continue
             async with get_db_session() as session:
@@ -782,30 +767,53 @@ def _render_prisma_svg(*, name: str, counts: dict[str, Any]) -> str:
 
     # Main column
     boxes = [
-        _box(main_x, rows_y[0], main_w, box_h,
-             "Identification (post-dedupe)",
-             f"Records screened: {records_screened}"),
-        _box(main_x, rows_y[1], main_w, box_h,
-             "Screening (title/abstract)",
-             f"Records after abstract: {records_screened - excluded_abs}"),
-        _box(main_x, rows_y[2], main_w, box_h,
-             "Eligibility (full text)",
-             f"Full-text assessed: {full_text}"),
-        _box(main_x, rows_y[3], main_w, box_h,
-             "Included",
-             f"Studies included: {included}"),
+        _box(
+            main_x,
+            rows_y[0],
+            main_w,
+            box_h,
+            "Identification (post-dedupe)",
+            f"Records screened: {records_screened}",
+        ),
+        _box(
+            main_x,
+            rows_y[1],
+            main_w,
+            box_h,
+            "Screening (title/abstract)",
+            f"Records after abstract: {records_screened - excluded_abs}",
+        ),
+        _box(
+            main_x,
+            rows_y[2],
+            main_w,
+            box_h,
+            "Eligibility (full text)",
+            f"Full-text assessed: {full_text}",
+        ),
+        _box(main_x, rows_y[3], main_w, box_h, "Included", f"Studies included: {included}"),
     ]
 
     # Side exclusion boxes
     side_boxes = [
-        _box(side_x, rows_y[1], side_w, box_h,
-             f"Excluded at abstract: {excluded_abs}",
-             abs_reason_text or "(no reasons recorded)",
-             side=True),
-        _box(side_x, rows_y[2], side_w, box_h,
-             f"Excluded at full text: {excluded_ft}",
-             ft_reason_text or "(no reasons recorded)",
-             side=True),
+        _box(
+            side_x,
+            rows_y[1],
+            side_w,
+            box_h,
+            f"Excluded at abstract: {excluded_abs}",
+            abs_reason_text or "(no reasons recorded)",
+            side=True,
+        ),
+        _box(
+            side_x,
+            rows_y[2],
+            side_w,
+            box_h,
+            f"Excluded at full text: {excluded_ft}",
+            ft_reason_text or "(no reasons recorded)",
+            side=True,
+        ),
     ]
 
     # Arrows between main rows
@@ -835,16 +843,16 @@ def _render_prisma_svg(*, name: str, counts: dict[str, Any]) -> str:
     return (
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" '
         f'viewBox="0 0 {W} {H}">'
-        '<defs>'
+        "<defs>"
         '<marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" '
         'markerHeight="8" orient="auto-start-reverse">'
         '<path d="M0,0 L10,5 L0,10 Z" fill="#1f3a66"/>'
-        '</marker>'
+        "</marker>"
         '<marker id="arrow-amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" '
         'markerHeight="8" orient="auto-start-reverse">'
         '<path d="M0,0 L10,5 L0,10 Z" fill="#a07300"/>'
-        '</marker>'
-        '</defs>'
+        "</marker>"
+        "</defs>"
         f'<rect width="{W}" height="{H}" fill="#ffffff"/>'
         + header
         + "".join(boxes)

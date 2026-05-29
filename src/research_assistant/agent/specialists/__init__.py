@@ -17,7 +17,14 @@ Adding a new specialist:
   4. Add card components to the frontend
 """
 
-from . import general_qa, meta_analysis, risk_of_bias, search_strategy, sr_protocol
+from . import (
+    general_qa,
+    meta_analysis,
+    risk_of_bias,
+    sap_drafter,
+    search_strategy,
+    sr_protocol,
+)
 
 # Map workflow id → specialist module. The dispatcher uses this.
 SPECIALISTS = {
@@ -25,6 +32,7 @@ SPECIALISTS = {
     search_strategy.WORKFLOW_NAME: search_strategy,
     sr_protocol.WORKFLOW_NAME: sr_protocol,
     risk_of_bias.WORKFLOW_NAME: risk_of_bias,
+    sap_drafter.WORKFLOW_NAME: sap_drafter,
     general_qa.WORKFLOW_NAME: general_qa,
 }
 
@@ -33,6 +41,7 @@ __all__ = [
     "general_qa",
     "meta_analysis",
     "risk_of_bias",
+    "sap_drafter",
     "search_strategy",
     "sr_protocol",
 ]

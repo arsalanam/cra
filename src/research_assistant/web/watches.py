@@ -202,9 +202,7 @@ def create_watches_router() -> APIRouter:
         return view
 
     @router.patch("/{watch_id}", response_model=WatchView)
-    async def update_watch(
-        watch_id: str, body: WatchPatch, user: CurrentUser
-    ) -> WatchView:
+    async def update_watch(watch_id: str, body: WatchPatch, user: CurrentUser) -> WatchView:
         updates = body.model_dump(exclude_unset=True)
         if "status" in updates and updates["status"] not in ("active", "paused"):
             raise HTTPException(400, "status must be 'active' or 'paused'")

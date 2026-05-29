@@ -33,6 +33,7 @@ from .specialists import (
     general_qa,
     meta_analysis,
     risk_of_bias,
+    sap_drafter,
     search_strategy,
     sr_protocol,
 )
@@ -68,6 +69,10 @@ _SLASH_COMMANDS: dict[str, str] = {
     "prisma": sr_protocol.WORKFLOW_NAME,
     "rob": risk_of_bias.WORKFLOW_NAME,
     "bias": risk_of_bias.WORKFLOW_NAME,
+    "sap": sap_drafter.WORKFLOW_NAME,
+    "samplesize": sap_drafter.WORKFLOW_NAME,
+    "sample-size": sap_drafter.WORKFLOW_NAME,
+    "power": sap_drafter.WORKFLOW_NAME,
     "general": general_qa.WORKFLOW_NAME,
     "ask": general_qa.WORKFLOW_NAME,
     # Future: "gap" -> "research_gap", "ecrf" -> "ecrf_design"
@@ -102,6 +107,12 @@ _WORKFLOW_CONTINUATIONS: dict[str, tuple[str, ...]] = {
         "Run RoB on PMID",  # explicit ad-hoc trigger
         "Run risk of bias on extracted",  # handoff seed from data_extraction
     ),
+    sap_drafter.WORKFLOW_NAME: (
+        "PICOT confirmed",
+        "Sample size confirmed",
+        "Analysis plan confirmed",
+        "Finalize SAP",
+    ),
     # Future: research_gap / ecrf continuations
 }
 
@@ -133,6 +144,23 @@ _TRIGGER_KEYWORDS: list[tuple[str, list[re.Pattern[str]]]] = [
             re.compile(r"\bROBINS[-\s]?I\b", re.I),
             re.compile(r"\bNewcastle[-\s]Ottawa\b", re.I),
             re.compile(r"\bQUADAS[-\s]?2\b", re.I),
+        ],
+    ),
+    # sap_drafter checked before meta_analysis: "sample size for X" + "trial
+    # design" overlap with meta-analysis's "effect of" trigger but the user
+    # wants the prospective-trial drafter.
+    (
+        sap_drafter.WORKFLOW_NAME,
+        [
+            re.compile(r"\bsample[-\s]?size\b", re.I),
+            re.compile(r"\bpower\s+(calculation|analysis|the\s+trial)\b", re.I),
+            re.compile(r"\bstatistical\s+analysis\s+plan\b", re.I),
+            re.compile(r"\bSAP\b", re.I),
+            re.compile(r"\bICH[-\s]?E9(R1)?\b", re.I),
+            re.compile(r"\bprospective\s+trial\b", re.I),
+            re.compile(r"\btrial\s+design\b", re.I),
+            re.compile(r"\bpowered\s+to\s+detect\b", re.I),
+            re.compile(r"\bPICOT\b", re.I),
         ],
     ),
     # sr_protocol checked before search_strategy/meta_analysis: phrases like

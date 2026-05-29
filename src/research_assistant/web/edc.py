@@ -264,17 +264,13 @@ def create_edc_router() -> APIRouter:
             ]
 
     @router.get("/deployments/{deployment_id}/forms", response_model=list[DeployedFormOut])
-    async def list_deployed_forms(
-        deployment_id: str, user: CurrentUser
-    ) -> list[DeployedFormOut]:
+    async def list_deployed_forms(deployment_id: str, user: CurrentUser) -> list[DeployedFormOut]:
         async with get_clinical_session() as s:
             forms = await ClinicalRepository(s).list_deployed_forms(deployment_id)
             return [DeployedFormOut.model_validate(f) for f in forms]
 
     @router.get("/deployed-forms/{deployed_form_id}", response_model=DeployedFormDetailOut)
-    async def get_deployed_form(
-        deployed_form_id: str, user: CurrentUser
-    ) -> DeployedFormDetailOut:
+    async def get_deployed_form(deployed_form_id: str, user: CurrentUser) -> DeployedFormDetailOut:
         """The deployed form's full definition — used by the collector to render it."""
         async with get_clinical_session() as s:
             df = await ClinicalRepository(s).get_deployed_form(deployed_form_id)
@@ -366,9 +362,7 @@ def create_edc_router() -> APIRouter:
     # ── form instances + data ────────────────────────────────────────────
 
     @router.get("/subjects/{subject_id}/forms", response_model=list[FormInstanceOut])
-    async def list_subject_forms(
-        subject_id: str, user: CurrentUser
-    ) -> list[FormInstanceOut]:
+    async def list_subject_forms(subject_id: str, user: CurrentUser) -> list[FormInstanceOut]:
         async with get_clinical_session() as s:
             instances = await ClinicalRepository(s).list_form_instances(subject_id)
             return [FormInstanceOut.model_validate(fi) for fi in instances]
@@ -428,9 +422,7 @@ def create_edc_router() -> APIRouter:
             return FormInstanceOut.model_validate(fi)
 
     @router.get("/form-instances/{form_instance_id}", response_model=FormInstanceDetailOut)
-    async def get_form_instance(
-        form_instance_id: str, user: CurrentUser
-    ) -> FormInstanceDetailOut:
+    async def get_form_instance(form_instance_id: str, user: CurrentUser) -> FormInstanceDetailOut:
         async with get_clinical_session() as s:
             found = await ClinicalRepository(s).get_form_instance(form_instance_id)
             if found is None:
@@ -455,9 +447,7 @@ def create_edc_router() -> APIRouter:
     # ── queries / discrepancies ──────────────────────────────────────────
 
     @router.get("/form-instances/{form_instance_id}/queries", response_model=list[QueryOut])
-    async def list_queries(
-        form_instance_id: str, user: CurrentUser
-    ) -> list[QueryOut]:
+    async def list_queries(form_instance_id: str, user: CurrentUser) -> list[QueryOut]:
         async with get_clinical_session() as s:
             qs = await ClinicalRepository(s).list_queries(form_instance_id)
             return [QueryOut.model_validate(q) for q in qs]
@@ -552,9 +542,7 @@ def create_edc_router() -> APIRouter:
             return FormInstanceOut.model_validate(fi)
 
     @router.get("/form-instances/{form_instance_id}/signatures", response_model=list[SignatureOut])
-    async def list_signatures(
-        form_instance_id: str, user: CurrentUser
-    ) -> list[SignatureOut]:
+    async def list_signatures(form_instance_id: str, user: CurrentUser) -> list[SignatureOut]:
         async with get_clinical_session() as s:
             sigs = await ClinicalRepository(s).list_signatures(form_instance_id)
             return [SignatureOut.model_validate(x) for x in sigs]
@@ -583,9 +571,7 @@ def create_edc_router() -> APIRouter:
     @router.get(
         "/form-instances/{form_instance_id}/verifications", response_model=list[VerificationOut]
     )
-    async def list_verifications(
-        form_instance_id: str, user: CurrentUser
-    ) -> list[VerificationOut]:
+    async def list_verifications(form_instance_id: str, user: CurrentUser) -> list[VerificationOut]:
         async with get_clinical_session() as s:
             vs = await ClinicalRepository(s).list_verifications(form_instance_id)
             return [VerificationOut.model_validate(v) for v in vs]

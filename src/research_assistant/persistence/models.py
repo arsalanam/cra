@@ -630,18 +630,14 @@ class SrReviewMembership(Base):
 
     __tablename__ = "sr_review_memberships"
     __table_args__ = (
-        UniqueConstraint(
-            "sr_review_id", "user_id", "role", name="uq_sr_membership_unique"
-        ),
+        UniqueConstraint("sr_review_id", "user_id", "role", name="uq_sr_membership_unique"),
     )
 
     id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
     sr_review_id: Mapped[str] = mapped_column(
         ForeignKey("sr_reviews.id", ondelete="CASCADE"), index=True
     )
-    user_id: Mapped[str] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), index=True
-    )
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     role: Mapped[str] = mapped_column(
         Text,
         doc="One of 'reviewer_1' | 'reviewer_2' | 'adjudicator'.",
@@ -668,9 +664,7 @@ class SrCandidate(Base):
 
     __tablename__ = "sr_candidates"
     __table_args__ = (
-        UniqueConstraint(
-            "sr_review_id", "publication_id", name="uq_sr_candidate_publication"
-        ),
+        UniqueConstraint("sr_review_id", "publication_id", name="uq_sr_candidate_publication"),
     )
 
     id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
@@ -697,9 +691,7 @@ class SrCandidate(Base):
             "included_after_fulltext | excluded_at_fulltext"
         ),
     )
-    excluded_reason_code: Mapped[str | None] = mapped_column(
-        Text, nullable=True, default=None
-    )
+    excluded_reason_code: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     excluded_at_phase: Mapped[str | None] = mapped_column(
         Text, nullable=True, default=None, doc="abstract | fulltext"
     )
@@ -745,13 +737,9 @@ class ScreeningDecision(Base):
     reviewer_user_id: Mapped[str] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
-    role: Mapped[str] = mapped_column(
-        Text, doc="reviewer_1 | reviewer_2 | adjudicator"
-    )
+    role: Mapped[str] = mapped_column(Text, doc="reviewer_1 | reviewer_2 | adjudicator")
     phase: Mapped[str] = mapped_column(Text, doc="abstract | fulltext")
-    decision: Mapped[str] = mapped_column(
-        Text, doc="include | exclude | maybe"
-    )
+    decision: Mapped[str] = mapped_column(Text, doc="include | exclude | maybe")
     reason_code: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     ai_suggested: Mapped[bool] = mapped_column(
@@ -781,9 +769,7 @@ class AiSuggestion(Base):
 
     __tablename__ = "sr_ai_suggestions"
     __table_args__ = (
-        UniqueConstraint(
-            "sr_candidate_id", "phase", name="uq_sr_ai_suggestion_unique"
-        ),
+        UniqueConstraint("sr_candidate_id", "phase", name="uq_sr_ai_suggestion_unique"),
     )
 
     id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
@@ -791,12 +777,8 @@ class AiSuggestion(Base):
         ForeignKey("sr_candidates.id", ondelete="CASCADE"), index=True
     )
     phase: Mapped[str] = mapped_column(Text, doc="abstract | fulltext")
-    predicted_decision: Mapped[str] = mapped_column(
-        Text, doc="include | exclude | maybe"
-    )
-    predicted_reason_code: Mapped[str | None] = mapped_column(
-        Text, nullable=True, default=None
-    )
+    predicted_decision: Mapped[str] = mapped_column(Text, doc="include | exclude | maybe")
+    predicted_reason_code: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     confidence: Mapped[float] = mapped_column(Float, default=0.0)
     rationale: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     model_id: Mapped[str | None] = mapped_column(
