@@ -113,9 +113,7 @@ async def test_pi_override_to_not_serious_clears_deadline(
         actor_sub="coord-1",
     )
     assert ae.is_serious is True
-    overridden = await repo.reclassify_adverse_event(
-        ae.id, is_serious=False, actor_sub="pi-1"
-    )
+    overridden = await repo.reclassify_adverse_event(ae.id, is_serious=False, actor_sub="pi-1")
     assert overridden.is_serious is False
     assert overridden.reportable_deadline is None
     assert overridden.classified_by == "pi-1"

@@ -22,6 +22,7 @@ from ..persistence.database import get_db_session
 from ..persistence.models import DEFAULT_USER_ID, Thread
 from ..persistence.repository import ThreadRepository
 from ..persistence.user_repository import UserRepository
+from ..reports import manuscript as _manuscript_report
 from ..reports import meta_analysis as _ma_report
 from ..reports import risk_of_bias as _rob_report
 from ..reports import sap as _sap_report
@@ -289,6 +290,13 @@ def create_thread_router() -> APIRouter:
             _sap_report.build_docx,
             "sap",
             "Statistical Analysis Plan",
+        ),
+        "manuscript": (
+            _manuscript_report.assemble_report_data,
+            _manuscript_report.build_pdf,
+            _manuscript_report.build_docx,
+            "manuscript",
+            "manuscript",
         ),
     }
 

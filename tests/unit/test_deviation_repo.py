@@ -72,9 +72,7 @@ async def test_add_capa_flips_status_to_under_capa(
         description="ineligible subject enrolled",
         actor_sub="coord-1",
     )
-    await repo.add_capa(
-        dev.id, action_text="Site retraining", actor_sub="dm-1"
-    )
+    await repo.add_capa(dev.id, action_text="Site retraining", actor_sub="dm-1")
     refreshed = await repo.get_deviation(dev.id)
     assert refreshed is not None
     assert refreshed.status == "under_capa"

@@ -821,9 +821,7 @@ def create_edc_router() -> APIRouter:
             return [AdverseEventOut.from_orm_ae(a) for a in aes]
 
     @router.get("/ae/{ae_id}", response_model=AdverseEventOut)
-    async def get_adverse_event(
-        ae_id: str, user: CurrentUser
-    ) -> AdverseEventOut:
+    async def get_adverse_event(ae_id: str, user: CurrentUser) -> AdverseEventOut:
         async with get_clinical_session() as s:
             ae = await ClinicalRepository(s).get_adverse_event(ae_id)
             if ae is None:
@@ -1051,9 +1049,7 @@ def create_edc_router() -> APIRouter:
         "/subjects/{subject_id}/deviations",
         response_model=list[DeviationOut],
     )
-    async def list_subject_deviations(
-        subject_id: str, user: CurrentUser
-    ) -> list[DeviationOut]:
+    async def list_subject_deviations(subject_id: str, user: CurrentUser) -> list[DeviationOut]:
         async with get_clinical_session() as s:
             devs = await ClinicalRepository(s).list_deviations(subject_id=subject_id)
             return [DeviationOut.model_validate(d) for d in devs]
@@ -1104,12 +1100,8 @@ def create_edc_router() -> APIRouter:
                 raise HTTPException(409, str(e)) from e
             return CapaOut.model_validate(capa)
 
-    @router.get(
-        "/deviations/{deviation_id}/capa", response_model=list[CapaOut]
-    )
-    async def list_capas(
-        deviation_id: str, user: CurrentUser
-    ) -> list[CapaOut]:
+    @router.get("/deviations/{deviation_id}/capa", response_model=list[CapaOut])
+    async def list_capas(deviation_id: str, user: CurrentUser) -> list[CapaOut]:
         async with get_clinical_session() as s:
             capas = await ClinicalRepository(s).list_capas(deviation_id)
             return [CapaOut.model_validate(c) for c in capas]
@@ -1123,9 +1115,7 @@ def create_edc_router() -> APIRouter:
     ) -> CapaOut:
         async with get_clinical_session() as s:
             try:
-                capa = await ClinicalRepository(s).complete_capa(
-                    capa_id, actor_sub=user.sub
-                )
+                capa = await ClinicalRepository(s).complete_capa(capa_id, actor_sub=user.sub)
             except ClinicalError as e:
                 raise HTTPException(404, str(e)) from e
             return CapaOut.model_validate(capa)
@@ -1139,9 +1129,7 @@ def create_edc_router() -> APIRouter:
     ) -> DeviationOut:
         async with get_clinical_session() as s:
             try:
-                dev = await ClinicalRepository(s).close_deviation(
-                    deviation_id, actor_sub=user.sub
-                )
+                dev = await ClinicalRepository(s).close_deviation(deviation_id, actor_sub=user.sub)
             except ClinicalError as e:
                 raise HTTPException(409, str(e)) from e
             return DeviationOut.model_validate(dev)

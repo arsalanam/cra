@@ -19,6 +19,7 @@ Adding a new specialist:
 
 from . import (
     general_qa,
+    manuscript_drafter,
     meta_analysis,
     risk_of_bias,
     sap_drafter,
@@ -33,12 +34,14 @@ SPECIALISTS = {
     sr_protocol.WORKFLOW_NAME: sr_protocol,
     risk_of_bias.WORKFLOW_NAME: risk_of_bias,
     sap_drafter.WORKFLOW_NAME: sap_drafter,
+    manuscript_drafter.WORKFLOW_NAME: manuscript_drafter,
     general_qa.WORKFLOW_NAME: general_qa,
 }
 
 __all__ = [
     "SPECIALISTS",
     "general_qa",
+    "manuscript_drafter",
     "meta_analysis",
     "risk_of_bias",
     "sap_drafter",

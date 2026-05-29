@@ -361,9 +361,7 @@ class AdverseEvent(ClinicalBase):
         index=True,
     )
 
-    term_text: Mapped[str] = mapped_column(
-        Text, doc="Verbatim AE description from the reporter."
-    )
+    term_text: Mapped[str] = mapped_column(Text, doc="Verbatim AE description from the reporter.")
     meddra_pt: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
@@ -492,9 +490,7 @@ class ProtocolDeviation(ClinicalBase):
         default="open",
         doc="open | under_capa | closed",
     )
-    discovered_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=_utcnow
-    )
+    discovered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     discovered_by: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     classified_by: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     resolved_at: Mapped[datetime | None] = mapped_column(
@@ -540,9 +536,7 @@ class CapaAction(ClinicalBase):
     due_date: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True, default=None
     )
-    status: Mapped[str] = mapped_column(
-        Text, default="open", doc="open | completed"
-    )
+    status: Mapped[str] = mapped_column(Text, default="open", doc="open | completed")
     completed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True, default=None
     )

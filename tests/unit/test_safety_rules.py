@@ -18,9 +18,7 @@ from research_assistant.persistence.clinical.safety_rules import (
 
 
 def test_grade_1_with_no_flags_is_not_serious() -> None:
-    is_serious, reasons = auto_classify_serious(
-        severity_grade=1, outcome="recovered"
-    )
+    is_serious, reasons = auto_classify_serious(severity_grade=1, outcome="recovered")
     assert is_serious is False
     assert reasons == []
 
@@ -29,17 +27,13 @@ def test_grade_3_alone_auto_serious_with_catchall_reason() -> None:
     """A grade-3 AE with no specific serious flags still triggers the
     platform's escalation — internal posture, NOT a regulatory
     requirement; PI can override."""
-    is_serious, reasons = auto_classify_serious(
-        severity_grade=3, outcome="recovering"
-    )
+    is_serious, reasons = auto_classify_serious(severity_grade=3, outcome="recovering")
     assert is_serious is True
     assert reasons == ["other_medically_significant"]
 
 
 def test_grade_5_promotes_to_death_reason() -> None:
-    is_serious, reasons = auto_classify_serious(
-        severity_grade=5, outcome="not_recovered"
-    )
+    is_serious, reasons = auto_classify_serious(severity_grade=5, outcome="not_recovered")
     assert is_serious is True
     assert "death" in reasons
 
@@ -48,9 +42,7 @@ def test_death_outcome_flags_death_regardless_of_grade() -> None:
     """A grade-2 entry with outcome=death still books as a death SAE —
     catches the rare case where the form is captured before the AE's
     grade has been updated to 5."""
-    is_serious, reasons = auto_classify_serious(
-        severity_grade=2, outcome="death"
-    )
+    is_serious, reasons = auto_classify_serious(severity_grade=2, outcome="death")
     assert is_serious is True
     assert reasons == ["death"]
 
@@ -111,18 +103,14 @@ def test_other_significant_flag_alone_is_serious() -> None:
 
 
 def test_grade_2_with_no_flags_is_not_serious() -> None:
-    is_serious, reasons = auto_classify_serious(
-        severity_grade=2, outcome="recovered"
-    )
+    is_serious, reasons = auto_classify_serious(severity_grade=2, outcome="recovered")
     assert is_serious is False
     assert reasons == []
 
 
 @pytest.mark.parametrize("grade", [3, 4, 5])
 def test_high_grade_always_serious(grade: int) -> None:
-    is_serious, _ = auto_classify_serious(
-        severity_grade=grade, outcome="recovering"
-    )
+    is_serious, _ = auto_classify_serious(severity_grade=grade, outcome="recovering")
     assert is_serious is True
 
 

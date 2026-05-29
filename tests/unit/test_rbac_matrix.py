@@ -232,9 +232,7 @@ def test_student_has_no_safety_perms() -> None:
         Permission.CAPA_AUTHOR,
         Permission.CAPA_CLOSE,
     ):
-        assert safety_perm not in perms, (
-            f"student must not have {safety_perm.value}"
-        )
+        assert safety_perm not in perms, f"student must not have {safety_perm.value}"
 
 
 def test_skill_permission_covers_every_specialist() -> None:
@@ -251,6 +249,8 @@ def test_skill_permission_covers_every_specialist() -> None:
         "ecrf_design",
         # sap_drafter (sample-size + SAP)
         "sap_drafter",
+        # manuscript_drafter (IMRaD + reviewer-response loop)
+        "manuscript_drafter",
     }
     assert set(SKILL_PERMISSION) == expected_workflows
 
@@ -261,6 +261,29 @@ def test_researcher_can_run_sap_drafter_but_student_cannot() -> None:
     assert Permission.SKILL_SAP_DRAFTER in ROLE_PERMISSIONS[Role.RESEARCHER]
     assert Permission.SKILL_SAP_DRAFTER in ROLE_PERMISSIONS[Role.ADMIN]
     assert Permission.SKILL_SAP_DRAFTER not in ROLE_PERMISSIONS[Role.STUDENT]
+
+
+def test_researcher_can_run_manuscript_drafter_but_student_cannot() -> None:
+    """IMRaD manuscript drafting + reviewer-response loop is researcher
+    tier — same posture as sap_drafter."""
+    assert Permission.SKILL_MANUSCRIPT_DRAFTER in ROLE_PERMISSIONS[Role.RESEARCHER]
+    assert Permission.SKILL_MANUSCRIPT_DRAFTER in ROLE_PERMISSIONS[Role.ADMIN]
+    assert Permission.SKILL_MANUSCRIPT_DRAFTER not in ROLE_PERMISSIONS[Role.STUDENT]
+    # eCRF + SR-screening roles + auditor get no evidence skills either.
+    for r in (
+        Role.STUDY_DESIGNER,
+        Role.PRINCIPAL_INVESTIGATOR,
+        Role.COORDINATOR,
+        Role.DATA_MANAGER,
+        Role.MONITOR,
+        Role.AUDITOR,
+        Role.REVIEWER_1,
+        Role.REVIEWER_2,
+        Role.ADJUDICATOR,
+    ):
+        assert Permission.SKILL_MANUSCRIPT_DRAFTER not in ROLE_PERMISSIONS[r], (
+            f"{r.value} should not have skill.manuscript_drafter"
+        )
     # eCRF-side roles + reviewers don't get evidence skills either.
     for r in (
         Role.STUDY_DESIGNER,

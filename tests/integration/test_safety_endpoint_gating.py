@@ -99,19 +99,11 @@ async def _setup_subject(client: AsyncClient) -> dict[str, str]:
     await _seed("sub-admin", "admin@example.com", "admin")
     _login(client, "sub-admin", "admin@example.com")
     sid = (await client.post("/api/ecrf/studies", json={"name": "X"})).json()["id"]
-    fid = (
-        await client.post(f"/api/ecrf/studies/{sid}/forms", json=_form_body())
-    ).json()["id"]
+    fid = (await client.post(f"/api/ecrf/studies/{sid}/forms", json=_form_body())).json()["id"]
     await client.post(f"/api/ecrf/forms/{fid}/publish")
-    dep = (
-        await client.post(
-            "/api/edc/deployments", json={"research_study_id": sid}
-        )
-    ).json()
+    dep = (await client.post("/api/edc/deployments", json={"research_study_id": sid})).json()
     site = (
-        await client.post(
-            f"/api/edc/deployments/{dep['id']}/sites", json={"name": "Boston"}
-        )
+        await client.post(f"/api/edc/deployments/{dep['id']}/sites", json={"name": "Boston"})
     ).json()
     subj = (
         await client.post(
@@ -139,9 +131,7 @@ async def test_coordinator_records_ae_but_cannot_classify(
     ids = await _setup_subject(client)
     await _seed("sub-c", "c@example.com", "coordinator")
     _login(client, "sub-c", "c@example.com")
-    rec = await client.post(
-        f"/api/edc/subjects/{ids['subject']}/adverse-events", json=_ae_body()
-    )
+    rec = await client.post(f"/api/edc/subjects/{ids['subject']}/adverse-events", json=_ae_body())
     assert rec.status_code == 201, rec.text
     ae_id = rec.json()["id"]
     # Coordinator cannot override the classification.
@@ -155,18 +145,14 @@ async def test_pi_classifies_ae_and_can_run_3500a(client: AsyncClient) -> None:
     await _seed("sub-c", "c@example.com", "coordinator")
     _login(client, "sub-c", "c@example.com")
     ae = (
-        await client.post(
-            f"/api/edc/subjects/{ids['subject']}/adverse-events", json=_ae_body()
-        )
+        await client.post(f"/api/edc/subjects/{ids['subject']}/adverse-events", json=_ae_body())
     ).json()
     assert ae["is_serious"] is True  # grade-3 auto-classified
 
     # PI reclassifies + has sae.report.
     await _seed("sub-pi", "pi@example.com", "principal_investigator")
     _login(client, "sub-pi", "pi@example.com")
-    cls = await client.patch(
-        f"/api/edc/ae/{ae['id']}", json={"is_serious": False}
-    )
+    cls = await client.patch(f"/api/edc/ae/{ae['id']}", json={"is_serious": False})
     assert cls.status_code == 200, cls.text
     assert cls.json()["is_serious"] is False
     # PI can also run the 3500A report.
@@ -193,9 +179,7 @@ async def test_monitor_logs_deviation_but_does_not_classify(
     assert rec.status_code == 201, rec.text
     dev_id = rec.json()["id"]
     # Monitor cannot reclassify.
-    cls = await client.patch(
-        f"/api/edc/deviations/{dev_id}", json={"classification": "major"}
-    )
+    cls = await client.patch(f"/api/edc/deviations/{dev_id}", json={"classification": "major"})
     assert cls.status_code == 403
 
 

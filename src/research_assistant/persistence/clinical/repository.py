@@ -881,9 +881,7 @@ class ClinicalRepository:
             other_medically_significant_flag=other_medically_significant_flag,
         )
         reported_at = datetime.now(UTC)
-        deadline = compute_reporting_deadline(
-            is_serious=is_serious, reported_at=reported_at
-        )
+        deadline = compute_reporting_deadline(is_serious=is_serious, reported_at=reported_at)
 
         ae = AdverseEvent(
             subject_id=subject_id,
@@ -1046,9 +1044,7 @@ class ClinicalRepository:
         actor_sub: str | None = None,
     ) -> ProtocolDeviation:
         if classification not in ("major", "minor", "critical"):
-            raise ClinicalError(
-                "classification must be 'major', 'minor', or 'critical'."
-            )
+            raise ClinicalError("classification must be 'major', 'minor', or 'critical'.")
         dev = ProtocolDeviation(
             subject_id=subject_id,
             deployment_id=deployment_id,
@@ -1084,9 +1080,7 @@ class ClinicalRepository:
         old_classification = dev.classification
         if classification is not None:
             if classification not in ("major", "minor", "critical"):
-                raise ClinicalError(
-                    "classification must be 'major', 'minor', or 'critical'."
-                )
+                raise ClinicalError("classification must be 'major', 'minor', or 'critical'.")
             dev.classification = classification
         if category is not None:
             dev.category = category
@@ -1114,9 +1108,7 @@ class ClinicalRepository:
         subject_id: str | None = None,
         status: str | None = None,
     ) -> list[ProtocolDeviation]:
-        stmt = select(ProtocolDeviation).order_by(
-            ProtocolDeviation.discovered_at.desc()
-        )
+        stmt = select(ProtocolDeviation).order_by(ProtocolDeviation.discovered_at.desc())
         if deployment_id is not None:
             stmt = stmt.where(ProtocolDeviation.deployment_id == deployment_id)
         if subject_id is not None:
@@ -1138,9 +1130,7 @@ class ClinicalRepository:
         if dev is None:
             raise ClinicalError(f"Deviation {deviation_id!r} not found.")
         if dev.status == "closed":
-            raise ClinicalError(
-                "Cannot add CAPA — deviation is closed. Reopen it first."
-            )
+            raise ClinicalError("Cannot add CAPA — deviation is closed. Reopen it first.")
         capa = CapaAction(
             deviation_id=deviation_id,
             action_text=action_text,
@@ -1163,9 +1153,7 @@ class ClinicalRepository:
         )
         return capa
 
-    async def complete_capa(
-        self, capa_id: str, *, actor_sub: str | None = None
-    ) -> CapaAction:
+    async def complete_capa(self, capa_id: str, *, actor_sub: str | None = None) -> CapaAction:
         capa = await self._s.get(CapaAction, capa_id)
         if capa is None:
             raise ClinicalError(f"CAPA {capa_id!r} not found.")
@@ -1203,9 +1191,7 @@ class ClinicalRepository:
         capas = await self.list_capas(deviation_id)
         open_capas = [c for c in capas if c.status != "completed"]
         if open_capas:
-            raise ClinicalError(
-                f"Cannot close — {len(open_capas)} CAPA action(s) still open."
-            )
+            raise ClinicalError(f"Cannot close — {len(open_capas)} CAPA action(s) still open.")
         dev.status = "closed"
         dev.resolved_at = datetime.now(UTC)
         dev.resolved_by = actor_sub

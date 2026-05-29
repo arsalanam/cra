@@ -31,6 +31,7 @@ class Permission(StrEnum):
     SKILL_RISK_OF_BIAS = "skill.risk_of_bias"
     SKILL_ECRF_DESIGN = "skill.ecrf_design"
     SKILL_SAP_DRAFTER = "skill.sap_drafter"
+    SKILL_MANUSCRIPT_DRAFTER = "skill.manuscript_drafter"
 
     # ── Library (cached publications + RAG) ──────────────────────────────
     LIBRARY_READ = "library.read"
@@ -146,6 +147,9 @@ _EVIDENCE_SKILLS: Final[frozenset[Permission]] = frozenset(
         # as the literature-review skills. Restricted tiers (student) are
         # explicitly excluded.
         Permission.SKILL_SAP_DRAFTER,
+        # IMRaD manuscript drafter + reviewer-response loop — composes the
+        # other workflows' outputs into a journal-shaped artefact.
+        Permission.SKILL_MANUSCRIPT_DRAFTER,
     }
 )
 
@@ -391,6 +395,7 @@ SKILL_PERMISSION: Final[dict[str, Permission]] = {
     "risk_of_bias": Permission.SKILL_RISK_OF_BIAS,
     "ecrf_design": Permission.SKILL_ECRF_DESIGN,
     "sap_drafter": Permission.SKILL_SAP_DRAFTER,
+    "manuscript_drafter": Permission.SKILL_MANUSCRIPT_DRAFTER,
 }
 
 

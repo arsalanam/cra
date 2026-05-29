@@ -125,6 +125,7 @@ def assemble_3500a_data(
     unit-testable. The endpoint glue lives in `web/edc.py` (or wherever
     the report endpoint ends up wired).
     """
+
     # Tolerate missing attrs — different deployment models / mock objects
     # come through during testing. Use Any so the call sites stay readable
     # without ceremony casts.
@@ -156,9 +157,7 @@ def assemble_3500a_data(
         severity_grade=severity,
         outcome=str(g(ae, "outcome")),
         is_serious=bool(g(ae, "is_serious", False)),
-        serious_reasons=_peek_serious_reasons(
-            str(g(ae, "serious_reasons_json", "[]"))
-        ),
+        serious_reasons=_peek_serious_reasons(str(g(ae, "serious_reasons_json", "[]"))),
         narrative=str(g(ae, "narrative") or "(narrative not provided)"),
         product_name=product,
         deployment_name=str(g(deployment, "name") or SPONSOR_INPUT),

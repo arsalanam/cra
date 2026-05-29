@@ -47,9 +47,7 @@ def _deployment(**overrides: object) -> object:
 
 def test_assembler_phi_minimises_to_subject_code() -> None:
     """3500A must NOT carry participant names — only the subject_code."""
-    data = assemble_3500a_data(
-        ae=_ae(), subject=_subject(), deployment=_deployment()
-    )
+    data = assemble_3500a_data(ae=_ae(), subject=_subject(), deployment=_deployment())
     assert data.subject_code == "S-001"
     # Sponsor-input fields are marked, not fabricated
     assert data.sponsor_name == SPONSOR_INPUT
@@ -79,27 +77,21 @@ def test_assembler_uses_research_study_name_when_provided() -> None:
 
 
 def test_build_pdf_emits_pdf_signature() -> None:
-    data = assemble_3500a_data(
-        ae=_ae(), subject=_subject(), deployment=_deployment()
-    )
+    data = assemble_3500a_data(ae=_ae(), subject=_subject(), deployment=_deployment())
     payload = build_pdf(data, Path("."))
     assert payload[:5] == b"%PDF-"
     assert len(payload) > 1500
 
 
 def test_build_docx_emits_zip_signature() -> None:
-    data = assemble_3500a_data(
-        ae=_ae(), subject=_subject(), deployment=_deployment()
-    )
+    data = assemble_3500a_data(ae=_ae(), subject=_subject(), deployment=_deployment())
     payload = build_docx(data, Path("."))
     assert payload[:4] == b"PK\x03\x04"
     assert len(payload) > 5000
 
 
 def test_build_pdf_with_no_narrative_falls_back_to_placeholder() -> None:
-    data = assemble_3500a_data(
-        ae=_ae(narrative=""), subject=_subject(), deployment=_deployment()
-    )
+    data = assemble_3500a_data(ae=_ae(narrative=""), subject=_subject(), deployment=_deployment())
     assert data.narrative == "(narrative not provided)"
     payload = build_pdf(data, Path("."))
     assert payload[:5] == b"%PDF-"

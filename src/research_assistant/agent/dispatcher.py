@@ -31,6 +31,7 @@ from ..auth.rbac import SKILL_PERMISSION, Permission
 from .specialists import (
     SPECIALISTS,
     general_qa,
+    manuscript_drafter,
     meta_analysis,
     risk_of_bias,
     sap_drafter,
@@ -73,6 +74,10 @@ _SLASH_COMMANDS: dict[str, str] = {
     "samplesize": sap_drafter.WORKFLOW_NAME,
     "sample-size": sap_drafter.WORKFLOW_NAME,
     "power": sap_drafter.WORKFLOW_NAME,
+    "manuscript": manuscript_drafter.WORKFLOW_NAME,
+    "imrad": manuscript_drafter.WORKFLOW_NAME,
+    "draft": manuscript_drafter.WORKFLOW_NAME,
+    "response": manuscript_drafter.WORKFLOW_NAME,
     "general": general_qa.WORKFLOW_NAME,
     "ask": general_qa.WORKFLOW_NAME,
     # Future: "gap" -> "research_gap", "ecrf" -> "ecrf_design"
@@ -113,6 +118,15 @@ _WORKFLOW_CONTINUATIONS: dict[str, tuple[str, ...]] = {
         "Analysis plan confirmed",
         "Finalize SAP",
     ),
+    manuscript_drafter.WORKFLOW_NAME: (
+        "Manuscript intake confirmed",
+        "Refine manuscript:",
+        "Finalize manuscript",
+        "Reviewer comments:",
+        "Finalize reviewer response",
+        "Draft as manuscript from meta-analysis",  # handoff seed (frontend)
+        "Draft as manuscript from SR protocol",  # handoff seed
+    ),
     # Future: research_gap / ecrf continuations
 }
 
@@ -144,6 +158,23 @@ _TRIGGER_KEYWORDS: list[tuple[str, list[re.Pattern[str]]]] = [
             re.compile(r"\bROBINS[-\s]?I\b", re.I),
             re.compile(r"\bNewcastle[-\s]Ottawa\b", re.I),
             re.compile(r"\bQUADAS[-\s]?2\b", re.I),
+        ],
+    ),
+    # manuscript_drafter checked early: "draft a manuscript on …" mentions
+    # research topics that would otherwise grab meta_analysis or
+    # sr_protocol patterns. Reviewer-response phrases also live here.
+    (
+        manuscript_drafter.WORKFLOW_NAME,
+        [
+            re.compile(r"\bdraft\s+(a|the)?\s*manuscript\b", re.I),
+            re.compile(r"\bIMRaD\b", re.I),
+            re.compile(r"\b(for|to)\s+journal\s+submission\b", re.I),
+            re.compile(r"\bjournal[-\s]?ready\s+(draft|manuscript)\b", re.I),
+            re.compile(r"\bpoint[-\s]by[-\s]point\b", re.I),
+            re.compile(r"\brespond\s+to\s+(the\s+)?reviewers?\b", re.I),
+            re.compile(r"\breviewer\s+response\b", re.I),
+            re.compile(r"\bcover\s+letter\b", re.I),
+            re.compile(r"\b(NEJM|Lancet|BMJ|JAMA)\s+(submission|format|manuscript)\b", re.I),
         ],
     ),
     # sap_drafter checked before meta_analysis: "sample size for X" + "trial
