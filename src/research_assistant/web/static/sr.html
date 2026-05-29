@@ -1,0 +1,672 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SR Reviews · Clinical Research Assistant</title>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, Segoe UI, Roboto, sans-serif; background: #0f1115; color: #e6e6e6; min-height: 100vh; }
+
+  .header { padding: 14px 24px; border-bottom: 1px solid #262a33; display: flex; justify-content: space-between; align-items: center; background: #171a21; }
+  .header h1 { margin: 0; font-size: 16px; }
+  .header a { color: #8b93a7; text-decoration: none; font-size: 13px; }
+  .header a:hover { color: #e6e6e6; }
+
+  .container { max-width: 1080px; margin: 24px auto; padding: 0 24px 80px; }
+  .container h2 { font-size: 14px; text-transform: uppercase; color: #8b93a7; letter-spacing: .6px; margin: 0 0 4px; font-weight: 700; }
+  .lead { color: #8b93a7; font-size: 13px; margin: 0 0 24px; line-height: 1.5; }
+
+  .card { background: #171a21; border: 1px solid #262a33; border-radius: 8px; padding: 18px 22px; margin-bottom: 14px; }
+  .card h3 { margin: 0 0 8px; font-size: 15px; font-weight: 700; color: #e6e6e6; }
+  .card .meta { font-size: 12px; color: #8b93a7; line-height: 1.5; }
+
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 12px; }
+  .btn { background: #1f232c; color: #b3b9c8; border: 1px solid #2a2f3a; border-radius: 4px; padding: 7px 14px; cursor: pointer; font-size: 13px; }
+  .btn:hover { background: #2a2f3a; color: #e6e6e6; }
+  .btn.primary { background: #4a7fd9; color: #fff; border-color: #4a7fd9; }
+  .btn.primary:hover { background: #5a8fe9; }
+  .btn.success { background: #1f3d2c; color: #6bcf7f; border-color: #2f5a44; }
+  .btn.success:hover { background: #2a5640; }
+  .btn.warn { background: #2a2010; color: #d9a84a; border-color: #3a2810; }
+  .btn.warn:hover { background: #3a2810; color: #ffc560; }
+  .btn.danger { background: #2a1010; color: #d97a7a; border-color: #3a1414; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn.small { padding: 4px 10px; font-size: 12px; }
+
+  input[type=text], textarea, select {
+    background: #0f1115; color: #e6e6e6; border: 1px solid #2a2f3a; border-radius: 4px;
+    padding: 7px 10px; font: inherit; font-size: 13px; width: 100%;
+  }
+  textarea { font-family: inherit; min-height: 80px; resize: vertical; }
+  label { display: block; font-size: 11px; text-transform: uppercase; color: #5a6070; font-weight: 600; letter-spacing: .5px; margin-bottom: 4px; }
+  .field { margin-bottom: 12px; }
+  .field-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+
+  .badge { display: inline-block; font-size: 10px; text-transform: uppercase; padding: 2px 7px; border-radius: 3px; font-weight: 700; letter-spacing: .4px; }
+  .badge.draft        { background: #1f232c; color: #8b93a7; }
+  .badge.ingested     { background: #1a2332; color: #7aa7d9; }
+  .badge.abstract_screening { background: #2a2010; color: #d9a84a; }
+  .badge.fulltext_screening { background: #2a2010; color: #d9a84a; }
+  .badge.complete     { background: #102a15; color: #6bcf7f; }
+
+  .status-pill { font-size: 10px; text-transform: uppercase; padding: 2px 8px; border-radius: 3px; font-weight: 700; letter-spacing: .4px; }
+  .status-pill.include  { background: #102a15; color: #6bcf7f; }
+  .status-pill.exclude  { background: #2a1010; color: #d97a7a; }
+  .status-pill.maybe    { background: #2a2010; color: #d9a84a; }
+
+  .members { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+  .member-chip { background: #0f1115; border: 1px solid #2a2f3a; border-radius: 14px; padding: 4px 12px; font-size: 12px; display: flex; gap: 6px; align-items: center; }
+  .member-chip .role { color: #7aa7d9; font-family: 'Consolas','Monaco',monospace; font-size: 11px; }
+  .member-chip .x { color: #d97a7a; cursor: pointer; padding-left: 4px; border-left: 1px solid #2a2f3a; }
+  .member-chip .x:hover { color: #ff8a8a; }
+
+  /* Screening view */
+  .screen-card { background: #171a21; border: 1px solid #262a33; border-radius: 8px; padding: 24px 28px; margin-bottom: 16px; }
+  .screen-card .title { font-size: 16px; font-weight: 700; color: #e6e6e6; margin: 0 0 6px; line-height: 1.4; }
+  .screen-card .citation { font-size: 12px; color: #8b93a7; margin: 0 0 12px; }
+  .screen-card .abstract { font-size: 14px; line-height: 1.7; color: #d6d9de; white-space: pre-wrap; max-height: 480px; overflow-y: auto; padding-right: 8px; }
+  .screen-card .pmid-link { color: #7aa7d9; text-decoration: none; }
+  .screen-card .pmid-link:hover { text-decoration: underline; }
+
+  .ai-suggest { background: #14181f; border: 1px solid #1f3a66; border-radius: 6px; padding: 12px 14px; margin: 14px 0; font-size: 13px; }
+  .ai-suggest .ai-header { display: flex; gap: 10px; align-items: baseline; margin-bottom: 6px; }
+  .ai-suggest .ai-header .ai-label { color: #7aa7d9; font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; }
+  .ai-suggest .ai-conf { color: #8b93a7; font-size: 11px; }
+  .ai-suggest .ai-rationale { color: #b3b9c8; line-height: 1.6; }
+
+  .progress { display: flex; gap: 14px; font-size: 12px; color: #8b93a7; margin: 8px 0 16px; }
+  .progress strong { color: #e6e6e6; }
+
+  .decision-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding-top: 14px; border-top: 1px solid #1f232c; }
+  .reason-picker { min-width: 220px; }
+
+  .conflict-row { background: #14181f; border: 1px solid #1f232c; border-radius: 6px; padding: 12px 16px; margin-bottom: 10px; font-size: 13px; }
+  .conflict-row .ttl { font-weight: 600; margin-bottom: 6px; }
+  .conflict-row .votes { display: flex; gap: 8px; flex-wrap: wrap; font-size: 12px; color: #8b93a7; }
+  .conflict-row .vote { background: #0f1115; padding: 4px 10px; border-radius: 4px; }
+
+  .prisma-wrap { background: #171a21; border: 1px solid #262a33; border-radius: 8px; padding: 24px; text-align: center; }
+  .prisma-wrap svg { max-width: 100%; height: auto; background: #fff; border-radius: 6px; }
+
+  .empty { color: #5a6070; font-size: 13px; padding: 30px; text-align: center; background: #171a21; border-radius: 8px; border: 1px dashed #262a33; }
+  .loading, .err-box { color: #8b93a7; font-size: 13px; padding: 20px; text-align: center; }
+  .err-box { color: #d97a7a; }
+
+  .nav-tabs { display: flex; gap: 4px; border-bottom: 1px solid #262a33; margin-bottom: 18px; }
+  .nav-tab { padding: 10px 16px; cursor: pointer; font-size: 13px; color: #8b93a7; border-bottom: 2px solid transparent; }
+  .nav-tab:hover { color: #e6e6e6; }
+  .nav-tab.active { color: #e6e6e6; border-bottom-color: #4a7fd9; font-weight: 600; }
+
+  kbd { font-family: 'Consolas','Monaco',monospace; background: #2a2f3a; color: #b3b9c8; padding: 1px 6px; border-radius: 3px; font-size: 11px; border: 1px solid #1f232c; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useEffect, useMemo, useRef, useState } = React;
+
+(function installAuthFetch() {
+  const orig = window.fetch.bind(window);
+  let redirecting = false;
+  window.fetch = async (input, init) => {
+    const res = await orig(input, init);
+    const url = typeof input === "string" ? input : (input && input.url) || "";
+    if (res.status === 401 && !url.includes("/auth/") && !redirecting) {
+      redirecting = true;
+      location.href = "/auth/login?next=" + encodeURIComponent(location.pathname + location.hash);
+    }
+    return res;
+  };
+})();
+
+async function apiGet(path) {
+  const r = await fetch(path);
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || `HTTP ${r.status}`);
+  return r.json();
+}
+async function apiSend(method, path, body) {
+  const r = await fetch(path, {
+    method,
+    headers: body ? { "Content-Type": "application/json" } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!r.ok && r.status !== 204) {
+    throw new Error((await r.json().catch(() => ({}))).detail || `HTTP ${r.status}`);
+  }
+  if (r.status === 204) return null;
+  return r.json();
+}
+
+const REASON_CODES = [
+  "population_mismatch",
+  "intervention_mismatch",
+  "comparator_mismatch",
+  "outcome_mismatch",
+  "wrong_design",
+  "preclinical",
+  "duplicate_report",
+  "wrong_setting",
+  "language",
+  "other_excluded",
+];
+
+/* ── Hash routing ──────────────────────────────────────────────────────── */
+
+function parseHash() {
+  const h = (location.hash || "#projects").replace(/^#/, "");
+  const [path, query] = h.split("?");
+  const parts = path.split("/").filter(Boolean);
+  const params = new URLSearchParams(query || "");
+  return { parts, params };
+}
+function goto(hash) {
+  location.hash = hash;
+}
+
+/* ── App ──────────────────────────────────────────────────────────────── */
+
+function App() {
+  const [me, setMe] = useState(null);
+  const [route, setRoute] = useState(parseHash());
+
+  useEffect(() => {
+    fetch("/auth/me").then(r => r.ok ? r.json() : null).then(setMe);
+    const onHash = () => setRoute(parseHash());
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+
+  const view = useMemo(() => {
+    const { parts } = route;
+    if (parts.length === 0 || parts[0] !== "projects") return { kind: "list" };
+    if (parts.length === 1) return { kind: "list" };
+    const projectId = parts[1];
+    if (parts.length === 2) return { kind: "detail", projectId };
+    const sub = parts[2];
+    const phase = route.params.get("phase") || "abstract";
+    if (sub === "screen") return { kind: "screen", projectId, phase };
+    if (sub === "conflicts") return { kind: "conflicts", projectId, phase };
+    if (sub === "prisma") return { kind: "prisma", projectId };
+    return { kind: "detail", projectId };
+  }, [route]);
+
+  return (
+    <>
+      <div className="header">
+        <h1>SR Reviews</h1>
+        <a href="/">← Back to assistant</a>
+      </div>
+      <div className="container">
+        {view.kind === "list" && <ProjectList me={me} />}
+        {view.kind === "detail" && <ProjectDetail projectId={view.projectId} me={me} />}
+        {view.kind === "screen" && <ScreenView projectId={view.projectId} phase={view.phase} me={me} />}
+        {view.kind === "conflicts" && <ConflictsView projectId={view.projectId} phase={view.phase} />}
+        {view.kind === "prisma" && <PrismaView projectId={view.projectId} />}
+      </div>
+    </>
+  );
+}
+
+/* ── Project list + create ────────────────────────────────────────────── */
+
+function ProjectList({ me }) {
+  const [projects, setProjects] = useState(null);
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState(null);
+
+  async function reload() {
+    try { setProjects(await apiGet("/api/sr/projects")); }
+    catch (e) { setError(e.message); }
+  }
+  useEffect(() => { reload(); }, []);
+
+  const canCreate = me && (me.sub === "default-user" || (me.permissions || []).includes("sr.create"));
+
+  if (projects === null && !error) return <div className="loading">Loading SR projects…</div>;
+  if (error) return <div className="err-box">{error}</div>;
+
+  return (
+    <>
+      <h2>Systematic-review projects</h2>
+      <p className="lead">
+        Title/abstract + full-text dual screening with conflict adjudication, AI-assist, and
+        PRISMA flow diagram. Each project carries its own PICO, search query,
+        inclusion/exclusion criteria, and reviewer roster.
+      </p>
+      {canCreate && (
+        <div className="row" style={{ marginBottom: 18 }}>
+          {!creating
+            ? <button className="btn primary" onClick={() => setCreating(true)}>+ New project</button>
+            : <CreateProjectForm onClose={() => setCreating(false)} onCreated={(p) => { setCreating(false); reload(); goto(`projects/${p.id}`); }} />}
+        </div>
+      )}
+      {projects.length === 0
+        ? <div className="empty">No SR projects yet{canCreate && " — start one above"}.</div>
+        : projects.map(p => (
+          <div key={p.id} className="card" onClick={() => goto(`projects/${p.id}`)} style={{ cursor: "pointer" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+              <h3>{p.name}</h3>
+              <span className={`badge ${p.status}`}>{p.status.replace(/_/g, " ")}</span>
+            </div>
+            {p.description && <div className="meta" style={{ margin: "6px 0" }}>{p.description}</div>}
+            <div className="meta" style={{ fontFamily: "Consolas, Monaco, monospace", fontSize: 11 }}>
+              {p.search_query || "(no search query yet)"}
+            </div>
+          </div>
+        ))}
+    </>
+  );
+}
+
+function CreateProjectForm({ onClose, onCreated }) {
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [picoText, setPicoText] = useState("");
+  const [includeText, setIncludeText] = useState("");
+  const [excludeText, setExcludeText] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+
+  function lines(s) { return s.split("\n").map(x => x.trim()).filter(Boolean); }
+
+  async function submit() {
+    setSaving(true); setError(null);
+    try {
+      const pico = picoText.trim() ? Object.fromEntries(picoText.split("\n").filter(Boolean).map(line => {
+        const [k, ...v] = line.split(":"); return [k.trim().toLowerCase(), v.join(":").trim()];
+      })) : null;
+      const p = await apiSend("POST", "/api/sr/projects", {
+        name, description: description || null,
+        pico,
+        search_query: searchQuery,
+        sources: ["pubmed", "europepmc"],
+        inclusion_criteria: lines(includeText),
+        exclusion_criteria: lines(excludeText),
+      });
+      onCreated(p);
+    } catch (e) { setError(e.message); }
+    finally { setSaving(false); }
+  }
+
+  return (
+    <div className="card" style={{ width: "100%" }}>
+      <h3>New SR project</h3>
+      <div className="field"><label>Name</label><input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="PPI + DAPT meta-analysis screening" /></div>
+      <div className="field"><label>Description</label><textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="(optional) Plain-language summary of the question" /></div>
+      <div className="field-row">
+        <div className="field"><label>PICO (one per line, e.g. "population: …")</label><textarea value={picoText} onChange={e => setPicoText(e.target.value)} placeholder={"population: adults post-PCI on DAPT\nintervention: PPI add-on\ncomparator: DAPT alone\noutcome: upper GI bleeding"} /></div>
+        <div className="field"><label>Search query (PubMed Boolean)</label><textarea value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder='("proton pump inhibitors"[mh] OR PPI) AND DAPT AND (bleeding OR hemorrhage)' /></div>
+      </div>
+      <div className="field-row">
+        <div className="field"><label>Inclusion criteria (one per line)</label><textarea value={includeText} onChange={e => setIncludeText(e.target.value)} placeholder={"Adults ≥18\nDual antiplatelet therapy\nReports upper GI bleeding rate"} /></div>
+        <div className="field"><label>Exclusion criteria (one per line)</label><textarea value={excludeText} onChange={e => setExcludeText(e.target.value)} placeholder={"Preclinical / animal\nReview articles\nNon-English"} /></div>
+      </div>
+      {error && <div className="err-box">{error}</div>}
+      <div className="row">
+        <button className="btn primary" onClick={submit} disabled={saving || !name.trim()}>{saving ? "Saving…" : "Create project"}</button>
+        <button className="btn" onClick={onClose} disabled={saving}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
+/* ── Project detail ───────────────────────────────────────────────────── */
+
+function ProjectDetail({ projectId, me }) {
+  const [project, setProject] = useState(null);
+  const [members, setMembers] = useState([]);
+  const [progress, setProgress] = useState(null);
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(null);
+  const [memberEmail, setMemberEmail] = useState("");
+  const [memberRole, setMemberRole] = useState("reviewer_1");
+
+  async function reload() {
+    try {
+      const [p, ms, pg] = await Promise.all([
+        apiGet(`/api/sr/projects/${projectId}`),
+        apiGet(`/api/sr/projects/${projectId}/members`),
+        apiGet(`/api/sr/projects/${projectId}/progress?phase=abstract`),
+      ]);
+      setProject(p); setMembers(ms); setProgress(pg);
+    } catch (e) { setError(e.message); }
+  }
+  useEffect(() => { reload(); }, [projectId]);
+
+  async function runIngest() {
+    setBusy("ingest");
+    try {
+      const result = await apiSend("POST", `/api/sr/projects/${projectId}/ingest`, { max_results: 200 });
+      alert(`Ingested ${result.added} candidates (${result.duplicates_removed} duplicates removed, ${result.already_present} already present).`);
+      reload();
+    } catch (e) { alert("Ingest failed: " + e.message); }
+    finally { setBusy(null); }
+  }
+  async function runAiAssist() {
+    setBusy("ai");
+    try {
+      const result = await apiSend("POST", `/api/sr/projects/${projectId}/ai-suggest?phase=abstract&max_candidates=25`);
+      alert(`AI-assist classified ${result.classified} abstracts${result.errors.length ? ` (${result.errors.length} errors)` : ""}.`);
+    } catch (e) { alert("AI-assist failed: " + e.message); }
+    finally { setBusy(null); }
+  }
+  async function addMember() {
+    if (!memberEmail.trim()) return;
+    try {
+      await apiSend("POST", `/api/sr/projects/${projectId}/members`, {
+        user_email: memberEmail.trim(),
+        role: memberRole,
+      });
+      setMemberEmail("");
+      reload();
+    } catch (e) { alert("Add member failed: " + e.message); }
+  }
+  async function removeMember(mid) {
+    if (!confirm("Remove this reviewer?")) return;
+    try { await apiSend("DELETE", `/api/sr/projects/${projectId}/members/${mid}`); reload(); }
+    catch (e) { alert("Remove failed: " + e.message); }
+  }
+
+  if (error) return <div className="err-box">{error}</div>;
+  if (!project) return <div className="loading">Loading project…</div>;
+
+  const canManage = me && (me.sub === "default-user" || (me.permissions || []).includes("sr.manage"));
+  const canScreen = me && (me.sub === "default-user" || (me.permissions || []).includes("sr.screen"));
+  const canAdjudicate = me && (me.sub === "default-user" || (me.permissions || []).includes("sr.adjudicate"));
+
+  return (
+    <>
+      <div className="nav-tabs">
+        <div className="nav-tab active">Overview</div>
+        <a className="nav-tab" href={`#projects/${projectId}/screen?phase=abstract`} style={{ textDecoration: "none" }}>Screen — abstract</a>
+        <a className="nav-tab" href={`#projects/${projectId}/screen?phase=fulltext`} style={{ textDecoration: "none" }}>Screen — full text</a>
+        <a className="nav-tab" href={`#projects/${projectId}/conflicts?phase=abstract`} style={{ textDecoration: "none" }}>Conflicts</a>
+        <a className="nav-tab" href={`#projects/${projectId}/prisma`} style={{ textDecoration: "none" }}>PRISMA</a>
+      </div>
+
+      <div className="card">
+        <div style={{ display: "flex", justifyContent: "space-between" }}>
+          <h3>{project.name}</h3>
+          <span className={`badge ${project.status}`}>{project.status.replace(/_/g, " ")}</span>
+        </div>
+        {project.description && <div className="meta" style={{ marginTop: 6 }}>{project.description}</div>}
+        <div className="field-row" style={{ marginTop: 14 }}>
+          <div>
+            <label>PICO</label>
+            <pre style={{ fontSize: 12, color: "#b3b9c8", margin: 0, whiteSpace: "pre-wrap" }}>{JSON.stringify(project.pico, null, 2)}</pre>
+          </div>
+          <div>
+            <label>Search query</label>
+            <pre style={{ fontSize: 12, color: "#b3b9c8", margin: 0, whiteSpace: "pre-wrap", fontFamily: "Consolas, Monaco, monospace" }}>{project.search_query || "(empty)"}</pre>
+          </div>
+        </div>
+        <div className="field-row">
+          <div>
+            <label>Inclusion criteria</label>
+            <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: "#b3b9c8" }}>{project.inclusion_criteria.map((c, i) => <li key={i}>{c}</li>)}</ul>
+          </div>
+          <div>
+            <label>Exclusion criteria</label>
+            <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: "#b3b9c8" }}>{project.exclusion_criteria.map((c, i) => <li key={i}>{c}</li>)}</ul>
+          </div>
+        </div>
+        {progress && (
+          <div className="progress" style={{ marginTop: 14 }}>
+            <div>Total candidates: <strong>{progress.total_candidates}</strong></div>
+            <div>Remaining (abstract phase): <strong>{progress.remaining}</strong></div>
+            <div>Decisions logged: <strong>{Object.values(progress.decisions_by_reviewer).reduce((a, b) => a + b, 0)}</strong></div>
+          </div>
+        )}
+        <div className="row">
+          {canManage && <button className="btn primary" onClick={runIngest} disabled={busy === "ingest"}>{busy === "ingest" ? "Ingesting…" : "▶ Ingest from search"}</button>}
+          {canManage && <button className="btn" onClick={runAiAssist} disabled={busy === "ai"}>{busy === "ai" ? "Classifying…" : "✨ AI-assist (25 abstracts)"}</button>}
+          {canScreen && <a className="btn success" href={`#projects/${projectId}/screen?phase=abstract`} style={{ textDecoration: "none" }}>Start screening →</a>}
+          {canAdjudicate && <a className="btn warn" href={`#projects/${projectId}/conflicts?phase=abstract`} style={{ textDecoration: "none" }}>Resolve conflicts</a>}
+        </div>
+      </div>
+
+      <div className="card">
+        <h3>Reviewer team</h3>
+        <div className="members">
+          {members.length === 0 && <span style={{ color: "#5a6070", fontSize: 13 }}>No reviewers assigned yet.</span>}
+          {members.map(m => (
+            <span key={m.id} className="member-chip">
+              <span>{m.user_email || m.user_id.slice(0, 8)}</span>
+              <span className="role">{m.role}</span>
+              {canManage && <span className="x" onClick={() => removeMember(m.id)}>×</span>}
+            </span>
+          ))}
+        </div>
+        {canManage && (
+          <div className="row" style={{ marginTop: 14, gap: 6 }}>
+            <input type="text" placeholder="reviewer@example.com" value={memberEmail} onChange={e => setMemberEmail(e.target.value)} style={{ flex: 1, minWidth: 200 }} />
+            <select value={memberRole} onChange={e => setMemberRole(e.target.value)} style={{ width: 160 }}>
+              <option value="reviewer_1">reviewer_1</option>
+              <option value="reviewer_2">reviewer_2</option>
+              <option value="adjudicator">adjudicator</option>
+            </select>
+            <button className="btn primary small" onClick={addMember}>+ Add</button>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+/* ── Screen view (the loop) ───────────────────────────────────────────── */
+
+function ScreenView({ projectId, phase, me }) {
+  const [current, setCurrent] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [reasonCode, setReasonCode] = useState("");
+  const [notes, setNotes] = useState("");
+  const [progress, setProgress] = useState(null);
+
+  async function loadNext() {
+    setLoading(true); setError(null); setReasonCode(""); setNotes("");
+    try {
+      const next = await apiGet(`/api/sr/projects/${projectId}/queue?phase=${phase}`);
+      setCurrent(next);
+      const pg = await apiGet(`/api/sr/projects/${projectId}/progress?phase=${phase}`);
+      setProgress(pg);
+    } catch (e) { setError(e.message); }
+    finally { setLoading(false); }
+  }
+  useEffect(() => { loadNext(); }, [projectId, phase]);
+
+  async function submit(decision) {
+    if (!current) return;
+    if (decision === "exclude" && !reasonCode) {
+      alert("Pick a reason code before excluding.");
+      return;
+    }
+    try {
+      await apiSend("POST", `/api/sr/projects/${projectId}/decisions`, {
+        candidate_id: current.id,
+        phase,
+        decision,
+        reason_code: decision === "exclude" ? reasonCode : null,
+        notes: notes || null,
+        ai_suggested: current.ai_suggestion && current.ai_suggestion.predicted_decision === decision,
+      });
+      loadNext();
+    } catch (e) { alert("Submit failed: " + e.message); }
+  }
+
+  // Keyboard shortcuts: i=include, e=exclude, m=maybe
+  useEffect(() => {
+    function onKey(ev) {
+      if (ev.target.tagName === "INPUT" || ev.target.tagName === "TEXTAREA" || ev.target.tagName === "SELECT") return;
+      if (ev.key === "i") submit("include");
+      else if (ev.key === "e") submit("exclude");
+      else if (ev.key === "m") submit("maybe");
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [current, reasonCode, notes]);
+
+  return (
+    <>
+      <div className="nav-tabs">
+        <a className="nav-tab" href={`#projects/${projectId}`} style={{ textDecoration: "none" }}>← Project</a>
+        <div className={`nav-tab ${phase === "abstract" ? "active" : ""}`}><a href={`#projects/${projectId}/screen?phase=abstract`} style={{ color: "inherit", textDecoration: "none" }}>Abstract phase</a></div>
+        <div className={`nav-tab ${phase === "fulltext" ? "active" : ""}`}><a href={`#projects/${projectId}/screen?phase=fulltext`} style={{ color: "inherit", textDecoration: "none" }}>Full-text phase</a></div>
+      </div>
+      {progress && (
+        <div className="progress">
+          <div>Remaining in your queue: <strong>{progress.remaining}</strong></div>
+          <div>Total in project: <strong>{progress.total_candidates}</strong></div>
+          <div>Shortcuts: <kbd>i</kbd> include · <kbd>e</kbd> exclude · <kbd>m</kbd> maybe</div>
+        </div>
+      )}
+      {loading && <div className="loading">Loading next candidate…</div>}
+      {error && <div className="err-box">{error}</div>}
+      {!loading && !current && <div className="empty">🎉 No more candidates to screen in this phase for you.</div>}
+      {current && (
+        <div className="screen-card">
+          <h3 className="title">{current.title}</h3>
+          <div className="citation">
+            {current.authors.slice(0, 4).join(", ")}{current.authors.length > 4 && ", et al."}
+            {current.journal && ` · ${current.journal}`}
+            {current.year && ` · ${current.year}`}
+            {current.pmid && <> · <a className="pmid-link" target="_blank" rel="noopener" href={`https://pubmed.ncbi.nlm.nih.gov/${current.pmid}/`}>PMID {current.pmid}</a></>}
+          </div>
+          {current.ai_suggestion && (
+            <div className="ai-suggest">
+              <div className="ai-header">
+                <span className="ai-label">AI-assist</span>
+                <span className={`status-pill ${current.ai_suggestion.predicted_decision}`}>{current.ai_suggestion.predicted_decision}</span>
+                {current.ai_suggestion.predicted_reason_code && <span className="ai-conf">— reason: <code>{current.ai_suggestion.predicted_reason_code}</code></span>}
+                <span className="ai-conf">· confidence {(current.ai_suggestion.confidence * 100).toFixed(0)}%</span>
+              </div>
+              <div className="ai-rationale">{current.ai_suggestion.rationale}</div>
+            </div>
+          )}
+          <div className="abstract">{current.abstract || "(no abstract available)"}</div>
+          <div className="decision-row" style={{ marginTop: 18 }}>
+            <button className="btn success" onClick={() => submit("include")}>Include (<kbd>i</kbd>)</button>
+            <button className="btn warn" onClick={() => submit("maybe")}>Maybe (<kbd>m</kbd>)</button>
+            <button className="btn danger" onClick={() => submit("exclude")}>Exclude (<kbd>e</kbd>)</button>
+            <select className="reason-picker" value={reasonCode} onChange={e => setReasonCode(e.target.value)}>
+              <option value="">— reason (for exclude) —</option>
+              {REASON_CODES.map(r => <option key={r} value={r}>{r}</option>)}
+            </select>
+            <input type="text" placeholder="Notes (optional)" value={notes} onChange={e => setNotes(e.target.value)} style={{ flex: 1, minWidth: 200 }} />
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+/* ── Conflicts (adjudicator) ──────────────────────────────────────────── */
+
+function ConflictsView({ projectId, phase }) {
+  const [conflicts, setConflicts] = useState(null);
+  const [error, setError] = useState(null);
+
+  async function reload() {
+    try { setConflicts(await apiGet(`/api/sr/projects/${projectId}/conflicts?phase=${phase}`)); }
+    catch (e) { setError(e.message); }
+  }
+  useEffect(() => { reload(); }, [projectId, phase]);
+
+  async function resolve(candidateId, decision) {
+    let reason = null;
+    if (decision === "exclude") {
+      reason = prompt("Reason code for exclusion:", "wrong_design");
+      if (reason === null) return;
+    }
+    try {
+      await apiSend("POST", `/api/sr/projects/${projectId}/decisions`, {
+        candidate_id: candidateId, phase, decision,
+        reason_code: reason, notes: null, ai_suggested: false,
+      });
+      reload();
+    } catch (e) { alert("Resolve failed: " + e.message); }
+  }
+
+  return (
+    <>
+      <div className="nav-tabs">
+        <a className="nav-tab" href={`#projects/${projectId}`} style={{ textDecoration: "none" }}>← Project</a>
+        <div className="nav-tab active">Conflicts — {phase}</div>
+      </div>
+      {error && <div className="err-box">{error}</div>}
+      {!conflicts && !error && <div className="loading">Loading conflicts…</div>}
+      {conflicts && conflicts.length === 0 && <div className="empty">No conflicts in the {phase} phase. 🎉</div>}
+      {conflicts && conflicts.map(c => (
+        <div key={c.candidate_id} className="conflict-row">
+          <div className="ttl">{c.title}{c.pmid && <span style={{ color: "#5a6070", fontSize: 11, marginLeft: 8 }}>PMID {c.pmid}</span>}</div>
+          <div className="votes">
+            {c.decisions.map((d, i) => (
+              <div key={i} className="vote">
+                <strong>{d.role}</strong>: <span className={`status-pill ${d.decision}`}>{d.decision}</span>
+                {d.reason_code && <> · <code>{d.reason_code}</code></>}
+                {d.notes && <> · {d.notes}</>}
+              </div>
+            ))}
+          </div>
+          <div className="row" style={{ marginTop: 10 }}>
+            <button className="btn success small" onClick={() => resolve(c.candidate_id, "include")}>Include</button>
+            <button className="btn danger small" onClick={() => resolve(c.candidate_id, "exclude")}>Exclude</button>
+            <button className="btn warn small" onClick={() => resolve(c.candidate_id, "maybe")}>Maybe</button>
+          </div>
+        </div>
+      ))}
+    </>
+  );
+}
+
+/* ── PRISMA flow view ─────────────────────────────────────────────────── */
+
+function PrismaView({ projectId }) {
+  const [counts, setCounts] = useState(null);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    apiGet(`/api/sr/projects/${projectId}/prisma`).then(setCounts).catch(e => setError(e.message));
+  }, [projectId]);
+
+  return (
+    <>
+      <div className="nav-tabs">
+        <a className="nav-tab" href={`#projects/${projectId}`} style={{ textDecoration: "none" }}>← Project</a>
+        <div className="nav-tab active">PRISMA flow</div>
+      </div>
+      {error && <div className="err-box">{error}</div>}
+      {!counts && !error && <div className="loading">Loading PRISMA counts…</div>}
+      {counts && (
+        <>
+          <div className="card">
+            <h3>Counts</h3>
+            <div className="meta">
+              Records screened: <strong>{counts.records_screened}</strong> ·{" "}
+              Excluded at abstract: <strong>{counts.excluded_at_abstract}</strong> ·{" "}
+              Full-text assessed: <strong>{counts.full_text_assessed}</strong> ·{" "}
+              Excluded at full text: <strong>{counts.excluded_at_fulltext}</strong> ·{" "}
+              Studies included: <strong>{counts.studies_included}</strong>
+            </div>
+          </div>
+          <div className="prisma-wrap">
+            <img src={`/api/sr/projects/${projectId}/prisma/diagram.svg`} alt="PRISMA flow diagram" />
+            <div style={{ marginTop: 14 }}>
+              <a className="btn primary small" href={`/api/sr/projects/${projectId}/prisma/diagram.svg`} download={`prisma-${projectId.slice(0, 8)}.svg`}>Download SVG</a>
+            </div>
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>

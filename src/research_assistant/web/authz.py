@@ -32,10 +32,11 @@ from .auth import CurrentUser
 logger = logging.getLogger(__name__)
 
 
-# A scope is `(study_id, site_id)`; either component can be None when the
-# resource doesn't pin down that level (e.g. a deployment lives at the
-# study level — no site context until a subject/form-instance is named).
-Scope = tuple[str | None, str | None]
+# Unified scope tuple: `(study_id, site_id, sr_review_id)`. Each slot is
+# None when the resource doesn't pin that hierarchy. eCRF resolvers fill
+# the first two; SR resolvers fill the third. Same shape across both lets
+# `require_permission_scoped` route everything through one code path.
+Scope = tuple[str | None, str | None, str | None]
 
 
 # ── Resolvers ────────────────────────────────────────────────────────────
@@ -49,7 +50,7 @@ async def resolve_deployment_scope(deployment_id: str) -> Scope:
         deployment = await s.get(StudyDeployment, deployment_id)
         if deployment is None:
             raise HTTPException(404, "Deployment not found")
-        return (deployment.research_study_id, None)
+        return (deployment.research_study_id, None, None)
 
 
 async def resolve_subject_scope(subject_id: str) -> Scope:
@@ -60,7 +61,7 @@ async def resolve_subject_scope(subject_id: str) -> Scope:
             raise HTTPException(404, "Subject not found")
         deployment = await s.get(StudyDeployment, subject.deployment_id)
         study_id = deployment.research_study_id if deployment else None
-        return (study_id, subject.site_id)
+        return (study_id, subject.site_id, None)
 
 
 async def resolve_form_instance_scope(form_instance_id: str) -> Scope:
@@ -82,7 +83,7 @@ async def resolve_form_instance_scope(form_instance_id: str) -> Scope:
             raise HTTPException(409, "Form instance has no subject context")
         deployment = await s.get(StudyDeployment, subject.deployment_id)
         study_id = deployment.research_study_id if deployment else None
-        return (study_id, subject.site_id)
+        return (study_id, subject.site_id, None)
 
 
 async def resolve_query_scope(query_id: str) -> Scope:
@@ -98,7 +99,7 @@ async def resolve_query_scope(query_id: str) -> Scope:
 
 # ecrf StudyOut / FormOut path params resolve straight to (study_id, None).
 async def resolve_ecrf_study_scope(study_id: str) -> Scope:
-    return (study_id, None)
+    return (study_id, None, None)
 
 
 async def resolve_ecrf_form_scope(form_id: str) -> Scope:
@@ -109,7 +110,28 @@ async def resolve_ecrf_form_scope(form_id: str) -> Scope:
         form = await s.get(EcrfFormDefinition, form_id)
         if form is None:
             raise HTTPException(404, "Form not found")
-        return (form.study_id, None)
+        return (form.study_id, None, None)
+
+
+# SR-review resolvers — parallel scope namespace from eCRF. A researcher
+# scoped to study X does NOT accidentally satisfy an sr_review check at X
+# because the rbac module compares scope_type strictly.
+
+
+async def resolve_sr_project_scope(project_id: str) -> Scope:
+    """SR project id IS its own scope id."""
+    return (None, None, project_id)
+
+
+async def resolve_sr_candidate_scope(candidate_id: str) -> Scope:
+    """SrCandidate → its parent project's sr_review scope."""
+    from ..persistence.models import SrCandidate
+
+    async with get_db_session() as s:
+        cand = await s.get(SrCandidate, candidate_id)
+        if cand is None:
+            raise HTTPException(404, "SR candidate not found")
+        return (None, None, cand.sr_review_id)
 
 
 # Path-param-name → resolver. The require_permission factory below uses
@@ -124,6 +146,8 @@ RESOURCE_RESOLVERS: dict[str, ResolverFn] = {
     "query_id": resolve_query_scope,
     "study_id": resolve_ecrf_study_scope,
     "form_id": resolve_ecrf_form_scope,
+    "sr_project_id": resolve_sr_project_scope,
+    "sr_candidate_id": resolve_sr_candidate_scope,
 }
 
 
@@ -163,6 +187,7 @@ def require_permission_scoped(
 
         study_id: str | None = None
         site_id: str | None = None
+        sr_review_id: str | None = None
         if resolver is not None:
             assert resource_param is not None
             raw = request.path_params.get(resource_param)
@@ -172,19 +197,29 @@ def require_permission_scoped(
                     f"Route is missing the {resource_param!r} path parameter "
                     f"that require_permission_scoped tried to resolve.",
                 )
-            study_id, site_id = await resolver(str(raw))
+            study_id, site_id, sr_review_id = await resolver(str(raw))
 
         async with get_db_session() as db:
             perms = await UserRepository(db).effective_permissions_for_sub(
-                user.sub, study_id=study_id, site_id=site_id
+                user.sub,
+                study_id=study_id,
+                site_id=site_id,
+                sr_review_id=sr_review_id,
             )
         if perm not in perms:
+            scope_bits = []
+            if study_id:
+                scope_bits.append(f"study={study_id}")
+            if site_id:
+                scope_bits.append(f"site={site_id}")
+            if sr_review_id:
+                scope_bits.append(f"sr_review={sr_review_id}")
             raise HTTPException(
                 status_code=403,
                 detail=(
                     f"Permission required: {perm.value} "
-                    f"(at study={study_id}, site={site_id})."
-                    if (study_id or site_id)
+                    f"({', '.join(scope_bits)})."
+                    if scope_bits
                     else f"Permission required: {perm.value}."
                 ),
             )

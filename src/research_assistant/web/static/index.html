@@ -1060,6 +1060,7 @@ function App() {
             <a className="sidebar-link" href="/collector.html">✚ Data Capture</a>
           )}
           {hasPerm("watch.read") && <a className="sidebar-link" href="/watches.html">▤ Watches</a>}
+          {hasPerm("sr.read") && <a className="sidebar-link" href="/sr.html">⊟ SR Reviews</a>}
           <button className="sidebar-link" onClick={openUsage} style={view === "usage" ? { background: "#1f232c", color: "#e6e6e6" } : {}}>
             ~ Usage
           </button>
@@ -1112,6 +1113,9 @@ function App() {
               )}
               {hasPerm("skill.risk_of_bias") && (
                 <li><strong>Risk of bias</strong> — RoB 2.0 / ROBINS-I per-study judgements + summary plot + sensitivity hand-off. Try <code>/rob</code>.</li>
+              )}
+              {hasPerm("sr.create") && (
+                <li><strong>SR screening + PRISMA</strong> — title/abstract + full-text dual review with conflict adjudication, AI-assist on every abstract, PRISMA flow diagram on tap. Visit <a href="/sr.html">SR Reviews</a>.</li>
               )}
               <li><strong>Anti-hallucination</strong> — every PMID, MeSH term, and citation is grounded in a real tool call</li>
             </ul>

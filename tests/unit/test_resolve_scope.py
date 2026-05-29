@@ -91,9 +91,10 @@ async def test_resolve_deployment_scope(clinical_session: AsyncSession) -> None:
 
     ids = await _seed(clinical_session)
     with _patch_clinical_session(clinical_session):
-        study_id, site_id = await resolve_deployment_scope(ids["deployment_id"])
+        study_id, site_id, sr_review_id = await resolve_deployment_scope(ids["deployment_id"])
     assert study_id == ids["research_study_id"]
     assert site_id is None  # deployment has no specific site context
+    assert sr_review_id is None
 
 
 async def test_resolve_subject_scope(clinical_session: AsyncSession) -> None:
@@ -101,9 +102,10 @@ async def test_resolve_subject_scope(clinical_session: AsyncSession) -> None:
 
     ids = await _seed(clinical_session)
     with _patch_clinical_session(clinical_session):
-        study_id, site_id = await resolve_subject_scope(ids["subject_id"])
+        study_id, site_id, sr_review_id = await resolve_subject_scope(ids["subject_id"])
     assert study_id == ids["research_study_id"]
     assert site_id == ids["site_id"]
+    assert sr_review_id is None
 
 
 async def test_resolve_form_instance_scope(clinical_session: AsyncSession) -> None:
@@ -111,9 +113,12 @@ async def test_resolve_form_instance_scope(clinical_session: AsyncSession) -> No
 
     ids = await _seed(clinical_session)
     with _patch_clinical_session(clinical_session):
-        study_id, site_id = await resolve_form_instance_scope(ids["form_instance_id"])
+        study_id, site_id, sr_review_id = await resolve_form_instance_scope(
+            ids["form_instance_id"]
+        )
     assert study_id == ids["research_study_id"]
     assert site_id == ids["site_id"]
+    assert sr_review_id is None
 
 
 async def test_resolve_missing_resource_404(clinical_session: AsyncSession) -> None:
@@ -141,6 +146,17 @@ async def test_resolve_ecrf_study_is_identity() -> None:
     """ecrf study path-params resolve straight through — the id IS the scope."""
     from research_assistant.web.authz import resolve_ecrf_study_scope
 
-    study_id, site_id = await resolve_ecrf_study_scope("study-42")
+    study_id, site_id, sr_review_id = await resolve_ecrf_study_scope("study-42")
     assert study_id == "study-42"
     assert site_id is None
+    assert sr_review_id is None
+
+
+async def test_resolve_sr_project_is_identity() -> None:
+    """SR project path-params resolve to the sr_review slot only."""
+    from research_assistant.web.authz import resolve_sr_project_scope
+
+    study_id, site_id, sr_review_id = await resolve_sr_project_scope("sr-42")
+    assert study_id is None
+    assert site_id is None
+    assert sr_review_id == "sr-42"

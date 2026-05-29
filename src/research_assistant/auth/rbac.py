@@ -67,6 +67,15 @@ class Permission(StrEnum):
     # ── Audit trail ──────────────────────────────────────────────────────
     AUDIT_READ = "audit.read"
 
+    # ── SR screening (project-scoped) ────────────────────────────────────
+    SR_CREATE = "sr.create"
+    SR_MANAGE = "sr.manage"
+    SR_READ = "sr.read"
+    SR_SCREEN = "sr.screen"
+    SR_ADJUDICATE = "sr.adjudicate"
+    SR_AI_ASSIST = "sr.ai_assist"
+    PRISMA_READ = "prisma.read"
+
     # ── Platform administration ──────────────────────────────────────────
     USER_MANAGE = "user.manage"
     SOURCE_MANAGE = "source.manage"
@@ -90,13 +99,25 @@ class Role(StrEnum):
     DATA_MANAGER = "data_manager"
     MONITOR = "monitor"
 
+    # SR screening (project-scoped — see ScopeType.SR_REVIEW)
+    REVIEWER_1 = "reviewer_1"
+    REVIEWER_2 = "reviewer_2"
+    ADJUDICATOR = "adjudicator"
+
 
 class ScopeType(StrEnum):
-    """Per `rbac-design.md` §4.1 — broader scope satisfies narrower checks."""
+    """Per `rbac-design.md` §4.1 — broader scope satisfies narrower checks.
+
+    Three hierarchies share the same enum: the eCRF hierarchy
+    `global ⊃ study ⊃ site`, plus the SR-screening tree `global ⊃ sr_review`.
+    Scopes from different hierarchies don't satisfy each other (a `study`
+    grant doesn't help an `sr_review` check) — only `global` does.
+    """
 
     GLOBAL = "global"
     STUDY = "study"
     SITE = "site"
+    SR_REVIEW = "sr_review"
 
 
 # ── Permission groupings used to compose the matrix ──────────────────────
@@ -135,6 +156,15 @@ ROLE_PERMISSIONS: Final[dict[Role, frozenset[Permission]]] = {
             Permission.LIBRARY_WRITE,
             Permission.WATCH_READ,
             Permission.WATCH_MANAGE,
+            # Researchers can spin up SR projects and assign reviewers, and
+            # see project-level state; the per-project screening permissions
+            # come from project membership (reviewer_1/2/adjudicator), not
+            # from being a researcher globally.
+            Permission.SR_CREATE,
+            Permission.SR_MANAGE,
+            Permission.SR_READ,
+            Permission.SR_AI_ASSIST,
+            Permission.PRISMA_READ,
         }
     ),
     Role.STUDENT: _STUDENT_SKILLS,
@@ -143,6 +173,8 @@ ROLE_PERMISSIONS: Final[dict[Role, frozenset[Permission]]] = {
             Permission.DATA_READ,
             Permission.AUDIT_READ,
             Permission.LIBRARY_READ,
+            Permission.SR_READ,
+            Permission.PRISMA_READ,
         }
     ),
     Role.STUDY_DESIGNER: frozenset(
@@ -197,6 +229,24 @@ ROLE_PERMISSIONS: Final[dict[Role, frozenset[Permission]]] = {
             Permission.AUDIT_READ,
         }
     ),
+    # SR screening roles — always granted at sr_review scope, never global.
+    # Reviewers can screen + read the project. Adjudicator is screen + the
+    # tie-break permission. None of them carry `sr.manage` — that's the
+    # project creator's (researcher) job.
+    Role.REVIEWER_1: frozenset(
+        {Permission.SR_READ, Permission.SR_SCREEN, Permission.PRISMA_READ}
+    ),
+    Role.REVIEWER_2: frozenset(
+        {Permission.SR_READ, Permission.SR_SCREEN, Permission.PRISMA_READ}
+    ),
+    Role.ADJUDICATOR: frozenset(
+        {
+            Permission.SR_READ,
+            Permission.SR_SCREEN,
+            Permission.SR_ADJUDICATE,
+            Permission.PRISMA_READ,
+        }
+    ),
 }
 
 
@@ -237,25 +287,26 @@ def assignment_applies(
     *,
     study_id: str | None,
     site_id: str | None,
+    sr_review_id: str | None = None,
 ) -> bool:
     """True iff an assignment with the given scope satisfies a check at the
-    requested `(study_id, site_id)`.
+    requested resource scope.
 
-    Semantics (`rbac-design.md` §4.1):
+    Three scope hierarchies share this function:
 
-    | assignment scope | global check | study check  | site check  |
-    |------------------|--------------|--------------|-------------|
-    | global           | ✓            | ✓            | ✓           |
-    | study=S          | –            | ✓ iff S==Sₑ  | ✓ iff Sₑ is the study of the requested site |
-    | site=T           | –            | –            | ✓ iff T==Tₑ |
+    | assignment scope | global check | study check | site check | sr_review check |
+    |------------------|--------------|-------------|------------|-----------------|
+    | global           | ✓            | ✓           | ✓          | ✓               |
+    | study=S          | –            | ✓ iff S==Sₑ | (parent)   | –               |
+    | site=T           | –            | –           | ✓ iff T==Tₑ| –               |
+    | sr_review=R      | –            | –           | –          | ✓ iff R==Rₑ     |
 
-    For RBAC-1, callers only ever pass `study_id=None, site_id=None` (global
-    checks for skill gating + admin). The study/site arms exist so RBAC-2 can
-    drop in eCRF resource→scope resolvers without re-touching this module.
-    Note: the "study assignment satisfies a site check whose site belongs to
-    that study" semantics requires the caller to provide both `study_id` and
-    `site_id` for site-level checks, since this module has no DB access to
-    look up the parent study of a site.
+    The eCRF and SR hierarchies are independent — a `study` grant does NOT
+    satisfy an `sr_review` check (and vice versa). Only `global` crosses.
+
+    Like the eCRF arms, the SR arm requires the caller to provide the
+    `sr_review_id` for sr-level resources; this module has no DB access to
+    derive it.
     """
     if scope_type == ScopeType.GLOBAL:
         return True
@@ -263,6 +314,8 @@ def assignment_applies(
         return scope_id is not None and scope_id == study_id
     if scope_type == ScopeType.SITE:
         return scope_id is not None and scope_id == site_id
+    if scope_type == ScopeType.SR_REVIEW:
+        return scope_id is not None and scope_id == sr_review_id
     return False
 
 
@@ -271,6 +324,7 @@ def effective_permissions(
     *,
     study_id: str | None = None,
     site_id: str | None = None,
+    sr_review_id: str | None = None,
 ) -> frozenset[Permission]:
     """Aggregate the permissions granted by a user's role assignments after
     filtering to those whose scope satisfies the requested resource.
@@ -281,7 +335,13 @@ def effective_permissions(
     """
     perms: set[Permission] = set()
     for role, scope_type, scope_id in assignments:
-        if not assignment_applies(scope_type, scope_id, study_id=study_id, site_id=site_id):
+        if not assignment_applies(
+            scope_type,
+            scope_id,
+            study_id=study_id,
+            site_id=site_id,
+            sr_review_id=sr_review_id,
+        ):
             continue
         perms.update(permissions_for_role(role))
     return frozenset(perms)

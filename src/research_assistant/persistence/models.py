@@ -559,3 +559,252 @@ class EcrfFormDefinition(Base):
     )
 
     study: Mapped[EcrfStudy] = relationship(back_populates="forms")
+
+
+# ── Systematic-review screening (top-6 #2) ──────────────────────────────
+
+
+class SrReview(Base):
+    """A systematic-review project.
+
+    The container for the screening workflow: holds the PICO snapshot, the
+    Boolean search query that seeds the candidate set, the inclusion +
+    exclusion criteria reviewers use, and the project status. Reviewer
+    assignments live on `SrReviewMembership`; candidate papers and per-
+    reviewer judgements hang off `SrCandidate` and `ScreeningDecision`.
+    """
+
+    __tablename__ = "sr_reviews"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    name: Mapped[str] = mapped_column(Text)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    pico_json: Mapped[str] = mapped_column(Text, default="{}")
+    search_query: Mapped[str] = mapped_column(Text, default="")
+    sources_json: Mapped[str] = mapped_column(
+        Text,
+        default='["pubmed", "europepmc"]',
+        doc="JSON list of source ids to fan out the ingest across.",
+    )
+    inclusion_criteria_json: Mapped[str] = mapped_column(
+        Text,
+        default="[]",
+        doc=(
+            "JSON list of inclusion criterion strings. The screening UI surfaces "
+            "these next to the abstract; AI-assist passes them to the classifier."
+        ),
+    )
+    exclusion_criteria_json: Mapped[str] = mapped_column(Text, default="[]")
+    status: Mapped[str] = mapped_column(
+        Text,
+        default="draft",
+        doc="draft | ingested | abstract_screening | fulltext_screening | complete",
+    )
+    created_by: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        default=None,
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
+
+    memberships: Mapped[list[SrReviewMembership]] = relationship(
+        back_populates="review", cascade="all, delete-orphan"
+    )
+    candidates: Mapped[list[SrCandidate]] = relationship(
+        back_populates="review", cascade="all, delete-orphan"
+    )
+
+
+class SrReviewMembership(Base):
+    """A user's role on an SR project (reviewer_1 / reviewer_2 / adjudicator).
+
+    Distinct from the project-scoped `RoleAssignment` rows that grant the
+    `sr.*` permissions — the membership row is the authoritative record of
+    WHICH reviewer slot the user fills (R1 vs R2 vs adjudicator) when
+    `ScreeningDecision.role` is recorded. The RBAC grant is created in
+    parallel by the project-management endpoint and revoked together.
+    """
+
+    __tablename__ = "sr_review_memberships"
+    __table_args__ = (
+        UniqueConstraint(
+            "sr_review_id", "user_id", "role", name="uq_sr_membership_unique"
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    sr_review_id: Mapped[str] = mapped_column(
+        ForeignKey("sr_reviews.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    role: Mapped[str] = mapped_column(
+        Text,
+        doc="One of 'reviewer_1' | 'reviewer_2' | 'adjudicator'.",
+    )
+    granted_by: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        default=None,
+    )
+    granted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    review: Mapped[SrReview] = relationship(back_populates="memberships")
+
+
+class SrCandidate(Base):
+    """A paper proposed for inclusion in an SR project.
+
+    Ingested from the search-query fan-out; deduped against the shared
+    `Publication` cache (R0) so the same paper across PubMed + Europe PMC
+    collapses to one candidate. `current_status` tracks the candidate's
+    journey through the two-phase screening funnel; it's recomputed from
+    the `ScreeningDecision` rows whenever a new decision lands.
+    """
+
+    __tablename__ = "sr_candidates"
+    __table_args__ = (
+        UniqueConstraint(
+            "sr_review_id", "publication_id", name="uq_sr_candidate_publication"
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    sr_review_id: Mapped[str] = mapped_column(
+        ForeignKey("sr_reviews.id", ondelete="CASCADE"), index=True
+    )
+    publication_id: Mapped[str] = mapped_column(
+        ForeignKey("publications.id", ondelete="RESTRICT"), index=True
+    )
+    pmid: Mapped[str | None] = mapped_column(Text, nullable=True, default=None, index=True)
+    source_origin: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        default=None,
+        doc="Which source surfaced this paper first (pubmed | europepmc | upload | …).",
+    )
+    current_status: Mapped[str] = mapped_column(
+        Text,
+        default="pending_abstract",
+        doc=(
+            "pending_abstract | pending_adjudication_abstract | "
+            "included_after_abstract | excluded_at_abstract | "
+            "pending_fulltext | pending_adjudication_fulltext | "
+            "included_after_fulltext | excluded_at_fulltext"
+        ),
+    )
+    excluded_reason_code: Mapped[str | None] = mapped_column(
+        Text, nullable=True, default=None
+    )
+    excluded_at_phase: Mapped[str | None] = mapped_column(
+        Text, nullable=True, default=None, doc="abstract | fulltext"
+    )
+    added_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
+
+    review: Mapped[SrReview] = relationship(back_populates="candidates")
+    publication: Mapped[Publication] = relationship()
+    decisions: Mapped[list[ScreeningDecision]] = relationship(
+        back_populates="candidate", cascade="all, delete-orphan"
+    )
+    ai_suggestions: Mapped[list[AiSuggestion]] = relationship(
+        back_populates="candidate", cascade="all, delete-orphan"
+    )
+
+
+class ScreeningDecision(Base):
+    """One reviewer's judgement of one candidate at one phase.
+
+    Unique on (candidate, reviewer, phase) so a reviewer can revise their
+    own decision (the row is upserted) but each reviewer slot only counts
+    once per phase. Disagreement between R1 and R2 raises the candidate to
+    pending_adjudication; the adjudicator's decision wins and is stored on
+    the same table with `role='adjudicator'`.
+    """
+
+    __tablename__ = "sr_screening_decisions"
+    __table_args__ = (
+        UniqueConstraint(
+            "sr_candidate_id",
+            "reviewer_user_id",
+            "phase",
+            name="uq_sr_decision_unique",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    sr_candidate_id: Mapped[str] = mapped_column(
+        ForeignKey("sr_candidates.id", ondelete="CASCADE"), index=True
+    )
+    reviewer_user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    role: Mapped[str] = mapped_column(
+        Text, doc="reviewer_1 | reviewer_2 | adjudicator"
+    )
+    phase: Mapped[str] = mapped_column(Text, doc="abstract | fulltext")
+    decision: Mapped[str] = mapped_column(
+        Text, doc="include | exclude | maybe"
+    )
+    reason_code: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    ai_suggested: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        doc=(
+            "True when the reviewer accepted the AI-assist suggestion as-is "
+            "(useful for measuring AI-assist agreement)."
+        ),
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
+
+    candidate: Mapped[SrCandidate] = relationship(back_populates="decisions")
+
+
+class AiSuggestion(Base):
+    """AI-assist's predicted screening decision for one candidate at one phase.
+
+    Written by the batch classifier; surfaced next to the abstract in the
+    screening UI. Persisted separately from `ScreeningDecision` so we can
+    measure prediction accuracy vs. human judgement and so a stale
+    suggestion never accidentally gets counted as a real decision.
+    """
+
+    __tablename__ = "sr_ai_suggestions"
+    __table_args__ = (
+        UniqueConstraint(
+            "sr_candidate_id", "phase", name="uq_sr_ai_suggestion_unique"
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    sr_candidate_id: Mapped[str] = mapped_column(
+        ForeignKey("sr_candidates.id", ondelete="CASCADE"), index=True
+    )
+    phase: Mapped[str] = mapped_column(Text, doc="abstract | fulltext")
+    predicted_decision: Mapped[str] = mapped_column(
+        Text, doc="include | exclude | maybe"
+    )
+    predicted_reason_code: Mapped[str | None] = mapped_column(
+        Text, nullable=True, default=None
+    )
+    confidence: Mapped[float] = mapped_column(Float, default=0.0)
+    rationale: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    model_id: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        default=None,
+        doc="Bedrock model id used so we can detect stale predictions.",
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    candidate: Mapped[SrCandidate] = relationship(back_populates="ai_suggestions")

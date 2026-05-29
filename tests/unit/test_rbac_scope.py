@@ -10,6 +10,7 @@ import pytest
 
 from research_assistant.auth.rbac import (
     Permission,
+    Role,
     ScopeType,
     assignment_applies,
     effective_permissions,
@@ -43,6 +44,48 @@ def test_unknown_scope_type_never_applies() -> None:
     """Defensive — a corrupted DB row mustn't accidentally grant access."""
     assert not assignment_applies("garbage", None, study_id=None, site_id=None)
     assert not assignment_applies("garbage", "S1", study_id="S1", site_id="T1")
+
+
+# ── sr_review scope (parallel hierarchy to study/site) ───────────────────
+
+
+def test_sr_review_assignment_applies_only_for_matching_project() -> None:
+    assert assignment_applies(
+        ScopeType.SR_REVIEW, "P1", study_id=None, site_id=None, sr_review_id="P1"
+    )
+    assert not assignment_applies(
+        ScopeType.SR_REVIEW, "P1", study_id=None, site_id=None, sr_review_id="P2"
+    )
+    assert not assignment_applies(
+        ScopeType.SR_REVIEW, "P1", study_id=None, site_id=None, sr_review_id=None
+    )
+
+
+def test_global_satisfies_sr_review_check() -> None:
+    assert assignment_applies(
+        ScopeType.GLOBAL, None, study_id=None, site_id=None, sr_review_id="P1"
+    )
+
+
+def test_study_scope_does_NOT_satisfy_sr_review_check() -> None:
+    """SR and eCRF hierarchies are parallel — when the gate resolves the
+    resource to an sr_review (so study_id=None, sr_review_id='P1'), a
+    study-scoped grant must NOT match even if its scope_id happens to be
+    'P1'. This is what keeps a study_designer scoped to study 'X' from
+    accidentally getting sr.read on a totally unrelated SR project that
+    shares the id 'X'."""
+    assert not assignment_applies(
+        ScopeType.STUDY, "P1", study_id=None, site_id=None, sr_review_id="P1"
+    )
+
+
+def test_effective_permissions_respects_sr_scope() -> None:
+    """A reviewer_1 grant at sr_review:P1 yields sr.screen on P1 only."""
+    assignments = [(Role.REVIEWER_1.value, ScopeType.SR_REVIEW.value, "P1")]
+    p1_perms = effective_permissions(assignments, sr_review_id="P1")
+    p2_perms = effective_permissions(assignments, sr_review_id="P2")
+    assert Permission.SR_SCREEN in p1_perms
+    assert Permission.SR_SCREEN not in p2_perms
 
 
 # ── effective_permissions — the aggregation under scope filtering ─────────

@@ -107,6 +107,70 @@ def test_monitor_does_sdv_but_not_data_entry() -> None:
     assert Permission.QUERY_CLOSE not in perms
 
 
+# ── SR-screening roles (top-6 #2) ────────────────────────────────────────
+
+
+def test_researcher_can_create_sr_projects_and_ai_assist() -> None:
+    """Researcher gets sr.create + sr.manage + sr.read + sr.ai_assist
+    globally — they spin up projects and assign reviewers. The actual
+    screening permissions (sr.screen / sr.adjudicate) come from project
+    membership, not the researcher role."""
+    perms = ROLE_PERMISSIONS[Role.RESEARCHER]
+    assert Permission.SR_CREATE in perms
+    assert Permission.SR_MANAGE in perms
+    assert Permission.SR_READ in perms
+    assert Permission.SR_AI_ASSIST in perms
+    assert Permission.PRISMA_READ in perms
+    # The screen-the-papers and tie-break perms come from membership
+    # (sr_review-scoped), not from researcher globally.
+    assert Permission.SR_SCREEN not in perms
+    assert Permission.SR_ADJUDICATE not in perms
+
+
+def test_reviewer_roles_have_screen_but_not_manage() -> None:
+    for r in (Role.REVIEWER_1, Role.REVIEWER_2):
+        perms = ROLE_PERMISSIONS[r]
+        assert Permission.SR_READ in perms
+        assert Permission.SR_SCREEN in perms
+        assert Permission.PRISMA_READ in perms
+        assert Permission.SR_MANAGE not in perms
+        assert Permission.SR_ADJUDICATE not in perms
+
+
+def test_adjudicator_is_screen_plus_tiebreak() -> None:
+    perms = ROLE_PERMISSIONS[Role.ADJUDICATOR]
+    assert Permission.SR_SCREEN in perms
+    assert Permission.SR_ADJUDICATE in perms
+    assert Permission.SR_READ in perms
+    # Adjudicator does NOT manage the project's membership/criteria — the
+    # researcher who created it does.
+    assert Permission.SR_MANAGE not in perms
+    assert Permission.SR_CREATE not in perms
+
+
+def test_student_has_no_sr_permissions() -> None:
+    """Student tier is meta-analysis-only; SR screening is explicitly off."""
+    perms = ROLE_PERMISSIONS[Role.STUDENT]
+    for sr_perm in (
+        Permission.SR_CREATE,
+        Permission.SR_MANAGE,
+        Permission.SR_READ,
+        Permission.SR_SCREEN,
+        Permission.SR_ADJUDICATE,
+        Permission.SR_AI_ASSIST,
+        Permission.PRISMA_READ,
+    ):
+        assert sr_perm not in perms, f"student should not have {sr_perm.value}"
+
+
+def test_auditor_can_read_sr_but_not_screen() -> None:
+    perms = ROLE_PERMISSIONS[Role.AUDITOR]
+    assert Permission.SR_READ in perms
+    assert Permission.PRISMA_READ in perms
+    assert Permission.SR_SCREEN not in perms
+    assert Permission.SR_ADJUDICATE not in perms
+
+
 def test_skill_permission_covers_every_specialist() -> None:
     """Every workflow registered in `agent/specialists/` must map to a
     skill permission, or the dispatcher will fail-closed on it."""

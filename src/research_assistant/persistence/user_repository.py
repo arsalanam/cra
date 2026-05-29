@@ -111,9 +111,11 @@ class UserRepository:
         *,
         study_id: str | None = None,
         site_id: str | None = None,
+        sr_review_id: str | None = None,
     ) -> frozenset[Permission]:
-        """Aggregate permissions the user holds against a `(study_id, site_id)`
-        resource. Pass both None for a global check (skill gating, admin).
+        """Aggregate permissions the user holds against a resource at
+        `(study_id, site_id, sr_review_id)`. Pass all None for a global
+        check (skill gating, admin).
 
         Includes legacy `user_roles` rows projected to global scope so
         pre-RBAC-1 grants keep working during the migration window.
@@ -130,7 +132,12 @@ class UserRepository:
         )
         for role_str in legacy:
             triples.append((role_str, ScopeType.GLOBAL.value, None))
-        return effective_permissions(triples, study_id=study_id, site_id=site_id)
+        return effective_permissions(
+            triples,
+            study_id=study_id,
+            site_id=site_id,
+            sr_review_id=sr_review_id,
+        )
 
     async def grant_role(
         self,
