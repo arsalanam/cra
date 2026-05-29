@@ -43,7 +43,7 @@ Where the item sits in the research lifecycle:
 
 | Phase | Item | Priority | Status | Effort |
 |---|---|---|---|---|
-| Cross-cutting | RBAC (scoped roles + permission matrix) | **P0** | 📐 designed | L |
+| Cross-cutting | RBAC (scoped roles + permission matrix) | **P0** | ✅ shipped (RBAC-1+2+3) | L |
 | Synthesis | SR title/abstract + full-text screening UI | **P0** | 💡 proposed | M |
 | Synthesis | PRISMA flow diagram generation | **P0** | 💡 proposed | S |
 | Design | Sample-size + power calculator | **P0** | 💡 proposed | S |
@@ -94,6 +94,7 @@ The starting state for this roadmap. Anything listed here is in production today
 | eCRF / EDC subsystem (E0–E6: cache, capture, edit-checks + queries, authoring UI, EDC + ePRO, e-signatures + lock, DB-level audit immutability + SDV) | `src/research_assistant/web/{ecrf,edc,epro}.py`, [ecrf-design.md](ecrf-design.md) |
 | Publication cache + Titan v2 embeddings + hybrid `rag_search` + PDF upload + library UI (R0–R4) | `src/research_assistant/tools/clinical/rag_search.py`, `services/library/*` |
 | OAuth2 / OIDC via Cognito; multi-tenant pool support; role-based admin gating; invite flow | `src/research_assistant/web/auth.py`, `scripts/cognito_setup.py` |
+| RBAC (scoped roles + permission matrix + skill gating + ownership) — RBAC-1/2/3 all shipped 2026-05-29, including Student tier | `src/research_assistant/auth/rbac.py`, `web/authz.py`, `agent/dispatcher.authorize_workflow`, role-admin UI in `admin.html` |
 | Sandboxed Python execution (Docker, network-disabled, capped CPU/RAM, RW output dir) | `src/research_assistant/tools/data_science/sandbox_exec.py` |
 | Multi-source paper search behind `PaperSource` Protocol (PubMed + Europe PMC live; Embase / Cochrane / Scopus / WoS as pluggable additions) | `src/research_assistant/tools/clinical/sources/` |
 | Per-thread quotas, per-turn ceilings, daily token caps | `src/research_assistant/services/quota.py`, `config/settings.py` |
@@ -105,13 +106,15 @@ The starting state for this roadmap. Anything listed here is in production today
 
 These have a design doc; engineering can pick them up without scoping work.
 
-### RBAC — scoped roles + permission matrix + skill gating · **P0** · 📐
+### ~~RBAC — scoped roles + permission matrix + skill gating~~ · **P0** · ✅ shipped 2026-05-29
 
 - **Doc:** [rbac-design.md](rbac-design.md)
-- **Effort:** L (DB migrations, every endpoint touched, frontend gating)
+- **Effort:** L (DB migrations, every endpoint touched, frontend gating) — delivered as RBAC-1 → RBAC-2 → RBAC-3 in one slice.
 - **Why P0:** Without role separation, an institution cannot deploy beyond a 1–2-person team. Coordinators, monitors, PIs, statisticians, screening reviewers, and DSMB members all need distinct entitlements; the eCRF audit trail already models actor roles but enforces nothing application-wide.
 - **Dependencies:** OAuth/OIDC ✅ shipped.
-- **Unlocks:** SR screening UI (needs Reviewer-1 vs Reviewer-2), site-bounded EDC access, monitor-only SDV view, blinded DSMB views, sponsor-vs-CRO separation.
+- **Unlocks now realised:** site-bounded EDC access, monitor-only SDV view, sponsor-vs-CRO separation, teaching/student tier. Still requires UI work to fully unlock the SR-screening Reviewer-1/Reviewer-2 model and the blinded DSMB view.
+- **What landed:** `auth/rbac.py` (Permission + Role enums, ROLE_PERMISSIONS matrix incl. **student** tier, SKILL_PERMISSION map); `RoleAssignment` model + `init_db._backfill_role_assignments` for legacy `user_roles` rows; `require_permission` (global) and `require_permission_scoped(perm, resource_param=...)` (eCRF resource→scope); `agent/dispatcher.authorize_workflow` → 403 with required-perm name; `/api/ecrf` re-gated over `study.author`/`study.publish`/`study.create`/`skill.ecrf_design`; `/api/edc` split per matrix (`form.sign`/PI, `form.unlock`/DM, `sdv.verify`/monitor, `casebook.signoff`/PI, `subject.unlock`/DM, `query.raise|respond|close`); admin role-management endpoints + settings-UI panel; thread + watch ownership scoping (foreign rows 404, not 403, to avoid id leaks); per-user partition on `/usage/today` and `/usage/monthly`; frontend `hasPerm()` gating sidebar links and welcome workflow list.
+- **Deferred for a follow-up:** role/tier-based per-user quota ceilings (the partition exists; the cap remains global per the design's "later refinement" call); blinded DSMB views; SR-screening-specific Reviewer-1 vs Reviewer-2 roles (will be added with the screening UI).
 
 ### eCRF formal validation pack (CSV / IQ-OQ-PQ) · **P0** · 📝
 

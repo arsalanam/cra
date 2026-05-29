@@ -90,6 +90,11 @@ research DB already has the additive-migration mechanism; this is an additive ch
 - `admin` — superuser; every permission, global.
 - `researcher` — the evidence-work base role: all `skill.*` evidence skills, library
   read/write, own watches & threads.
+- `student` — basic researcher account for teaching / learning use; restricted to
+  the meta-analysis workflow only (plus `skill.general_qa` so the dispatcher's
+  default-fallback for free-form chat doesn't 403 them). No library, watches,
+  search-strategy, SR-protocol, RoB, or eCRF access. Quota tier intentionally
+  the lowest once per-user quotas land (RBAC-3).
 - `auditor` — read-only across data + audit trail (no writes).
 
 **eCRF (study- or site-scoped):**
@@ -121,23 +126,36 @@ user.manage · source.manage
 ```
 
 ### 4.5 Role → permission matrix (sketch; the implementation owns the source of truth)
-| Permission group | admin | researcher | study_designer | PI | coordinator | data_manager | monitor | auditor |
-|---|---|---|---|---|---|---|---|---|
-| evidence `skill.*` | ✓ | ✓ | – | – | – | – | – | – |
-| `skill.ecrf_design` | ✓ | – | ✓ | – | – | – | – | – |
-| `library.*` | ✓ | ✓ | – | – | – | – | – | r |
-| `study.author/publish/create` | ✓ | – | ✓ | – | – | – | – | – |
-| `deployment.manage` | ✓ | – | ✓ | – | – | – | – | – |
-| `data.enter` | ✓ | – | – | – | ✓ | – | – | – |
-| `data.read` | ✓ | – | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `query.raise` | ✓ | – | – | – | – | ✓ | ✓ | – |
-| `query.respond` | ✓ | – | – | ✓ | ✓ | ✓ | – | – |
-| `query.close` | ✓ | – | – | ✓ | – | ✓ | – | – |
-| `sdv.verify` | ✓ | – | – | – | – | – | ✓ | – |
-| `form.sign` / `casebook.signoff` | ✓ | – | – | ✓ | – | – | – | – |
-| `form.unlock` / `subject.unlock` | ✓ | – | – | – | – | ✓ | – | – |
-| `audit.read` | ✓ | – | – | ✓ | – | ✓ | ✓ | ✓ |
-| `user.manage` / `source.manage` | ✓ | – | – | – | – | – | – | – |
+
+Legend: `✓` = full, `r` = read-only, `–` = none. Cells use the narrowest perm
+that role needs; the implementation expands them to the full catalogue.
+
+| Permission group | admin | researcher | student | study_designer | PI | coordinator | data_manager | monitor | auditor |
+|---|---|---|---|---|---|---|---|---|---|
+| `skill.meta_analysis` | ✓ | ✓ | ✓ | – | – | – | – | – | – |
+| `skill.general_qa` | ✓ | ✓ | ✓ | – | – | – | – | – | – |
+| other evidence `skill.*` (search_strategy / sr_protocol / risk_of_bias) | ✓ | ✓ | – | – | – | – | – | – | – |
+| `skill.ecrf_design` | ✓ | – | – | ✓ | – | – | – | – | – |
+| `library.*` | ✓ | ✓ | – | – | – | – | – | – | r |
+| `study.author/publish/create` | ✓ | – | – | ✓ | – | – | – | – | – |
+| `deployment.manage` | ✓ | – | – | ✓ | – | – | – | – | – |
+| `data.enter` | ✓ | – | – | – | – | ✓ | – | – | – |
+| `data.read` | ✓ | – | – | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `query.raise` | ✓ | – | – | – | – | – | ✓ | ✓ | – |
+| `query.respond` | ✓ | – | – | – | ✓ | ✓ | ✓ | – | – |
+| `query.close` | ✓ | – | – | – | ✓ | – | ✓ | – | – |
+| `sdv.verify` | ✓ | – | – | – | – | – | – | ✓ | – |
+| `form.sign` / `casebook.signoff` | ✓ | – | – | – | ✓ | – | – | – | – |
+| `form.unlock` / `subject.unlock` | ✓ | – | – | – | – | – | ✓ | – | – |
+| `audit.read` | ✓ | – | – | – | ✓ | – | ✓ | ✓ | ✓ |
+| `user.manage` / `source.manage` | ✓ | – | – | – | – | – | – | – | – |
+
+**Why `student` gets `skill.general_qa` despite being "meta-analysis only":** the
+dispatcher (`agent/dispatcher.py`) falls back to `general_qa` for any message that
+doesn't match a workflow keyword. Without `skill.general_qa`, a student typing
+"hi" or "what is a forest plot?" would get a 403 instead of a guided answer. The
+existing `_reject_clinical_synthesis` validator on `general_qa` already prevents
+that path from being abused for unguarded clinical claims.
 
 ---
 
@@ -189,15 +207,27 @@ comment anticipates; role/tier-based quota ceilings are a later refinement.
 ---
 
 ## 9. Phased implementation
-- **RBAC-1 — foundation:** `RoleAssignment` (scoped) + permission catalogue + role→perm
-  matrix + `require_permission` seam + scope resolvers; migrate existing roles to global;
-  re-express `require_admin`/`require_data_entry` over permissions. No behaviour change
-  yet beyond equivalence. Tests for the matrix + scope resolution.
-- **RBAC-2 — eCRF hierarchy + scoping:** introduce the eCRF roles; enforce study/site
-  scoping on `/api/ecrf` + `/api/edc` (resource→scope resolvers); split `admin`-escalated
-  ops (sign/unlock) onto PI/data_manager; role-administration endpoints + settings UI.
-- **RBAC-3 — skills + ownership + quotas:** gate specialists in the dispatcher; thread/
-  watch object ownership; per-user quota partition.
+- **RBAC-1 — foundation ✅ SHIPPED 2026-05-29:** `RoleAssignment` (scoped) + permission
+  catalogue + role→perm matrix in [`auth/rbac.py`](src/research_assistant/auth/rbac.py)
+  + `require_permission` seam + legacy `data_entry`→`coordinator` alias; migrate existing
+  roles to global via `_backfill_role_assignments` in `init_db`; re-express
+  `require_admin`/`require_data_entry` over permissions. Tests for the matrix + scope
+  resolution.
+- **RBAC-2 — eCRF hierarchy + scoping ✅ SHIPPED 2026-05-29:** [`web/authz.py`](src/research_assistant/web/authz.py)
+  resource→scope resolvers (deployment / subject / form_instance / query / ecrf study /
+  ecrf form); `require_permission_scoped(perm, resource_param=...)` enforces study/site
+  scoping on `/api/ecrf` + `/api/edc`; sign/unlock split off admin onto PI/data_manager
+  (`form.sign` → PI, `form.unlock` → DM, `sdv.verify` → monitor, `casebook.signoff` → PI,
+  `subject.unlock` → DM); role-administration endpoints (`GET /api/admin/users`, `POST
+  /api/admin/users/{id}/roles`, `DELETE /api/admin/users/{id}/roles/{aid}`); settings-UI
+  "Users & roles" panel in `admin.html`.
+- **RBAC-3 — skills + ownership + quotas ✅ SHIPPED 2026-05-29:** skill gating in the
+  dispatcher via `authorize_workflow()` (`SkillNotAuthorizedError` → 403); thread + watch
+  ownership scoping on `/api/threads/*`, `/api/turn`, `/api/watches/*`, `/api/notifications/*`
+  (foreign rows return 404 to avoid leaking ids); per-user partition on `/api/threads/usage/today`
+  + `/usage/monthly` (`ThreadRepository.get_done_events_since(user_id=...)`); frontend
+  gating via `/auth/me.permissions` in `index.html` and `admin.html`. Daily-cap enforcement
+  stays global as designed (role-tiered ceilings remain a later refinement).
 
 ---
 
