@@ -190,9 +190,7 @@ def _build_kv_pdf_table(
     return t
 
 
-def _prospero_pdf_table(
-    rows: list[Any], styles: dict[str, ParagraphStyle]
-) -> Table | None:
+def _prospero_pdf_table(rows: list[Any], styles: dict[str, ParagraphStyle]) -> Table | None:
     if not rows:
         return None
     data: list[list[Any]] = [
@@ -205,9 +203,7 @@ def _prospero_pdf_table(
         content = (row.content or "").strip()
         # User-input placeholders are flagged in amber so reviewers can spot
         # what they still owe before submitting to PROSPERO.
-        cell_style = (
-            styles["Amber"] if content.startswith(_USER_INPUT_PREFIX) else styles["Cell"]
-        )
+        cell_style = styles["Amber"] if content.startswith(_USER_INPUT_PREFIX) else styles["Cell"]
         data.append(
             [
                 Paragraph(row.field or "—", styles["Cell"]),
@@ -322,26 +318,15 @@ def build_pdf(data: SrProtocolReportData, images_dir: Path) -> bytes:
     )
 
     story.append(Paragraph("Risk-of-bias plan", styles["H2"]))
-    story.append(
-        Paragraph(
-            f"<b>Tool:</b> {data.methods.rob_tool.tool}", styles["Body"]
-        )
-    )
-    story.append(
-        Paragraph(data.methods.rob_tool.rationale or "—", styles["Body"])
-    )
+    story.append(Paragraph(f"<b>Tool:</b> {data.methods.rob_tool.tool}", styles["Body"]))
+    story.append(Paragraph(data.methods.rob_tool.rationale or "—", styles["Body"]))
 
     if data.methods.effect_measures_plan:
         story.append(Paragraph("Effect measures plan", styles["H2"]))
         em_rows = [
-            (outcome, measure)
-            for outcome, measure in data.methods.effect_measures_plan.items()
+            (outcome, measure) for outcome, measure in data.methods.effect_measures_plan.items()
         ]
-        story.append(
-            _build_kv_pdf_table(
-                [(o, str(m)) for o, m in em_rows], styles, label_w=3.0
-            )
-        )
+        story.append(_build_kv_pdf_table([(o, str(m)) for o, m in em_rows], styles, label_w=3.0))
 
     story.append(Paragraph("Synthesis plan", styles["H2"]))
     sp = data.methods.synthesis_plan
@@ -395,11 +380,7 @@ def build_pdf(data: SrProtocolReportData, images_dir: Path) -> bytes:
 
     story.append(Spacer(1, 0.1 * inch))
     if not data.is_final:
-        story.append(
-            Paragraph(
-                "<i>Draft — not finalised by the reviewer.</i>", styles["Het"]
-            )
-        )
+        story.append(Paragraph("<i>Draft — not finalised by the reviewer.</i>", styles["Het"]))
 
     doc.build(story)
     return buf.getvalue()

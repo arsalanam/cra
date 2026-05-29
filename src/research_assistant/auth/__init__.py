@@ -15,14 +15,34 @@ The FastAPI surface in `web/auth.py` glues these together into
 `Depends(current_user)` dependency.
 """
 
+from .rbac import (
+    ROLE_PERMISSIONS,
+    SKILL_PERMISSION,
+    Permission,
+    Role,
+    ScopeType,
+    assignment_applies,
+    effective_permissions,
+    normalize_legacy_role,
+    permissions_for_role,
+)
 from .session import SessionPayload, clear_session, read_session, write_session
 from .tokens import IdentityClaims, TokenValidationError, validate_id_token
 
 __all__ = [
+    "ROLE_PERMISSIONS",
+    "SKILL_PERMISSION",
     "IdentityClaims",
+    "Permission",
+    "Role",
+    "ScopeType",
     "SessionPayload",
     "TokenValidationError",
+    "assignment_applies",
     "clear_session",
+    "effective_permissions",
+    "normalize_legacy_role",
+    "permissions_for_role",
     "read_session",
     "validate_id_token",
     "write_session",

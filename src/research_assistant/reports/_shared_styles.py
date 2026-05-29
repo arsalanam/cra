@@ -170,9 +170,7 @@ def make_page_decorations(footer_label: str) -> Any:
         canvas.rect(0.6 * inch, h - 0.6 * inch, 0.7 * inch, 0.05 * inch, fill=1, stroke=0)
         canvas.setFillColor(NAVY)
         canvas.setFont("Helvetica-Bold", 9)
-        canvas.drawString(
-            1.4 * inch, h - 0.6 * inch + 0.01 * inch, "CLINICAL RESEARCH ASSISTANT"
-        )
+        canvas.drawString(1.4 * inch, h - 0.6 * inch + 0.01 * inch, "CLINICAL RESEARCH ASSISTANT")
         # Footer: doc-specific label on the left, page number on the right
         canvas.setFillColor(MUTED)
         canvas.setFont("Helvetica", 8.5)

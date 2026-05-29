@@ -11,9 +11,10 @@ Endpoints:
   GET    /api/notifications            list (with ?unread_only=true)
   POST   /api/notifications/{id}/read  mark read
 
-Auth: all endpoints implicitly target DEFAULT_USER_ID for now (matches the
-admin.py placeholder gate). When real auth lands, switch the user_id
-filter to the authenticated user.
+RBAC-3: every endpoint is scoped to the calling user's `users.id`
+(resolved via `web.threads.resolve_local_user_id`). Auth-disabled / dev
+mode keeps DEFAULT_USER_ID as the shared bucket — same behaviour as
+before, just plumbed through the resolver.
 """
 
 from __future__ import annotations
@@ -41,6 +42,8 @@ from ..services.scheduler import (
     unregister_watch,
 )
 from ..tools.clinical.search_papers import _fan_out
+from .auth import CurrentUser
+from .threads import resolve_local_user_id
 
 logger = logging.getLogger(__name__)
 
@@ -105,10 +108,11 @@ def create_watches_router() -> APIRouter:
     router = APIRouter(prefix="/watches", tags=["watches"])
 
     @router.get("", response_model=list[WatchView])
-    async def list_watches() -> list[WatchView]:
+    async def list_watches(user: CurrentUser) -> list[WatchView]:
+        owner = await resolve_local_user_id(user)
         async with get_db_session() as session:
             repo = WatchRepository(session)
-            watches = await repo.list_watches(user_id=DEFAULT_USER_ID)
+            watches = await repo.list_watches(user_id=owner)
             views = [_watch_to_view(w) for w in watches]
         # Enrich with the live next_run_time from APScheduler.
         for v, w in zip(views, watches, strict=False):
@@ -119,7 +123,7 @@ def create_watches_router() -> APIRouter:
         return views
 
     @router.post("", response_model=WatchView)
-    async def create_watch(spec: WatchSpec) -> WatchView:
+    async def create_watch(spec: WatchSpec, user: CurrentUser) -> WatchView:
         # Snapshot the current PMID set so the first scheduled run only
         # surfaces *genuinely* new papers. If the spec already includes
         # baseline_pmids (frontend pre-populated), use those; otherwise
@@ -147,6 +151,7 @@ def create_watches_router() -> APIRouter:
                     "starting with empty baseline (first run will surface all current hits)"
                 )
 
+        owner = await resolve_local_user_id(user)
         async with get_db_session() as session:
             repo = WatchRepository(session)
             watch = await repo.create_watch(
@@ -157,6 +162,7 @@ def create_watches_router() -> APIRouter:
                 schedule_cron=spec.schedule_cron,
                 triage_threshold=spec.triage_threshold,
                 baseline_pmids_json=json.dumps(baseline),
+                user_id=owner,
             )
             view = _watch_to_view(watch)
 
@@ -173,13 +179,21 @@ def create_watches_router() -> APIRouter:
             raise HTTPException(400, str(e)) from e
         return view
 
+    def _owns_watch(watch: LiteratureWatch | None, owner_id: str) -> bool:
+        """Same 404-not-403 leak protection as threads."""
+        if watch is None:
+            return False
+        return (watch.user_id or DEFAULT_USER_ID) == owner_id
+
     @router.get("/{watch_id}", response_model=WatchView)
-    async def get_watch(watch_id: str) -> WatchView:
+    async def get_watch(watch_id: str, user: CurrentUser) -> WatchView:
+        owner = await resolve_local_user_id(user)
         async with get_db_session() as session:
             repo = WatchRepository(session)
             watch = await repo.get_watch(watch_id)
-            if watch is None:
+            if not _owns_watch(watch, owner):
                 raise HTTPException(404, "Watch not found")
+            assert watch is not None
             view = _watch_to_view(watch)
         if watch.status == "active":
             next_at = get_next_run(watch.id)
@@ -188,12 +202,18 @@ def create_watches_router() -> APIRouter:
         return view
 
     @router.patch("/{watch_id}", response_model=WatchView)
-    async def update_watch(watch_id: str, body: WatchPatch) -> WatchView:
+    async def update_watch(
+        watch_id: str, body: WatchPatch, user: CurrentUser
+    ) -> WatchView:
         updates = body.model_dump(exclude_unset=True)
         if "status" in updates and updates["status"] not in ("active", "paused"):
             raise HTTPException(400, "status must be 'active' or 'paused'")
+        owner = await resolve_local_user_id(user)
         async with get_db_session() as session:
             repo = WatchRepository(session)
+            existing = await repo.get_watch(watch_id)
+            if not _owns_watch(existing, owner):
+                raise HTTPException(404, "Watch not found")
             watch = await repo.update_watch(watch_id, **updates)
             if watch is None:
                 raise HTTPException(404, "Watch not found")
@@ -217,9 +237,13 @@ def create_watches_router() -> APIRouter:
         return view
 
     @router.delete("/{watch_id}")
-    async def delete_watch(watch_id: str) -> dict[str, bool]:
+    async def delete_watch(watch_id: str, user: CurrentUser) -> dict[str, bool]:
+        owner = await resolve_local_user_id(user)
         async with get_db_session() as session:
             repo = WatchRepository(session)
+            existing = await repo.get_watch(watch_id)
+            if not _owns_watch(existing, owner):
+                raise HTTPException(404, "Watch not found")
             ok = await repo.delete_watch(watch_id)
         if not ok:
             raise HTTPException(404, "Watch not found")
@@ -231,22 +255,26 @@ def create_watches_router() -> APIRouter:
 
     @router.get("/{watch_id}/runs", response_model=list[WatchRunView])
     async def list_runs(
-        watch_id: str, limit: int = Query(default=50, ge=1, le=500)
+        watch_id: str,
+        user: CurrentUser,
+        limit: int = Query(default=50, ge=1, le=500),
     ) -> list[WatchRunView]:
+        owner = await resolve_local_user_id(user)
         async with get_db_session() as session:
             repo = WatchRepository(session)
             watch = await repo.get_watch(watch_id)
-            if watch is None:
+            if not _owns_watch(watch, owner):
                 raise HTTPException(404, "Watch not found")
             runs = await repo.list_runs(watch_id, limit=limit)
             return [_run_to_view(r) for r in runs]
 
     @router.post("/{watch_id}/run-now")
-    async def run_now(watch_id: str) -> dict[str, str]:
+    async def run_now(watch_id: str, user: CurrentUser) -> dict[str, str]:
+        owner = await resolve_local_user_id(user)
         async with get_db_session() as session:
             repo = WatchRepository(session)
             watch = await repo.get_watch(watch_id)
-            if watch is None:
+            if not _owns_watch(watch, owner):
                 raise HTTPException(404, "Watch not found")
         trigger_now(watch_id)
         return {"status": "queued"}
@@ -259,13 +287,15 @@ def create_notifications_router() -> APIRouter:
 
     @router.get("", response_model=list[NotificationView])
     async def list_notifications(
+        user: CurrentUser,
         unread_only: bool = Query(default=False),
         limit: int = Query(default=50, ge=1, le=200),
     ) -> list[NotificationView]:
+        owner = await resolve_local_user_id(user)
         async with get_db_session() as session:
             repo = WatchRepository(session)
             notifs = await repo.list_notifications(
-                user_id=DEFAULT_USER_ID, unread_only=unread_only, limit=limit
+                user_id=owner, unread_only=unread_only, limit=limit
             )
             # Build a lookup: watch_id → name (avoid N+1 fetch)
             watch_ids = {n.watch_id for n in notifs}
@@ -277,15 +307,20 @@ def create_notifications_router() -> APIRouter:
             return [await _notif_to_view(n, lookup) for n in notifs]
 
     @router.get("/unread-count")
-    async def unread_count() -> dict[str, int]:
+    async def unread_count(user: CurrentUser) -> dict[str, int]:
+        owner = await resolve_local_user_id(user)
         async with get_db_session() as session:
             repo = WatchRepository(session)
-            return {"count": await repo.count_unread(user_id=DEFAULT_USER_ID)}
+            return {"count": await repo.count_unread(user_id=owner)}
 
     @router.post("/{notification_id}/read")
-    async def mark_read(notification_id: str) -> dict[str, bool]:
+    async def mark_read(notification_id: str, user: CurrentUser) -> dict[str, bool]:
+        owner = await resolve_local_user_id(user)
         async with get_db_session() as session:
             repo = WatchRepository(session)
+            notif = await session.get(Notification, notification_id)
+            if notif is None or (notif.user_id or DEFAULT_USER_ID) != owner:
+                raise HTTPException(404, "Notification not found")
             ok = await repo.mark_notification_read(notification_id)
         if not ok:
             raise HTTPException(404, "Notification not found")

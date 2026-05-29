@@ -130,9 +130,7 @@ def _msg(
 ) -> Any:
     """SimpleNamespace stand-in for persistence.models.Message — assembler only
     reads `role`, `input_text`, `final_answer`, and `id`."""
-    return SimpleNamespace(
-        id=msg_id, role=role, input_text=input_text, final_answer=final_answer
-    )
+    return SimpleNamespace(id=msg_id, role=role, input_text=input_text, final_answer=final_answer)
 
 
 # ── assembler ────────────────────────────────────────────────────────────
@@ -232,9 +230,7 @@ def test_resolve_image_path_returns_none_for_non_images_url(
 # ── renderers ───────────────────────────────────────────────────────────
 
 
-def _make_report_data(
-    *, with_image: bool, images_dir: Path
-) -> MetaAnalysisReportData:
+def _make_report_data(*, with_image: bool, images_dir: Path) -> MetaAnalysisReportData:
     forest_url: str | None = None
     if with_image:
         # Render a tiny real PNG via PIL (already a transitive dep of

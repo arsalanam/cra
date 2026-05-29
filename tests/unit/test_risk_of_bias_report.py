@@ -53,7 +53,8 @@ def _study(pmid: str, *, judgment: str = "low", high_dom: bool = False) -> Study
         domains=domains,
         overall_judgment=judgment,
         overall_rationale=(
-            "Worst-case domain elevates overall to high." if judgment == "high"
+            "Worst-case domain elevates overall to high."
+            if judgment == "high"
             else "All domains low or some_concerns; overall some_concerns."
         ),
     )
@@ -69,12 +70,8 @@ def _summary(is_final: bool = True, with_plot: bool = False) -> RobSummary:
         ],
         domain_distribution=[
             DomainDistribution(domain="Randomization process", low=2, high=1),
-            DomainDistribution(
-                domain="Deviations from intended interventions", some_concerns=3
-            ),
-            DomainDistribution(
-                domain="Missing outcome data", no_information=3
-            ),
+            DomainDistribution(domain="Deviations from intended interventions", some_concerns=3),
+            DomainDistribution(domain="Missing outcome data", no_information=3),
         ],
         summary_plot_image="/images/abc_rob.png" if with_plot else None,
         narrative=(
@@ -99,9 +96,7 @@ def _msg(
     final_answer: str | None = None,
     msg_id: str = "m",
 ) -> Any:
-    return SimpleNamespace(
-        id=msg_id, role=role, input_text=input_text, final_answer=final_answer
-    )
+    return SimpleNamespace(id=msg_id, role=role, input_text=input_text, final_answer=final_answer)
 
 
 # ── assembler ────────────────────────────────────────────────────────────

@@ -46,8 +46,17 @@ class ThreadRepository:
     async def get_thread(self, thread_id: str) -> Thread | None:
         return await self._s.get(Thread, thread_id)
 
-    async def list_threads(self, limit: int = 50, offset: int = 0) -> list[Thread]:
-        stmt = select(Thread).order_by(Thread.updated_at.desc()).offset(offset).limit(limit)
+    async def list_threads(
+        self,
+        limit: int = 50,
+        offset: int = 0,
+        *,
+        user_id: str | None = None,
+    ) -> list[Thread]:
+        stmt = select(Thread)
+        if user_id is not None:
+            stmt = stmt.where(Thread.user_id == user_id)
+        stmt = stmt.order_by(Thread.updated_at.desc()).offset(offset).limit(limit)
         result = await self._s.execute(stmt)
         return list(result.scalars().all())
 
@@ -143,10 +152,27 @@ class ThreadRepository:
 
     # ── Eager-loading helpers ─────────────────────────────────────────────
 
-    async def get_done_events_since(self, since: datetime) -> list[StreamEvent]:
+    async def get_done_events_since(
+        self,
+        since: datetime,
+        *,
+        user_id: str | None = None,
+    ) -> list[StreamEvent]:
+        """Fetch all `done` stream events since a timestamp.
+
+        Filtering by `user_id` walks StreamEvent → Message → Thread.user_id
+        so per-user daily token totals (RBAC-3) can be computed without
+        touching the event payload itself.
+        """
         stmt = select(StreamEvent).where(
             StreamEvent.event_type == "done", StreamEvent.created_at >= since
         )
+        if user_id is not None:
+            stmt = (
+                stmt.join(Message, Message.id == StreamEvent.message_id)
+                .join(Thread, Thread.id == Message.thread_id)
+                .where(Thread.user_id == user_id)
+            )
         result = await self._s.execute(stmt)
         return list(result.scalars().all())
 

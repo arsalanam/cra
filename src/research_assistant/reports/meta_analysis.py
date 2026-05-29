@@ -134,16 +134,12 @@ def assemble_report_data(
             try:
                 extraction = DataExtraction.model_validate_json(msg.final_answer)
             except ValidationError:
-                logger.exception(
-                    "Skipping malformed DataExtraction in message %s", msg.id
-                )
+                logger.exception("Skipping malformed DataExtraction in message %s", msg.id)
         elif kind == "meta_analysis":
             try:
                 analysis = MetaAnalysisResults.model_validate_json(msg.final_answer)
             except ValidationError:
-                logger.exception(
-                    "Skipping malformed MetaAnalysisResults in message %s", msg.id
-                )
+                logger.exception("Skipping malformed MetaAnalysisResults in message %s", msg.id)
 
     if analysis is None:
         return None
@@ -196,10 +192,7 @@ def _resolve_image_path(url_path: str | None, images_dir: Path) -> Path | None:
 
 
 def _format_effect(r: MetaAnalysisOutcomeResult) -> str:
-    return (
-        f"{r.effect_measure} = {r.pooled_effect:.2f} "
-        f"(95% CI {r.ci_lower:.2f}–{r.ci_upper:.2f})"
-    )
+    return f"{r.effect_measure} = {r.pooled_effect:.2f} (95% CI {r.ci_lower:.2f}–{r.ci_upper:.2f})"
 
 
 def _format_heterogeneity(r: MetaAnalysisOutcomeResult) -> str:
@@ -272,9 +265,7 @@ def _studies_pdf_table(
     if not studies:
         return None
     headers = ["PMID", "Title", "Design", "Follow-up"]
-    rows: list[list[Any]] = [
-        [Paragraph(h, styles["CellHead"]) for h in headers]
-    ]
+    rows: list[list[Any]] = [[Paragraph(h, styles["CellHead"]) for h in headers]]
     for s in studies:
         rows.append(
             [
@@ -398,15 +389,11 @@ def build_pdf(data: MetaAnalysisReportData, images_dir: Path) -> bytes:
                 max_w = 6.4 * inch
                 draw_w = max_w
                 draw_h = max_w * (ih / iw) if iw else 4.0 * inch
-                outcome_block.append(
-                    RLImage(str(local_image), width=draw_w, height=draw_h)
-                )
+                outcome_block.append(RLImage(str(local_image), width=draw_w, height=draw_h))
             except Exception as exc:  # pragma: no cover - defensive
                 logger.warning("Failed to embed forest plot %s: %s", local_image, exc)
                 outcome_block.append(
-                    Paragraph(
-                        "<i>Forest plot could not be embedded.</i>", styles["Body"]
-                    )
+                    Paragraph("<i>Forest plot could not be embedded.</i>", styles["Body"])
                 )
         elif r.forest_plot_image:
             outcome_block.append(
@@ -444,9 +431,7 @@ def build_docx(data: MetaAnalysisReportData, images_dir: Path) -> bytes:
 
     # Eyebrow line + title
     eyebrow = doc.add_paragraph()
-    eyebrow_run = eyebrow.add_run(
-        f"Generated {data.generated_at.strftime('%Y-%m-%d %H:%M UTC')}"
-    )
+    eyebrow_run = eyebrow.add_run(f"Generated {data.generated_at.strftime('%Y-%m-%d %H:%M UTC')}")
     eyebrow_run.italic = True
     eyebrow_run.font.size = Pt(9)
     eyebrow_run.font.color.rgb = DOCX_MUTED
@@ -546,9 +531,7 @@ def build_docx(data: MetaAnalysisReportData, images_dir: Path) -> bytes:
                 for run in err.runs:
                     run.italic = True
         elif r.forest_plot_image:
-            note = doc.add_paragraph(
-                "Forest plot file unavailable on this server."
-            )
+            note = doc.add_paragraph("Forest plot file unavailable on this server.")
             for run in note.runs:
                 run.italic = True
         interp = doc.add_paragraph(r.interpretation)

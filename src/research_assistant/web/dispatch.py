@@ -23,19 +23,22 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from ..agent.dispatcher import dispatch
+from ..agent.dispatcher import SkillNotAuthorizedError, dispatch
 from ..config import get_settings
 from ..persistence.context import messages_to_history
 from ..persistence.database import get_db_session
-from ..persistence.models import Message
+from ..persistence.models import DEFAULT_USER_ID, Message
 from ..persistence.repository import ThreadRepository
 from ..persistence.summarizer import StubThreadSummarizer
+from ..persistence.user_repository import UserRepository
 from ..services.quota import (
     DailyTokenQuotaExceeded,
     build_quota_payload,
     enforce_daily_token_quota,
     get_today_token_totals,
 )
+from .auth import CurrentUser
+from .threads import resolve_local_user_id
 
 logger = logging.getLogger(__name__)
 
@@ -212,7 +215,7 @@ def create_dispatch_router() -> APIRouter:
 
     @router.post("/turn", response_model=TurnResponse)
     @router.post("/clinical/turn", response_model=TurnResponse)
-    async def turn(body: TurnRequest) -> TurnResponse:
+    async def turn(body: TurnRequest, user: CurrentUser) -> TurnResponse:
         settings = get_settings()
         logger.info(
             "Turn requested — thread=%s, msg=%r",
@@ -220,10 +223,13 @@ def create_dispatch_router() -> APIRouter:
             body.user_message[:80],
         )
 
+        owner_id = await resolve_local_user_id(user)
         async with get_db_session() as session:
             repo = ThreadRepository(session)
             thread = await repo.get_thread(body.thread_id)
-            if thread is None:
+            # RBAC-3: refuse to run a turn against another user's thread.
+            # Return 404 (not 403) to avoid leaking thread-id existence.
+            if thread is None or (thread.user_id or DEFAULT_USER_ID) != owner_id:
                 raise HTTPException(404, "Thread not found")
 
             # Pre-flight daily-token quota — refuse before persisting the
@@ -256,13 +262,49 @@ def create_dispatch_router() -> APIRouter:
             if await summarizer.should_summarize(body.thread_id, session):
                 await summarizer.summarize_and_truncate(body.thread_id, session)
 
+            # RBAC-1 skill gating: resolve the caller's global-scope
+            # effective permissions and pass them down to the dispatcher.
+            # When auth is disabled, settings.auth_enabled is False and we
+            # pass None to bypass the gate (default-user is meant to be
+            # all-powerful in test/dev). Same session so the lookup joins
+            # the user's already-loaded thread context.
+            if settings.auth_enabled:
+                effective_perms = await UserRepository(session).effective_permissions_for_sub(
+                    user.sub
+                )
+            else:
+                effective_perms = None
+
         try:
             output, meta, chosen_workflow = await dispatch(
                 body.user_message,
                 current_workflow=current_workflow,
                 message_history=history,
                 last_turn_kind=last_kind,
+                effective_permissions=effective_perms,
             )
+        except SkillNotAuthorizedError as skill_exc:
+            # 403 with an actionable message — tells the user which workflow
+            # was attempted and which permission they'd need. The frontend
+            # can hide the entry points for skills the caller lacks (using
+            # /auth/me's `permissions` list) so this branch only fires when
+            # someone bypasses the UI.
+            logger.info(
+                "Skill gate blocked thread=%s sub=%s workflow=%s",
+                body.thread_id,
+                user.sub,
+                skill_exc.workflow,
+            )
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    f"Your account isn't authorized for the "
+                    f"'{skill_exc.workflow}' workflow. "
+                    f"Required permission: {skill_exc.required.value}. "
+                    f"Ask an administrator to grant a role that includes it, "
+                    f"or use a workflow you do have access to."
+                ),
+            ) from skill_exc
         except Exception as e:
             logger.exception("Dispatcher / specialist failed for thread=%s", body.thread_id)
             # Record the errored turn so it shows up in the usage page +

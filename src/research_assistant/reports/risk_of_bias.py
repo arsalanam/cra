@@ -208,17 +208,11 @@ def _distribution_pdf_table(
     return t
 
 
-def _assessment_pdf_block(
-    s: StudyRobAssessment, styles: dict[str, ParagraphStyle]
-) -> list[Any]:
+def _assessment_pdf_block(s: StudyRobAssessment, styles: dict[str, ParagraphStyle]) -> list[Any]:
     block: list[Any] = []
     overall_color = _JUDGMENT_COLORS.get(s.overall_judgment, colors.black)
     overall_hex = overall_color.hexval() if hasattr(overall_color, "hexval") else "#000000"
-    block.append(
-        Paragraph(
-            f"PMID {s.pmid} — {s.title}", styles["H3"]
-        )
-    )
+    block.append(Paragraph(f"PMID {s.pmid} — {s.title}", styles["H3"]))
     block.append(
         Paragraph(
             f"<b>Design:</b> {s.study_design or '—'}  ·  "
@@ -241,9 +235,7 @@ def _assessment_pdf_block(
         for d in s.domains:
             jcolor = _JUDGMENT_COLORS.get(d.judgment, colors.black)
             jhex = jcolor.hexval() if hasattr(jcolor, "hexval") else "#000000"
-            quote = (
-                f'<br/><i>"{d.quote}"</i>' if getattr(d, "quote", None) else ""
-            )
+            quote = f'<br/><i>"{d.quote}"</i>' if getattr(d, "quote", None) else ""
             rows.append(
                 [
                     Paragraph(d.domain, styles["Cell"]),
@@ -346,11 +338,7 @@ def build_pdf(data: RobReportData, images_dir: Path) -> bytes:
             story.append(RLImage(str(local_image), width=draw_w, height=draw_h))
         except Exception as exc:  # pragma: no cover - defensive
             logger.warning("Failed to embed RoB summary plot %s: %s", local_image, exc)
-            story.append(
-                Paragraph(
-                    "<i>Summary plot could not be embedded.</i>", styles["Body"]
-                )
-            )
+            story.append(Paragraph("<i>Summary plot could not be embedded.</i>", styles["Body"]))
     elif data.summary_plot_image:
         story.append(
             Paragraph(
@@ -391,11 +379,7 @@ def build_pdf(data: RobReportData, images_dir: Path) -> bytes:
 
     if not data.is_final:
         story.append(Spacer(1, 0.1 * inch))
-        story.append(
-            Paragraph(
-                "<i>Draft — not finalised by the reviewer.</i>", styles["Het"]
-            )
-        )
+        story.append(Paragraph("<i>Draft — not finalised by the reviewer.</i>", styles["Het"]))
 
     doc.build(story)
     return buf.getvalue()

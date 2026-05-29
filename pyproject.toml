@@ -55,6 +55,19 @@ target-version = "py313"
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
 
+[tool.ruff.lint.flake8-bugbear]
+# RBAC-2 dependency factories return `Depends(...)` and are the standard
+# FastAPI idiom for parameter-level auth. Treat them as immutable like
+# fastapi.Depends so B008 doesn't fire on every gated route.
+extend-immutable-calls = [
+    "fastapi.Depends",
+    "fastapi.Query",
+    "fastapi.Header",
+    "fastapi.Form",
+    "fastapi.File",
+    "research_assistant.web.authz.require_permission_scoped",
+]
+
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["E501"]
 # Long prompt strings and sample-question text are intentionally verbose.

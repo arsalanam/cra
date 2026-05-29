@@ -707,6 +707,18 @@ function App() {
   const [watchModal, setWatchModal] = useState(null);  // { pubmedQuery, sampleHitPmids, picoSeed } or null
   const conversationRef = useRef(null);
 
+  // RBAC-3 frontend gating. /auth/me returns the caller's effective
+  // permission strings; we use them to hide affordances the backend would
+  // reject anyway. Two short-circuits:
+  //   • Auth-disabled (default-user) → everything visible (single-user dev).
+  //   • Not loaded yet (me === null) → don't render gated links at all so
+  //     they don't pop in/out on first paint.
+  function hasPerm(p) {
+    if (!me) return false;
+    if (me.sub === "default-user") return true;
+    return (me.permissions || []).includes(p);
+  }
+
   useEffect(() => {
     fetch("/api/health").then(r => r.json()).then(setHealth).catch(() => {});
     fetch("/auth/me").then(r => r.ok ? r.json() : null).then(setMe).catch(() => setMe(null));
@@ -1040,14 +1052,18 @@ function App() {
               </div>
             )}
           </div>
-          <a className="sidebar-link" href="/library.html">▥ Library</a>
-          <a className="sidebar-link" href="/ecrf.html">⊞ Form Builder</a>
-          <a className="sidebar-link" href="/collector.html">✚ Data Capture</a>
-          <a className="sidebar-link" href="/watches.html">▤ Watches</a>
+          {hasPerm("library.read") && <a className="sidebar-link" href="/library.html">▥ Library</a>}
+          {(hasPerm("study.author") || hasPerm("study.create") || hasPerm("skill.ecrf_design")) && (
+            <a className="sidebar-link" href="/ecrf.html">⊞ Form Builder</a>
+          )}
+          {(hasPerm("data.enter") || hasPerm("data.read")) && (
+            <a className="sidebar-link" href="/collector.html">✚ Data Capture</a>
+          )}
+          {hasPerm("watch.read") && <a className="sidebar-link" href="/watches.html">▤ Watches</a>}
           <button className="sidebar-link" onClick={openUsage} style={view === "usage" ? { background: "#1f232c", color: "#e6e6e6" } : {}}>
             ~ Usage
           </button>
-          {me && (me.sub === "default-user" || (me.roles || []).includes("admin")) && (
+          {hasPerm("user.manage") && (
             <a className="sidebar-link" href="/admin.html">⚙ Settings</a>
           )}
           <div className="sidebar-divider" />
@@ -1085,9 +1101,18 @@ function App() {
             <p>Start a new thread to draft a review protocol, build a database search strategy, or run a meta-analysis end-to-end.</p>
             <p style={{ marginTop: 16, color: "#5a6070" }}>The assistant supports:</p>
             <ul>
-              <li><strong>Protocol draft</strong> — research question → PRISMA-P methods (PICO + eligibility + RoB tool + synthesis plan) → full document with grounded background + PROSPERO field map. Try <code>/protocol</code>.</li>
-              <li><strong>Search strategy</strong> — research question → MeSH-expanded Boolean query, tested on PubMed + Europe PMC, with copy-paste plans for Cochrane CENTRAL and Embase. Try <code>/search</code>.</li>
-              <li><strong>Meta-analysis</strong> — clinical question → PICO → search → extraction → pooled effects + forest plots. Try <code>/meta</code>.</li>
+              {hasPerm("skill.sr_protocol") && (
+                <li><strong>Protocol draft</strong> — research question → PRISMA-P methods (PICO + eligibility + RoB tool + synthesis plan) → full document with grounded background + PROSPERO field map. Try <code>/protocol</code>.</li>
+              )}
+              {hasPerm("skill.search_strategy") && (
+                <li><strong>Search strategy</strong> — research question → MeSH-expanded Boolean query, tested on PubMed + Europe PMC, with copy-paste plans for Cochrane CENTRAL and Embase. Try <code>/search</code>.</li>
+              )}
+              {hasPerm("skill.meta_analysis") && (
+                <li><strong>Meta-analysis</strong> — clinical question → PICO → search → extraction → pooled effects + forest plots. Try <code>/meta</code>.</li>
+              )}
+              {hasPerm("skill.risk_of_bias") && (
+                <li><strong>Risk of bias</strong> — RoB 2.0 / ROBINS-I per-study judgements + summary plot + sensitivity hand-off. Try <code>/rob</code>.</li>
+              )}
               <li><strong>Anti-hallucination</strong> — every PMID, MeSH term, and citation is grounded in a real tool call</li>
             </ul>
           </div>

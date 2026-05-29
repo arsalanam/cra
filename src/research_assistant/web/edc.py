@@ -2,9 +2,10 @@
 
 Distinct from the `/api/ecrf/*` authoring API: this namespace deploys a
 published study for data collection and captures subject data into the
-separate clinical-data (PHI) store, with a full audit trail. Writes require
-the `data_entry`/`admin` role; the future Data Collector UI (E4) consumes
-this API (it never touches the database directly — D5).
+separate clinical-data (PHI) store, with a full audit trail. Writes are
+gated per the permission matrix in `rbac-design.md` §4.5 — each handler's
+dependency names the permission it requires and the scope (deployment,
+subject, or form_instance) it resolves against.
 """
 
 from __future__ import annotations
@@ -16,6 +17,8 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict
 
+from ..auth import SessionPayload
+from ..auth.rbac import Permission
 from ..domain.ecrf import FormDefinition
 from ..persistence.clinical.database import get_clinical_session
 from ..persistence.clinical.repository import (
@@ -27,7 +30,8 @@ from ..persistence.clinical.repository import (
 )
 from ..persistence.database import get_db_session
 from ..persistence.ecrf_repository import EcrfRepository
-from .auth import AdminUser, DataEntryUser
+from .auth import CurrentUser
+from .authz import require_permission_scoped
 
 logger = logging.getLogger(__name__)
 
@@ -214,7 +218,10 @@ def create_edc_router() -> APIRouter:
     # ── deployments ──────────────────────────────────────────────────────
 
     @router.post("/deployments", response_model=DeploymentOut, status_code=201)
-    async def deploy(body: DeploymentIn, user: DataEntryUser) -> DeploymentOut:
+    async def deploy(
+        body: DeploymentIn,
+        user: SessionPayload = require_permission_scoped(Permission.DEPLOYMENT_MANAGE),
+    ) -> DeploymentOut:
         # Read the study's PUBLISHED forms from the research DB, then snapshot
         # them into the clinical store so it is self-contained.
         async with get_db_session() as rsession:
@@ -249,7 +256,7 @@ def create_edc_router() -> APIRouter:
             return DeploymentOut.model_validate(deployment)
 
     @router.get("/deployments", response_model=list[DeploymentOut])
-    async def list_deployments() -> list[DeploymentOut]:
+    async def list_deployments(user: CurrentUser) -> list[DeploymentOut]:
         async with get_clinical_session() as s:
             return [
                 DeploymentOut.model_validate(d)
@@ -257,13 +264,17 @@ def create_edc_router() -> APIRouter:
             ]
 
     @router.get("/deployments/{deployment_id}/forms", response_model=list[DeployedFormOut])
-    async def list_deployed_forms(deployment_id: str) -> list[DeployedFormOut]:
+    async def list_deployed_forms(
+        deployment_id: str, user: CurrentUser
+    ) -> list[DeployedFormOut]:
         async with get_clinical_session() as s:
             forms = await ClinicalRepository(s).list_deployed_forms(deployment_id)
             return [DeployedFormOut.model_validate(f) for f in forms]
 
     @router.get("/deployed-forms/{deployed_form_id}", response_model=DeployedFormDetailOut)
-    async def get_deployed_form(deployed_form_id: str) -> DeployedFormDetailOut:
+    async def get_deployed_form(
+        deployed_form_id: str, user: CurrentUser
+    ) -> DeployedFormDetailOut:
         """The deployed form's full definition — used by the collector to render it."""
         async with get_clinical_session() as s:
             df = await ClinicalRepository(s).get_deployed_form(deployed_form_id)
@@ -277,7 +288,13 @@ def create_edc_router() -> APIRouter:
     # ── sites ────────────────────────────────────────────────────────────
 
     @router.post("/deployments/{deployment_id}/sites", response_model=SiteOut, status_code=201)
-    async def add_site(deployment_id: str, body: SiteIn, user: DataEntryUser) -> SiteOut:
+    async def add_site(
+        deployment_id: str,
+        body: SiteIn,
+        user: SessionPayload = require_permission_scoped(
+            Permission.DEPLOYMENT_MANAGE, resource_param="deployment_id"
+        ),
+    ) -> SiteOut:
         async with get_clinical_session() as s:
             try:
                 site = await ClinicalRepository(s).add_site(
@@ -288,7 +305,7 @@ def create_edc_router() -> APIRouter:
             return SiteOut.model_validate(site)
 
     @router.get("/deployments/{deployment_id}/sites", response_model=list[SiteOut])
-    async def list_sites(deployment_id: str) -> list[SiteOut]:
+    async def list_sites(deployment_id: str, user: CurrentUser) -> list[SiteOut]:
         async with get_clinical_session() as s:
             return [
                 SiteOut.model_validate(x)
@@ -300,7 +317,13 @@ def create_edc_router() -> APIRouter:
     @router.post(
         "/deployments/{deployment_id}/subjects", response_model=SubjectOut, status_code=201
     )
-    async def add_subject(deployment_id: str, body: SubjectIn, user: DataEntryUser) -> SubjectOut:
+    async def add_subject(
+        deployment_id: str,
+        body: SubjectIn,
+        user: SessionPayload = require_permission_scoped(
+            Permission.DEPLOYMENT_MANAGE, resource_param="deployment_id"
+        ),
+    ) -> SubjectOut:
         async with get_clinical_session() as s:
             try:
                 subject = await ClinicalRepository(s).add_subject(
@@ -314,7 +337,7 @@ def create_edc_router() -> APIRouter:
             return SubjectOut.model_validate(subject)
 
     @router.get("/deployments/{deployment_id}/subjects", response_model=list[SubjectOut])
-    async def list_subjects(deployment_id: str) -> list[SubjectOut]:
+    async def list_subjects(deployment_id: str, user: CurrentUser) -> list[SubjectOut]:
         async with get_clinical_session() as s:
             subs = await ClinicalRepository(s).list_subjects(deployment_id)
             return [SubjectOut.model_validate(x) for x in subs]
@@ -322,7 +345,12 @@ def create_edc_router() -> APIRouter:
     @router.post(
         "/subjects/{subject_id}/epro-access", response_model=EproAccessOut, status_code=201
     )
-    async def issue_epro_access(subject_id: str, user: DataEntryUser) -> EproAccessOut:
+    async def issue_epro_access(
+        subject_id: str,
+        user: SessionPayload = require_permission_scoped(
+            Permission.DATA_ENTER, resource_param="subject_id"
+        ),
+    ) -> EproAccessOut:
         """Issue a participant ePRO magic-link token for a subject (raw token shown once)."""
         async with get_clinical_session() as s:
             try:
@@ -338,13 +366,21 @@ def create_edc_router() -> APIRouter:
     # ── form instances + data ────────────────────────────────────────────
 
     @router.get("/subjects/{subject_id}/forms", response_model=list[FormInstanceOut])
-    async def list_subject_forms(subject_id: str) -> list[FormInstanceOut]:
+    async def list_subject_forms(
+        subject_id: str, user: CurrentUser
+    ) -> list[FormInstanceOut]:
         async with get_clinical_session() as s:
             instances = await ClinicalRepository(s).list_form_instances(subject_id)
             return [FormInstanceOut.model_validate(fi) for fi in instances]
 
     @router.post("/subjects/{subject_id}/forms", response_model=FormInstanceOut, status_code=201)
-    async def open_form(subject_id: str, body: OpenFormIn, user: DataEntryUser) -> FormInstanceOut:
+    async def open_form(
+        subject_id: str,
+        body: OpenFormIn,
+        user: SessionPayload = require_permission_scoped(
+            Permission.DATA_ENTER, resource_param="subject_id"
+        ),
+    ) -> FormInstanceOut:
         async with get_clinical_session() as s:
             try:
                 fi = await ClinicalRepository(s).open_form_instance(
@@ -359,7 +395,11 @@ def create_edc_router() -> APIRouter:
 
     @router.put("/form-instances/{form_instance_id}/data", response_model=FormInstanceOut)
     async def submit_data(
-        form_instance_id: str, body: SubmitDataIn, user: DataEntryUser
+        form_instance_id: str,
+        body: SubmitDataIn,
+        user: SessionPayload = require_permission_scoped(
+            Permission.DATA_ENTER, resource_param="form_instance_id"
+        ),
     ) -> FormInstanceOut:
         async with get_clinical_session() as s:
             try:
@@ -388,7 +428,9 @@ def create_edc_router() -> APIRouter:
             return FormInstanceOut.model_validate(fi)
 
     @router.get("/form-instances/{form_instance_id}", response_model=FormInstanceDetailOut)
-    async def get_form_instance(form_instance_id: str) -> FormInstanceDetailOut:
+    async def get_form_instance(
+        form_instance_id: str, user: CurrentUser
+    ) -> FormInstanceDetailOut:
         async with get_clinical_session() as s:
             found = await ClinicalRepository(s).get_form_instance(form_instance_id)
             if found is None:
@@ -400,7 +442,12 @@ def create_edc_router() -> APIRouter:
             )
 
     @router.get("/form-instances/{form_instance_id}/audit", response_model=list[AuditEntryOut])
-    async def get_audit(form_instance_id: str) -> list[AuditEntryOut]:
+    async def get_audit(
+        form_instance_id: str,
+        user: SessionPayload = require_permission_scoped(
+            Permission.AUDIT_READ, resource_param="form_instance_id"
+        ),
+    ) -> list[AuditEntryOut]:
         async with get_clinical_session() as s:
             entries = await ClinicalRepository(s).get_form_instance_audit(form_instance_id)
             return [AuditEntryOut.model_validate(e) for e in entries]
@@ -408,7 +455,9 @@ def create_edc_router() -> APIRouter:
     # ── queries / discrepancies ──────────────────────────────────────────
 
     @router.get("/form-instances/{form_instance_id}/queries", response_model=list[QueryOut])
-    async def list_queries(form_instance_id: str) -> list[QueryOut]:
+    async def list_queries(
+        form_instance_id: str, user: CurrentUser
+    ) -> list[QueryOut]:
         async with get_clinical_session() as s:
             qs = await ClinicalRepository(s).list_queries(form_instance_id)
             return [QueryOut.model_validate(q) for q in qs]
@@ -417,7 +466,11 @@ def create_edc_router() -> APIRouter:
         "/form-instances/{form_instance_id}/queries", response_model=QueryOut, status_code=201
     )
     async def raise_query(
-        form_instance_id: str, body: ManualQueryIn, user: DataEntryUser
+        form_instance_id: str,
+        body: ManualQueryIn,
+        user: SessionPayload = require_permission_scoped(
+            Permission.QUERY_RAISE, resource_param="form_instance_id"
+        ),
     ) -> QueryOut:
         async with get_clinical_session() as s:
             try:
@@ -429,7 +482,13 @@ def create_edc_router() -> APIRouter:
             return QueryOut.model_validate(q)
 
     @router.post("/queries/{query_id}/respond", response_model=QueryOut)
-    async def respond_query(query_id: str, body: QueryResponseIn, user: DataEntryUser) -> QueryOut:
+    async def respond_query(
+        query_id: str,
+        body: QueryResponseIn,
+        user: SessionPayload = require_permission_scoped(
+            Permission.QUERY_RESPOND, resource_param="query_id"
+        ),
+    ) -> QueryOut:
         async with get_clinical_session() as s:
             try:
                 q = await ClinicalRepository(s).respond_query(
@@ -440,7 +499,12 @@ def create_edc_router() -> APIRouter:
             return QueryOut.model_validate(q)
 
     @router.post("/queries/{query_id}/close", response_model=QueryOut)
-    async def close_query(query_id: str, user: DataEntryUser) -> QueryOut:
+    async def close_query(
+        query_id: str,
+        user: SessionPayload = require_permission_scoped(
+            Permission.QUERY_CLOSE, resource_param="query_id"
+        ),
+    ) -> QueryOut:
         async with get_clinical_session() as s:
             try:
                 q = await ClinicalRepository(s).close_query(query_id, actor_sub=user.sub)
@@ -451,7 +515,13 @@ def create_edc_router() -> APIRouter:
     # ── e-signatures + lock (E5) ───────────────────────────────────────────
 
     @router.post("/form-instances/{form_instance_id}/sign", response_model=SignatureOut)
-    async def sign(form_instance_id: str, body: SignIn, user: DataEntryUser) -> SignatureOut:
+    async def sign(
+        form_instance_id: str,
+        body: SignIn,
+        user: SessionPayload = require_permission_scoped(
+            Permission.FORM_SIGN, resource_param="form_instance_id"
+        ),
+    ) -> SignatureOut:
         async with get_clinical_session() as s:
             try:
                 sig = await ClinicalRepository(s).sign_form_instance(
@@ -462,19 +532,29 @@ def create_edc_router() -> APIRouter:
             return SignatureOut.model_validate(sig)
 
     @router.post("/form-instances/{form_instance_id}/unlock", response_model=FormInstanceOut)
-    async def unlock(form_instance_id: str, body: UnlockIn, admin: AdminUser) -> FormInstanceOut:
-        # Unlocking voids a signature — an elevated (admin) action.
+    async def unlock(
+        form_instance_id: str,
+        body: UnlockIn,
+        user: SessionPayload = require_permission_scoped(
+            Permission.FORM_UNLOCK, resource_param="form_instance_id"
+        ),
+    ) -> FormInstanceOut:
+        # Unlocking voids a signature — data-manager territory under
+        # RBAC-2's split. Previously admin-only; now the data_manager role
+        # carries `form.unlock` at study scope.
         async with get_clinical_session() as s:
             try:
                 fi = await ClinicalRepository(s).unlock_form_instance(
-                    form_instance_id, reason=body.reason, actor_sub=admin.sub
+                    form_instance_id, reason=body.reason, actor_sub=user.sub
                 )
             except ClinicalError as e:
                 raise HTTPException(409, str(e)) from e
             return FormInstanceOut.model_validate(fi)
 
     @router.get("/form-instances/{form_instance_id}/signatures", response_model=list[SignatureOut])
-    async def list_signatures(form_instance_id: str) -> list[SignatureOut]:
+    async def list_signatures(
+        form_instance_id: str, user: CurrentUser
+    ) -> list[SignatureOut]:
         async with get_clinical_session() as s:
             sigs = await ClinicalRepository(s).list_signatures(form_instance_id)
             return [SignatureOut.model_validate(x) for x in sigs]
@@ -482,7 +562,15 @@ def create_edc_router() -> APIRouter:
     # ── source-data verification (E6) ───────────────────────────────────────
 
     @router.post("/form-instances/{form_instance_id}/verify")
-    async def verify(form_instance_id: str, body: VerifyIn, user: DataEntryUser) -> dict[str, int]:
+    async def verify(
+        form_instance_id: str,
+        body: VerifyIn,
+        user: SessionPayload = require_permission_scoped(
+            Permission.SDV_VERIFY, resource_param="form_instance_id"
+        ),
+    ) -> dict[str, int]:
+        # SDV is monitor (CRA) territory under RBAC-2. Previously open to
+        # any data-entry user, which violated separation-of-duties.
         async with get_clinical_session() as s:
             try:
                 n = await ClinicalRepository(s).verify_items(
@@ -495,7 +583,9 @@ def create_edc_router() -> APIRouter:
     @router.get(
         "/form-instances/{form_instance_id}/verifications", response_model=list[VerificationOut]
     )
-    async def list_verifications(form_instance_id: str) -> list[VerificationOut]:
+    async def list_verifications(
+        form_instance_id: str, user: CurrentUser
+    ) -> list[VerificationOut]:
         async with get_clinical_session() as s:
             vs = await ClinicalRepository(s).list_verifications(form_instance_id)
             return [VerificationOut.model_validate(v) for v in vs]
@@ -504,7 +594,11 @@ def create_edc_router() -> APIRouter:
 
     @router.post("/subjects/{subject_id}/sign", response_model=SubjectSignatureOut)
     async def sign_subject(
-        subject_id: str, body: SubjectSignIn, user: DataEntryUser
+        subject_id: str,
+        body: SubjectSignIn,
+        user: SessionPayload = require_permission_scoped(
+            Permission.CASEBOOK_SIGNOFF, resource_param="subject_id"
+        ),
     ) -> SubjectSignatureOut:
         async with get_clinical_session() as s:
             try:
@@ -516,18 +610,26 @@ def create_edc_router() -> APIRouter:
             return SubjectSignatureOut.model_validate(sig)
 
     @router.post("/subjects/{subject_id}/unlock", response_model=SubjectOut)
-    async def unlock_subject(subject_id: str, body: UnlockIn, admin: AdminUser) -> SubjectOut:
+    async def unlock_subject(
+        subject_id: str,
+        body: UnlockIn,
+        user: SessionPayload = require_permission_scoped(
+            Permission.SUBJECT_UNLOCK, resource_param="subject_id"
+        ),
+    ) -> SubjectOut:
         async with get_clinical_session() as s:
             try:
                 subject = await ClinicalRepository(s).unlock_subject(
-                    subject_id, reason=body.reason, actor_sub=admin.sub
+                    subject_id, reason=body.reason, actor_sub=user.sub
                 )
             except ClinicalError as e:
                 raise HTTPException(409, str(e)) from e
             return SubjectOut.model_validate(subject)
 
     @router.get("/subjects/{subject_id}/signatures", response_model=list[SubjectSignatureOut])
-    async def list_subject_signatures(subject_id: str) -> list[SubjectSignatureOut]:
+    async def list_subject_signatures(
+        subject_id: str, user: CurrentUser
+    ) -> list[SubjectSignatureOut]:
         async with get_clinical_session() as s:
             sigs = await ClinicalRepository(s).list_subject_signatures(subject_id)
             return [SubjectSignatureOut.model_validate(x) for x in sigs]

@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import logging
 import secrets
-from typing import Annotated
+from typing import Annotated, Any
 from urllib.parse import urlencode
 
 import httpx
@@ -29,6 +29,7 @@ from fastapi.responses import RedirectResponse
 
 from ..auth import (
     IdentityClaims,
+    Permission,
     SessionPayload,
     TokenValidationError,
     clear_session,
@@ -93,20 +94,60 @@ async def current_user(request: Request) -> SessionPayload:
 CurrentUser = Annotated[SessionPayload, Depends(current_user)]
 
 
-async def require_admin(user: CurrentUser) -> SessionPayload:
-    """FastAPI dependency: require the caller to hold the 'admin' role.
+async def _effective_perms(user: SessionPayload) -> frozenset[Permission]:
+    """Resolve the caller's global-scope effective permissions, fresh from DB.
 
-    Roles are read fresh from the DB (by Cognito sub) so a grant/revoke
-    takes effect on the next request rather than at next login. When auth
-    is disabled (tests / early dev) this short-circuits open, mirroring
-    `current_user`. Raises 403 if the authenticated user lacks 'admin'.
+    Caching is intentionally absent — the RBAC contract is that a grant or
+    revoke takes effect on the next request, not next login. A future
+    per-request cache is fine; a process-wide cache is not.
+    """
+    async with get_db_session() as db:
+        return await UserRepository(db).effective_permissions_for_sub(user.sub)
+
+
+def require_permission(perm: Permission) -> Any:
+    """Build a FastAPI dependency that allows the request only if the caller
+    holds `perm` at global scope (per `rbac-design.md` §5).
+
+    Returns `Depends(...)` so it composes the same way as the legacy
+    `AdminUser`/`DataEntryUser` annotations. When auth is disabled
+    (tests / early dev) the dependency short-circuits open, mirroring
+    `current_user`.
+
+    Per-study / per-site scope resolution lands in RBAC-2 alongside the
+    eCRF resource→scope resolvers. This RBAC-1 surface covers the
+    everything-global cases (skill gating, admin, data_entry).
+    """
+
+    async def _dep(user: CurrentUser) -> SessionPayload:
+        settings = get_settings()
+        if not settings.auth_enabled:
+            return user
+        perms = await _effective_perms(user)
+        if perm not in perms:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Permission required: {perm.value}.",
+            )
+        return user
+
+    return Depends(_dep)
+
+
+async def require_admin(user: CurrentUser) -> SessionPayload:
+    """FastAPI dependency: require platform-admin authority.
+
+    Back-compat shim — re-expresses the legacy `admin` role check as the
+    `user.manage` permission, which the matrix in `auth.rbac` grants only
+    to the `admin` role. Anything calling this keeps working; new code
+    should depend on `require_permission(Permission.USER_MANAGE)` (or the
+    narrower perm it actually needs) directly.
     """
     settings = get_settings()
     if not settings.auth_enabled:
         return user
-    async with get_db_session() as db:
-        roles = await UserRepository(db).roles_for_sub(user.sub)
-    if "admin" not in roles:
+    perms = await _effective_perms(user)
+    if Permission.USER_MANAGE not in perms:
         raise HTTPException(status_code=403, detail="Admin role required.")
     return user
 
@@ -115,19 +156,24 @@ AdminUser = Annotated[SessionPayload, Depends(require_admin)]
 
 
 async def require_data_entry(user: CurrentUser) -> SessionPayload:
-    """FastAPI dependency: require the 'data_entry' or 'admin' role (eCRF E1).
+    """FastAPI dependency: require clinical-data write authority (eCRF E1).
 
-    Gates clinical-data capture writes. Per-site scoping (a coordinator only
-    seeing their own site's subjects) is deferred to E4. Short-circuits open
-    when auth is disabled, mirroring `require_admin`.
+    Back-compat shim over the new `data.enter` permission, which the matrix
+    grants to `coordinator` (and `admin`). The legacy `data_entry` role
+    string is mapped to `coordinator` by `auth.rbac.normalize_legacy_role`
+    so existing assignments keep working without operator action. Per-site
+    scoping (a coordinator only seeing their own site's subjects) lands in
+    RBAC-2 — for now the check is global, exactly as before.
     """
     settings = get_settings()
     if not settings.auth_enabled:
         return user
-    async with get_db_session() as db:
-        roles = await UserRepository(db).roles_for_sub(user.sub)
-    if "data_entry" not in roles and "admin" not in roles:
-        raise HTTPException(status_code=403, detail="data_entry or admin role required.")
+    perms = await _effective_perms(user)
+    if Permission.DATA_ENTER not in perms:
+        raise HTTPException(
+            status_code=403,
+            detail="data_entry or admin role required.",
+        )
     return user
 
 
@@ -280,21 +326,32 @@ def create_auth_router() -> APIRouter:
 
     @router.get("/me")
     async def me(user: CurrentUser) -> dict[str, object]:
-        """Return identity + roles for the current session.
+        """Return identity + roles + effective permissions for the current session.
 
         Roles are loaded from the DB so the frontend can show/hide admin
         affordances without baking (staleable) roles into the cookie.
+
+        `permissions` is the global-scope effective permission set — the
+        frontend uses it to hide workflow entry points the caller can't
+        run (e.g. hide RoB / SR-protocol cards for a Student account that
+        only has `skill.meta_analysis` + `skill.general_qa`). Server-side
+        gating in `web/dispatch.py` is authoritative; this is UX polish.
         """
         settings = get_settings()
         roles: list[str] = []
+        permissions: list[str] = []
         if settings.auth_enabled:
             async with get_db_session() as db:
-                roles = await UserRepository(db).roles_for_sub(user.sub)
+                repo = UserRepository(db)
+                roles = await repo.roles_for_sub(user.sub)
+                perms = await repo.effective_permissions_for_sub(user.sub)
+                permissions = sorted(p.value for p in perms)
         return {
             "sub": user.sub,
             "email": user.email,
             "expires_at": user.expires_at,
             "roles": roles,
+            "permissions": permissions,
         }
 
     return router
@@ -303,9 +360,12 @@ def create_auth_router() -> APIRouter:
 __all__ = [
     "AdminUser",
     "CurrentUser",
+    "DataEntryUser",
     "create_auth_router",
     "current_user",
     "require_admin",
+    "require_data_entry",
+    "require_permission",
 ]
 
 

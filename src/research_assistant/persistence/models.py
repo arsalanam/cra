@@ -59,13 +59,21 @@ class User(Base):
     roles: Mapped[list[UserRole]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
+    role_assignments: Mapped[list[RoleAssignment]] = relationship(
+        cascade="all, delete-orphan",
+        foreign_keys="RoleAssignment.user_id",
+    )
 
 
 class UserRole(Base):
-    """An authorization role granted to a user (Phase B).
+    """An authorization role granted to a user (Phase B — pre-RBAC-1).
 
-    Cognito handles identity only; app authorization is driven by these
-    rows (Phase D). Replaced the boolean `User.is_admin`.
+    Superseded by `RoleAssignment` below, which carries the scope columns
+    that `rbac-design.md` §4.2 requires. The model stays around so
+    pre-RBAC-1 databases still inspect/migrate cleanly — `init_db` reads
+    these rows on startup and projects them to global-scoped
+    `RoleAssignment` rows, then leaves them in place (no destructive
+    drop). New writes go to `RoleAssignment` only.
     """
 
     __tablename__ = "user_roles"
@@ -79,6 +87,66 @@ class UserRole(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
     user: Mapped[User] = relationship(back_populates="roles")
+
+
+class RoleAssignment(Base):
+    """A scoped role grant (RBAC-1, replaces flat `UserRole`).
+
+    Per `rbac-design.md` §4.2: every grant is `(user, role, scope)` where
+    scope is `global` (whole platform), `study:<id>`, or `site:<id>`.
+    Broader scope satisfies narrower checks (§4.1: global ⊃ study ⊃ site).
+
+    `scope_id` is by-value — the eCRF clinical store lives in a different
+    database, so a true FK across DBs would be wrong. Integrity is
+    enforced at write time by the admin grant API.
+
+    No cascade FK to `users` here even though `user_id` references it,
+    because the dialect-agnostic ALTER paths used in `_apply_additive_
+    migrations` can't add a CASCADE FK after the fact; CASCADE on user
+    delete is fine for the new-row case (set up by `create_all`) and the
+    UserRepository revoke path handles the explicit case.
+    """
+
+    __tablename__ = "role_assignments"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "role",
+            "scope_type",
+            "scope_id",
+            name="uq_role_assignments_user_role_scope",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        index=True,
+    )
+    role: Mapped[str] = mapped_column(
+        Text,
+        doc="Canonical role name from auth.rbac.Role (admin | researcher | student | …).",
+    )
+    scope_type: Mapped[str] = mapped_column(
+        Text,
+        default="global",
+        doc="'global' | 'study' | 'site' (auth.rbac.ScopeType).",
+    )
+    scope_id: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        default=None,
+        doc=(
+            "NULL for scope_type='global'; the study or site id otherwise. "
+            "By-value reference into the clinical store (no cross-DB FK)."
+        ),
+    )
+    granted_by: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        default=None,
+    )
+    granted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
 class PendingInvitation(Base):

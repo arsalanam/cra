@@ -77,11 +77,21 @@ def today_utc_start() -> datetime:
     return now.replace(hour=0, minute=0, second=0, microsecond=0)
 
 
-async def get_today_token_totals(session: AsyncSession) -> DailyTokenTotals:
-    """Sum input + output tokens from today's `done` events."""
+async def get_today_token_totals(
+    session: AsyncSession,
+    *,
+    user_id: str | None = None,
+) -> DailyTokenTotals:
+    """Sum input + output tokens from today's `done` events.
+
+    `user_id` scopes to a single user's threads (RBAC-3). None ⇒ the
+    process-wide total, which is what enforcement reads — daily caps stay
+    global by design (the design doc explicitly defers role/tier-based
+    ceilings to a later refinement).
+    """
     day_start = today_utc_start()
     repo = ThreadRepository(session)
-    events = await repo.get_done_events_since(day_start)
+    events = await repo.get_done_events_since(day_start, user_id=user_id)
 
     total_in = 0
     total_out = 0

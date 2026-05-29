@@ -27,6 +27,7 @@ from typing import Any
 
 from pydantic_ai.messages import ModelMessage
 
+from ..auth.rbac import SKILL_PERMISSION, Permission
 from .specialists import (
     SPECIALISTS,
     general_qa,
@@ -37,6 +38,20 @@ from .specialists import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class SkillNotAuthorizedError(Exception):
+    """The classified workflow is gated behind a `skill.*` permission the
+    caller does not hold. Surfaced as a 403 by the /turn handler.
+    """
+
+    def __init__(self, workflow: str, required: Permission) -> None:
+        self.workflow = workflow
+        self.required = required
+        super().__init__(
+            f"This account is not authorized for the {workflow!r} workflow "
+            f"(needs {required.value})."
+        )
 
 
 # ── Slash-command map ────────────────────────────────────────────────────
@@ -224,19 +239,48 @@ def classify(user_message: str, current_workflow: str | None) -> str:
     return general_qa.WORKFLOW_NAME
 
 
+def authorize_workflow(
+    workflow: str,
+    effective_permissions: frozenset[Permission] | None,
+) -> None:
+    """Raise `SkillNotAuthorizedError` if the caller may not run `workflow`.
+
+    `effective_permissions=None` bypasses the check — used when auth is
+    disabled (tests / early dev) so the dispatcher stays usable without a
+    real identity. Production callers pass the resolved global-scope
+    permission set from `UserRepository.effective_permissions_for_sub`.
+
+    A workflow with no permission mapping (e.g. one not yet added to
+    `SKILL_PERMISSION`) is treated as unauthorized — fail closed.
+    """
+    if effective_permissions is None:
+        return
+    required = SKILL_PERMISSION.get(workflow)
+    if required is None:
+        raise SkillNotAuthorizedError(workflow, Permission.SKILL_GENERAL_QA)
+    if required not in effective_permissions:
+        raise SkillNotAuthorizedError(workflow, required)
+
+
 async def dispatch(
     user_message: str,
     *,
     current_workflow: str | None = None,
     message_history: Sequence[ModelMessage] | None = None,
     last_turn_kind: str | None = None,
+    effective_permissions: frozenset[Permission] | None = None,
 ) -> tuple[Any, dict[str, Any], str]:
     """Classify the message, run the chosen specialist, return (output, meta, workflow).
 
     The endpoint persists `workflow` back to the thread so subsequent turns
     stay routed correctly even if the user's later phrasing is ambiguous.
+
+    `effective_permissions` gates which specialist may run. Passing None
+    (the default) preserves the pre-RBAC behaviour where any workflow is
+    reachable, which is what we want for auth-disabled test/dev runs.
     """
     workflow = classify(user_message, current_workflow)
+    authorize_workflow(workflow, effective_permissions)
     specialist = SPECIALISTS[workflow]
     output, meta = await specialist.run_turn(
         user_message,

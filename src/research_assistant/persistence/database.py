@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from ..config import get_settings
-from .models import DEFAULT_USER_ID, Base, SourceConfig, User
+from .models import DEFAULT_USER_ID, Base, RoleAssignment, SourceConfig, User
 
 logger = logging.getLogger(__name__)
 
@@ -168,7 +168,51 @@ async def init_db() -> None:
                 logger.info("Seeded source_config %r", defaults["id"])
         await session.commit()
 
+        # RBAC-1: backfill `role_assignments` from any legacy `user_roles`
+        # rows so pre-RBAC-1 databases keep working without operator action.
+        # Idempotent: skips users that already have a RoleAssignment for the
+        # same (role, global). `user_roles` rows are left in place — they
+        # become read-only history.
+        await _backfill_role_assignments(session)
+
     logger.info("Database tables initialised")
+
+
+async def _backfill_role_assignments(session: AsyncSession) -> None:
+    """Project every legacy `user_roles` row to a global-scoped `role_assignments`
+    row. Idempotent — re-running on an already-migrated DB is a no-op.
+    """
+    legacy_rows = (await session.execute(text("SELECT user_id, role FROM user_roles"))).all()
+    if not legacy_rows:
+        return
+    # Existing global-scope assignments — used to dedupe so re-runs don't
+    # insert duplicates (the unique constraint would block them anyway, but
+    # we'd rather not even attempt the insert).
+    existing_rows = (
+        await session.execute(
+            text(
+                "SELECT user_id, role FROM role_assignments "
+                "WHERE scope_type = 'global' AND scope_id IS NULL"
+            )
+        )
+    ).all()
+    existing: set[tuple[str, str]] = {(r[0], r[1]) for r in existing_rows}
+    inserted = 0
+    for user_id, role in legacy_rows:
+        if (user_id, role) in existing:
+            continue
+        session.add(
+            RoleAssignment(
+                user_id=user_id,
+                role=role,
+                scope_type="global",
+                scope_id=None,
+            )
+        )
+        inserted += 1
+    if inserted:
+        await session.commit()
+        logger.info("Backfilled %d role_assignments from user_roles", inserted)
 
 
 _SOURCE_CONFIG_DEFAULTS: list[dict[str, Any]] = [

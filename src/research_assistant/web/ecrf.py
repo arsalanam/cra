@@ -1,9 +1,9 @@
 """eCRF authoring API (E0) — studies + versioned form definitions.
 
-The control-plane surface the future eCRF-Renderer UI consumes. Reads require
-an authenticated session (applied at app level); authoring/publish actions
-require the `admin` role (per-endpoint `AdminUser`) — a dedicated
-`study_designer` role can be introduced with the authoring UI (E3).
+The control-plane surface the future eCRF-Renderer UI consumes. Reads
+require an authenticated session (applied at app level); writes are
+gated per the permission matrix in `rbac-design.md` §4.5 — see comments
+on each handler for the specific permission.
 
 No subject data here — this is form *metadata* only.
 """
@@ -17,12 +17,15 @@ from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel, ConfigDict
 
 from ..agent.specialists import ecrf_design
+from ..auth import SessionPayload
+from ..auth.rbac import Permission
 from ..domain.ecrf import FormDefinition, StudyDraft, VisitSchedule
 from ..ecrf import form_to_odm_xml
 from ..persistence.database import get_db_session
 from ..persistence.ecrf_repository import EcrfError, EcrfRepository
 from ..persistence.models import EcrfFormDefinition
-from .auth import AdminUser
+from .auth import CurrentUser
+from .authz import require_permission_scoped
 
 logger = logging.getLogger(__name__)
 
@@ -88,37 +91,50 @@ def create_ecrf_router() -> APIRouter:
     router = APIRouter(prefix="/ecrf", tags=["ecrf"])
 
     # ── AI draft-from-protocol (E3) ────────────────────────────────────────
+    # skill.ecrf_design (global) — same gate as the dispatcher uses for the
+    # ecrf_design specialist; admins + study_designers only.
 
     @router.post("/draft", response_model=StudyDraft)
-    async def draft_forms(body: DraftIn, admin: AdminUser) -> StudyDraft:
+    async def draft_forms(
+        body: DraftIn,
+        user: SessionPayload = require_permission_scoped(Permission.SKILL_ECRF_DESIGN),
+    ) -> StudyDraft:
         """Draft a study's CRFs from protocol text (review-only; saves nothing)."""
         if not body.protocol_text.strip():
             raise HTTPException(422, "protocol_text is required")
-        draft, _meta = await ecrf_design.draft_from_protocol(body.protocol_text, body.instructions)
+        draft, _meta = await ecrf_design.draft_from_protocol(
+            body.protocol_text, body.instructions
+        )
         return draft
 
     # ── studies ──────────────────────────────────────────────────────────
+    # Reads stay open to any authenticated user (the app-level current_user
+    # is still enforced by `/api` mounting). Writes require study-author
+    # rights at the relevant study; creation is global.
 
     @router.post("/studies", response_model=StudyOut, status_code=201)
-    async def create_study(body: StudyIn, admin: AdminUser) -> StudyOut:
+    async def create_study(
+        body: StudyIn,
+        user: SessionPayload = require_permission_scoped(Permission.STUDY_CREATE),
+    ) -> StudyOut:
         async with get_db_session() as session:
             study = await EcrfRepository(session).create_study(
                 name=body.name,
                 protocol_id=body.protocol_id,
                 description=body.description,
-                created_by=admin.sub,
+                created_by=user.sub,
             )
             return StudyOut.model_validate(study)
 
     @router.get("/studies", response_model=list[StudyOut])
-    async def list_studies() -> list[StudyOut]:
+    async def list_studies(user: CurrentUser) -> list[StudyOut]:
         async with get_db_session() as session:
             return [
                 StudyOut.model_validate(s) for s in await EcrfRepository(session).list_studies()
             ]
 
     @router.get("/studies/{study_id}", response_model=StudyOut)
-    async def get_study(study_id: str) -> StudyOut:
+    async def get_study(study_id: str, user: CurrentUser) -> StudyOut:
         async with get_db_session() as session:
             study = await EcrfRepository(session).get_study(study_id)
             if study is None:
@@ -126,7 +142,13 @@ def create_ecrf_router() -> APIRouter:
             return StudyOut.model_validate(study)
 
     @router.put("/studies/{study_id}", response_model=StudyOut)
-    async def update_study(study_id: str, body: StudyUpdate, admin: AdminUser) -> StudyOut:
+    async def update_study(
+        study_id: str,
+        body: StudyUpdate,
+        user: SessionPayload = require_permission_scoped(
+            Permission.STUDY_AUTHOR, resource_param="study_id"
+        ),
+    ) -> StudyOut:
         async with get_db_session() as session:
             try:
                 study = await EcrfRepository(session).update_study(
@@ -141,7 +163,13 @@ def create_ecrf_router() -> APIRouter:
             return StudyOut.model_validate(study)
 
     @router.put("/studies/{study_id}/schedule", response_model=StudyOut)
-    async def set_schedule(study_id: str, body: VisitSchedule, admin: AdminUser) -> StudyOut:
+    async def set_schedule(
+        study_id: str,
+        body: VisitSchedule,
+        user: SessionPayload = require_permission_scoped(
+            Permission.STUDY_AUTHOR, resource_param="study_id"
+        ),
+    ) -> StudyOut:
         async with get_db_session() as session:
             try:
                 study = await EcrfRepository(session).update_study(study_id, schedule=body)
@@ -152,24 +180,30 @@ def create_ecrf_router() -> APIRouter:
     # ── form definitions ──────────────────────────────────────────────────
 
     @router.post("/studies/{study_id}/forms", response_model=FormOut, status_code=201)
-    async def create_form(study_id: str, body: FormDefinition, admin: AdminUser) -> FormOut:
+    async def create_form(
+        study_id: str,
+        body: FormDefinition,
+        user: SessionPayload = require_permission_scoped(
+            Permission.STUDY_AUTHOR, resource_param="study_id"
+        ),
+    ) -> FormOut:
         async with get_db_session() as session:
             try:
                 form = await EcrfRepository(session).create_form(
-                    study_id, body, created_by=admin.sub
+                    study_id, body, created_by=user.sub
                 )
             except EcrfError as e:
                 raise HTTPException(409, str(e)) from e
             return FormOut.model_validate(form)
 
     @router.get("/studies/{study_id}/forms", response_model=list[FormOut])
-    async def list_forms(study_id: str) -> list[FormOut]:
+    async def list_forms(study_id: str, user: CurrentUser) -> list[FormOut]:
         async with get_db_session() as session:
             forms = await EcrfRepository(session).list_forms(study_id)
             return [FormOut.model_validate(f) for f in forms]
 
     @router.get("/forms/{form_id}", response_model=FormDetailOut)
-    async def get_form(form_id: str) -> FormDetailOut:
+    async def get_form(form_id: str, user: CurrentUser) -> FormDetailOut:
         async with get_db_session() as session:
             form = await EcrfRepository(session).get_form(form_id)
             if form is None:
@@ -177,7 +211,13 @@ def create_ecrf_router() -> APIRouter:
             return _form_detail(form)
 
     @router.put("/forms/{form_id}", response_model=FormOut)
-    async def update_form(form_id: str, body: FormDefinition, admin: AdminUser) -> FormOut:
+    async def update_form(
+        form_id: str,
+        body: FormDefinition,
+        user: SessionPayload = require_permission_scoped(
+            Permission.STUDY_AUTHOR, resource_param="form_id"
+        ),
+    ) -> FormOut:
         async with get_db_session() as session:
             try:
                 form = await EcrfRepository(session).update_form_draft(form_id, body)
@@ -186,7 +226,12 @@ def create_ecrf_router() -> APIRouter:
             return FormOut.model_validate(form)
 
     @router.post("/forms/{form_id}/publish", response_model=FormOut)
-    async def publish_form(form_id: str, admin: AdminUser) -> FormOut:
+    async def publish_form(
+        form_id: str,
+        user: SessionPayload = require_permission_scoped(
+            Permission.STUDY_PUBLISH, resource_param="form_id"
+        ),
+    ) -> FormOut:
         async with get_db_session() as session:
             try:
                 form = await EcrfRepository(session).publish_form(form_id)
@@ -195,10 +240,15 @@ def create_ecrf_router() -> APIRouter:
             return FormOut.model_validate(form)
 
     @router.post("/forms/{form_id}/new-version", response_model=FormOut, status_code=201)
-    async def new_version(form_id: str, admin: AdminUser) -> FormOut:
+    async def new_version(
+        form_id: str,
+        user: SessionPayload = require_permission_scoped(
+            Permission.STUDY_AUTHOR, resource_param="form_id"
+        ),
+    ) -> FormOut:
         async with get_db_session() as session:
             try:
-                form = await EcrfRepository(session).new_version(form_id, created_by=admin.sub)
+                form = await EcrfRepository(session).new_version(form_id, created_by=user.sub)
             except EcrfError as e:
                 raise HTTPException(404, str(e)) from e
             return FormOut.model_validate(form)

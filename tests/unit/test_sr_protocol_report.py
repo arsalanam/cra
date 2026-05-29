@@ -110,9 +110,7 @@ def _msg(
     final_answer: str | None = None,
     msg_id: str = "m",
 ) -> Any:
-    return SimpleNamespace(
-        id=msg_id, role=role, input_text=input_text, final_answer=final_answer
-    )
+    return SimpleNamespace(id=msg_id, role=role, input_text=input_text, final_answer=final_answer)
 
 
 # ── assembler ────────────────────────────────────────────────────────────
@@ -141,10 +139,7 @@ def test_assemble_picks_latest_protocol_document() -> None:
     assert "SGLT2 inhibitor" in data.methods.pico.intervention
     assert len(data.references) == 3
     assert any(c.origin == "search_papers" for c in data.references)
-    assert any(
-        r.content.startswith("[USER INPUT NEEDED")
-        for r in data.prospero_field_map
-    )
+    assert any(r.content.startswith("[USER INPUT NEEDED") for r in data.prospero_field_map)
     assert isinstance(data.generated_at, datetime)
     assert data.generated_at.tzinfo == UTC
 
