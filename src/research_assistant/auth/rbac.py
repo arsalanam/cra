@@ -65,6 +65,15 @@ class Permission(StrEnum):
     CASEBOOK_SIGNOFF = "casebook.signoff"
     SUBJECT_UNLOCK = "subject.unlock"
 
+    # ── eCRF safety subsystem (AE/SAE + protocol deviations + CAPA) ──────
+    AE_RECORD = "ae.record"
+    AE_CLASSIFY = "ae.classify"
+    SAE_REPORT = "sae.report"
+    DEVIATION_RECORD = "deviation.record"
+    DEVIATION_CLASSIFY = "deviation.classify"
+    CAPA_AUTHOR = "capa.author"
+    CAPA_CLOSE = "capa.close"
+
     # ── Audit trail ──────────────────────────────────────────────────────
     AUDIT_READ = "audit.read"
 
@@ -202,6 +211,12 @@ ROLE_PERMISSIONS: Final[dict[Role, frozenset[Permission]]] = {
             Permission.FORM_SIGN,
             Permission.CASEBOOK_SIGNOFF,
             Permission.AUDIT_READ,
+            # Safety oversight: PI classifies AEs as serious, signs off
+            # the IND safety report, and closes deviations once CAPA
+            # actions are complete.
+            Permission.AE_CLASSIFY,
+            Permission.SAE_REPORT,
+            Permission.CAPA_CLOSE,
         }
     ),
     Role.COORDINATOR: frozenset(
@@ -210,6 +225,10 @@ ROLE_PERMISSIONS: Final[dict[Role, frozenset[Permission]]] = {
             Permission.DATA_READ,
             Permission.DATA_ENTER,
             Permission.QUERY_RESPOND,
+            # Coordinators capture AEs and log deviations at the point of
+            # care; classification + closure are higher-tier actions.
+            Permission.AE_RECORD,
+            Permission.DEVIATION_RECORD,
         }
     ),
     Role.DATA_MANAGER: frozenset(
@@ -223,6 +242,12 @@ ROLE_PERMISSIONS: Final[dict[Role, frozenset[Permission]]] = {
             Permission.SUBJECT_UNLOCK,
             Permission.SDV_VERIFY,
             Permission.AUDIT_READ,
+            # Data managers classify deviations + author CAPAs; they also
+            # have sae.report so the IND-safety report can be produced
+            # outside the PI's signing flow.
+            Permission.DEVIATION_CLASSIFY,
+            Permission.CAPA_AUTHOR,
+            Permission.SAE_REPORT,
         }
     ),
     Role.MONITOR: frozenset(
@@ -232,6 +257,9 @@ ROLE_PERMISSIONS: Final[dict[Role, frozenset[Permission]]] = {
             Permission.QUERY_RAISE,
             Permission.SDV_VERIFY,
             Permission.AUDIT_READ,
+            # Monitors discover deviations during site visits — they log
+            # but don't classify or close.
+            Permission.DEVIATION_RECORD,
         }
     ),
     # SR screening roles — always granted at sr_review scope, never global.

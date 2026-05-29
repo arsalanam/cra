@@ -73,6 +73,10 @@
           <h2>Queries</h2>
           <div id="queries" class="muted">—</div>
         </div>
+        <div class="card">
+          <h2>Safety <span class="muted" style="font-size:12px">(AEs + deviations)</span></h2>
+          <div id="safety-body" class="muted">Select a subject to load safety records.</div>
+        </div>
       </div>
     </div>
   </div>
@@ -198,6 +202,186 @@
     await loadQueries();
   }
   async function closeQuery(id){ await api(`/api/edc/queries/${id}/close`,{method:"POST"}); await loadQueries(); }
+
+  /* ── Safety subsystem (top-6 #4) ───────────────────────────────────── */
+
+  const SEVERITY_LABELS = {1:"1 — mild", 2:"2 — moderate", 3:"3 — severe", 4:"4 — life-threatening", 5:"5 — fatal"};
+  const AE_OUTCOMES = ["recovered","recovering","not_recovered","death","unknown"];
+  const AE_RELATIONS = ["unrelated","unlikely","possible","probable","definite","unknown"];
+  const DEV_CATEGORIES = ["consent","eligibility","procedure","visit_window","drug_compliance","ae_not_reported","data_capture","other"];
+  const DEV_CLASSIFICATIONS = ["minor","major","critical"];
+
+  async function loadSafety(){
+    const root=document.getElementById("safety-body");
+    if(!subjectId){ root.className="muted"; root.innerHTML="Select a subject to load safety records."; return; }
+    root.className=""; root.innerHTML='<div class="muted">Loading…</div>';
+    try{
+      const [aes, devs] = await Promise.all([
+        (await api(`/api/edc/subjects/${subjectId}/adverse-events`)).json(),
+        (await api(`/api/edc/subjects/${subjectId}/deviations`)).json(),
+      ]);
+      root.innerHTML = renderAeSection(aes) + renderDeviationSection(devs);
+    }catch(e){ root.innerHTML=`<div class="status err">Failed to load safety: ${esc(e.message)}</div>`; }
+  }
+
+  function renderAeSection(aes){
+    const list = aes.length
+      ? aes.map(a=>{
+          const serious = a.is_serious ? `<span class="badge" style="background:#2a1010;color:#d97a7a">SERIOUS</span>` : '';
+          const overdue = a.reportable_deadline && !a.reported_to_authority_at && new Date(a.reportable_deadline) < new Date()
+            ? `<span class="badge" style="background:#2a2010;color:#d9a84a">OVERDUE</span>` : '';
+          return `
+            <div class="pick" style="display:block;cursor:default">
+              <div><b>${esc(a.term_text)}</b> · grade ${a.severity_grade} ${serious} ${overdue}</div>
+              <div class="muted" style="font-size:11px">Onset ${esc(a.start_date.slice(0,10))} · outcome ${esc(a.outcome.replace(/_/g," "))}${a.meddra_pt?` · MedDRA: ${esc(a.meddra_pt)}`:""}</div>
+              ${a.serious_reasons.length ? `<div class="muted" style="font-size:11px">Reasons: ${a.serious_reasons.map(r=>esc(r.replace(/_/g," "))).join(", ")}</div>` : ""}
+              <div class="row" style="margin-top:6px;gap:4px;flex-wrap:wrap">
+                <button class="btn secondary" onclick="classifyAe('${a.id}', ${a.is_serious}, ${a.severity_grade})">Classify</button>
+                <button class="btn secondary" onclick="codeMeddra('${a.id}', '${esc(a.meddra_pt||"")}')">MedDRA PT</button>
+                <a class="btn secondary" href="/api/edc/ae/${a.id}/report/fda-3500a/pdf" target="_blank">3500A PDF</a>
+                <a class="btn secondary" href="/api/edc/ae/${a.id}/report/fda-3500a/docx" target="_blank">3500A DOCX</a>
+                ${a.is_serious && !a.reported_to_authority_at ? `<button class="btn secondary" onclick="markAeReported('${a.id}')">Mark reported</button>` : ""}
+              </div>
+            </div>`;
+        }).join("")
+      : `<div class="muted">No AEs recorded.</div>`;
+    return `
+      <h3 style="margin:0 0 6px;font-size:13px">Adverse events</h3>
+      <div>${list}</div>
+      <details style="margin-top:8px"><summary style="cursor:pointer;color:#7aa7d9">+ Record AE</summary>
+        <div style="margin-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:6px">
+          <input type="text" id="ae-term" placeholder="AE term (verbatim)" style="grid-column:1/-1" />
+          <input type="date" id="ae-start" placeholder="Onset" />
+          <select id="ae-severity">${[1,2,3,4,5].map(g=>`<option value="${g}">grade ${g} — ${SEVERITY_LABELS[g].split("— ")[1]}</option>`).join("")}</select>
+          <select id="ae-outcome">${AE_OUTCOMES.map(o=>`<option value="${o}">${o.replace(/_/g," ")}</option>`).join("")}</select>
+          <select id="ae-relation">${AE_RELATIONS.map(r=>`<option value="${r}">${r}</option>`).join("")}</select>
+          <label style="grid-column:1/-1;text-transform:none;color:#cdd3df"><input type="checkbox" id="ae-hosp" /> hospitalisation</label>
+          <label style="grid-column:1/-1;text-transform:none;color:#cdd3df"><input type="checkbox" id="ae-lt" /> life-threatening</label>
+          <label style="grid-column:1/-1;text-transform:none;color:#cdd3df"><input type="checkbox" id="ae-disab" /> persistent disability</label>
+          <textarea id="ae-narrative" placeholder="Narrative (required for FDA 3500A)" style="grid-column:1/-1;min-height:60px"></textarea>
+          <button class="btn" style="grid-column:1/-1" onclick="recordAe()">Record AE</button>
+        </div>
+      </details>`;
+  }
+
+  function renderDeviationSection(devs){
+    const list = devs.length
+      ? devs.map(d=>`
+          <div class="pick" style="display:block;cursor:default">
+            <div><b>${esc(d.classification)}</b> · ${esc(d.category.replace(/_/g," "))} · <span class="badge">${esc(d.status)}</span></div>
+            <div class="muted" style="font-size:11px">${esc(d.description)}</div>
+            ${d.root_cause?`<div class="muted" style="font-size:11px"><b>Root cause:</b> ${esc(d.root_cause)}</div>`:""}
+            <div class="row" style="margin-top:6px;gap:4px;flex-wrap:wrap">
+              <button class="btn secondary" onclick="loadCapas('${d.id}')">CAPAs</button>
+              <button class="btn secondary" onclick="addCapa('${d.id}')">+ CAPA</button>
+              <button class="btn secondary" onclick="closeDev('${d.id}')">Close deviation</button>
+            </div>
+            <div id="capas-${d.id}" style="margin-top:6px"></div>
+          </div>`).join("")
+      : `<div class="muted">No deviations logged.</div>`;
+    return `
+      <h3 style="margin:12px 0 6px;font-size:13px">Protocol deviations</h3>
+      <div>${list}</div>
+      <details style="margin-top:8px"><summary style="cursor:pointer;color:#7aa7d9">+ Log deviation</summary>
+        <div style="margin-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:6px">
+          <select id="dev-class">${DEV_CLASSIFICATIONS.map(c=>`<option value="${c}">${c}</option>`).join("")}</select>
+          <select id="dev-cat">${DEV_CATEGORIES.map(c=>`<option value="${c}">${c.replace(/_/g," ")}</option>`).join("")}</select>
+          <textarea id="dev-desc" placeholder="Description" style="grid-column:1/-1"></textarea>
+          <textarea id="dev-root" placeholder="Root cause (optional)" style="grid-column:1/-1"></textarea>
+          <button class="btn" style="grid-column:1/-1" onclick="recordDeviation()">Log deviation</button>
+        </div>
+      </details>`;
+  }
+
+  async function recordAe(){
+    const body={
+      term_text: document.getElementById("ae-term").value.trim(),
+      severity_grade: Number(document.getElementById("ae-severity").value),
+      outcome: document.getElementById("ae-outcome").value,
+      relationship_to_intervention: document.getElementById("ae-relation").value,
+      start_date: new Date(document.getElementById("ae-start").value || new Date().toISOString().slice(0,10)).toISOString(),
+      hospitalisation_flag: document.getElementById("ae-hosp").checked,
+      life_threatening_flag: document.getElementById("ae-lt").checked,
+      persistent_disability_flag: document.getElementById("ae-disab").checked,
+      narrative: document.getElementById("ae-narrative").value.trim() || null,
+    };
+    if(!body.term_text){ setStatus("AE term required","err"); return; }
+    const r=await api(`/api/edc/subjects/${subjectId}/adverse-events`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    if(!r.ok){ setStatus("Record AE failed: "+(await r.json()).detail,"err"); return; }
+    setStatus("AE recorded.","ok"); await loadSafety();
+  }
+
+  async function classifyAe(id, currentSerious, currentGrade){
+    const isSerious = confirm(`Mark this AE as SERIOUS? (currently ${currentSerious?"YES":"no"})`);
+    const body={ is_serious: isSerious };
+    const r=await api(`/api/edc/ae/${id}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    if(!r.ok){ setStatus("Classify failed: "+(await r.json()).detail,"err"); return; }
+    await loadSafety();
+  }
+
+  async function codeMeddra(id, current){
+    const pt = prompt("MedDRA Preferred Term:", current);
+    if(pt===null) return;
+    const r=await api(`/api/edc/ae/${id}/meddra-pt`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({meddra_pt: pt})});
+    if(!r.ok){ setStatus("MedDRA save failed: "+(await r.json()).detail,"err"); return; }
+    await loadSafety();
+  }
+
+  async function markAeReported(id){
+    if(!confirm("Confirm: this AE has been reported to the regulatory authority?")) return;
+    const r=await api(`/api/edc/ae/${id}/mark-reported`,{method:"POST"});
+    if(!r.ok){ setStatus("Mark-reported failed: "+(await r.json()).detail,"err"); return; }
+    await loadSafety();
+  }
+
+  async function recordDeviation(){
+    const body={
+      classification: document.getElementById("dev-class").value,
+      category: document.getElementById("dev-cat").value,
+      description: document.getElementById("dev-desc").value.trim(),
+      root_cause: document.getElementById("dev-root").value.trim() || null,
+    };
+    if(!body.description){ setStatus("Description required","err"); return; }
+    const r=await api(`/api/edc/subjects/${subjectId}/deviations`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    if(!r.ok){ setStatus("Log deviation failed: "+(await r.json()).detail,"err"); return; }
+    setStatus("Deviation logged.","ok"); await loadSafety();
+  }
+
+  async function loadCapas(deviationId){
+    const root=document.getElementById(`capas-${deviationId}`);
+    const capas=await (await api(`/api/edc/deviations/${deviationId}/capa`)).json();
+    if(!capas.length){ root.innerHTML=`<div class="muted">No CAPAs.</div>`; return; }
+    root.innerHTML = capas.map(c=>`
+      <div style="background:#0f1115;padding:6px 10px;border-radius:4px;margin-top:4px;font-size:12px">
+        ${esc(c.action_text)} · <span class="badge">${esc(c.status)}</span>
+        ${c.status!=="completed"?`<button class="btn secondary" style="margin-left:6px" onclick="completeCapa('${c.id}','${deviationId}')">Mark complete</button>`:""}
+      </div>`).join("");
+  }
+
+  async function addCapa(deviationId){
+    const action = prompt("CAPA action to add:");
+    if(!action) return;
+    const r=await api(`/api/edc/deviations/${deviationId}/capa`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action_text:action})});
+    if(!r.ok){ setStatus("Add CAPA failed: "+(await r.json()).detail,"err"); return; }
+    await loadSafety();
+  }
+
+  async function completeCapa(capaId, deviationId){
+    const r=await api(`/api/edc/capa/${capaId}/complete`,{method:"POST"});
+    if(!r.ok){ setStatus("Complete failed: "+(await r.json()).detail,"err"); return; }
+    await loadCapas(deviationId);
+  }
+
+  async function closeDev(deviationId){
+    if(!confirm("Close this deviation? All CAPAs must be completed first.")) return;
+    const r=await api(`/api/edc/deviations/${deviationId}/close`,{method:"POST"});
+    if(!r.ok){ setStatus("Close failed: "+(await r.json()).detail,"err"); return; }
+    await loadSafety();
+  }
+
+  /* Trigger safety reload when the user picks a different subject. */
+  const originalSelectSubject = selectSubject;
+  selectSubject = async function(id, code){ await originalSelectSubject(id, code); await loadSafety(); };
 
   loadDeployments();
 </script>

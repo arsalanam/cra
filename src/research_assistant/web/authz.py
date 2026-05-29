@@ -97,6 +97,42 @@ async def resolve_query_scope(query_id: str) -> Scope:
         return await resolve_form_instance_scope(query.form_instance_id)
 
 
+async def resolve_adverse_event_scope(ae_id: str) -> Scope:
+    """AdverseEvent → its subject's scope (top-6 #4 safety subsystem)."""
+    from ..persistence.clinical.models import AdverseEvent
+
+    async with get_clinical_session() as s:
+        ae = await s.get(AdverseEvent, ae_id)
+        if ae is None:
+            raise HTTPException(404, "Adverse event not found")
+        return await resolve_subject_scope(ae.subject_id)
+
+
+async def resolve_deviation_scope(deviation_id: str) -> Scope:
+    """ProtocolDeviation → its subject's scope, or the deployment scope
+    when the deviation is subject-less (e.g. a central-supply event)."""
+    from ..persistence.clinical.models import ProtocolDeviation
+
+    async with get_clinical_session() as s:
+        dev = await s.get(ProtocolDeviation, deviation_id)
+        if dev is None:
+            raise HTTPException(404, "Deviation not found")
+        if dev.subject_id is not None:
+            return await resolve_subject_scope(dev.subject_id)
+        return await resolve_deployment_scope(dev.deployment_id)
+
+
+async def resolve_capa_scope(capa_id: str) -> Scope:
+    """CapaAction → its parent deviation's scope."""
+    from ..persistence.clinical.models import CapaAction
+
+    async with get_clinical_session() as s:
+        capa = await s.get(CapaAction, capa_id)
+        if capa is None:
+            raise HTTPException(404, "CAPA action not found")
+        return await resolve_deviation_scope(capa.deviation_id)
+
+
 # ecrf StudyOut / FormOut path params resolve straight to (study_id, None).
 async def resolve_ecrf_study_scope(study_id: str) -> Scope:
     return (study_id, None, None)
@@ -148,6 +184,9 @@ RESOURCE_RESOLVERS: dict[str, ResolverFn] = {
     "form_id": resolve_ecrf_form_scope,
     "sr_project_id": resolve_sr_project_scope,
     "sr_candidate_id": resolve_sr_candidate_scope,
+    "ae_id": resolve_adverse_event_scope,
+    "deviation_id": resolve_deviation_scope,
+    "capa_id": resolve_capa_scope,
 }
 
 
@@ -231,7 +270,10 @@ __all__ = [
     "RESOURCE_RESOLVERS",
     "Scope",
     "require_permission_scoped",
+    "resolve_adverse_event_scope",
+    "resolve_capa_scope",
     "resolve_deployment_scope",
+    "resolve_deviation_scope",
     "resolve_ecrf_form_scope",
     "resolve_ecrf_study_scope",
     "resolve_form_instance_scope",

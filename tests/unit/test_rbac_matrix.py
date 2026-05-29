@@ -171,6 +171,72 @@ def test_auditor_can_read_sr_but_not_screen() -> None:
     assert Permission.SR_ADJUDICATE not in perms
 
 
+# ── eCRF safety subsystem (AE/SAE + protocol deviations + CAPA) ──────────
+
+
+def test_coordinator_records_ae_but_does_not_classify() -> None:
+    """Coordinators capture safety events at the point of care; PI/DM
+    handle classification + reporting + closure (separation of duties)."""
+    perms = ROLE_PERMISSIONS[Role.COORDINATOR]
+    assert Permission.AE_RECORD in perms
+    assert Permission.DEVIATION_RECORD in perms
+    # Higher-tier actions denied
+    assert Permission.AE_CLASSIFY not in perms
+    assert Permission.SAE_REPORT not in perms
+    assert Permission.DEVIATION_CLASSIFY not in perms
+    assert Permission.CAPA_AUTHOR not in perms
+    assert Permission.CAPA_CLOSE not in perms
+
+
+def test_pi_classifies_aes_and_closes_capas() -> None:
+    perms = ROLE_PERMISSIONS[Role.PRINCIPAL_INVESTIGATOR]
+    assert Permission.AE_CLASSIFY in perms
+    assert Permission.SAE_REPORT in perms
+    assert Permission.CAPA_CLOSE in perms
+    # PI does not record AEs in the first place (oversight role) and is
+    # not the CAPA author (data manager's job).
+    assert Permission.AE_RECORD not in perms
+    assert Permission.CAPA_AUTHOR not in perms
+    assert Permission.DEVIATION_RECORD not in perms
+
+
+def test_data_manager_authors_capas_and_classifies_deviations() -> None:
+    perms = ROLE_PERMISSIONS[Role.DATA_MANAGER]
+    assert Permission.DEVIATION_CLASSIFY in perms
+    assert Permission.CAPA_AUTHOR in perms
+    assert Permission.SAE_REPORT in perms
+    # CAPA close is PI; AE classify is PI.
+    assert Permission.CAPA_CLOSE not in perms
+    assert Permission.AE_CLASSIFY not in perms
+
+
+def test_monitor_logs_deviations_but_does_not_classify_them() -> None:
+    perms = ROLE_PERMISSIONS[Role.MONITOR]
+    assert Permission.DEVIATION_RECORD in perms
+    # Monitors surface findings; classification + closure are DM/PI.
+    assert Permission.DEVIATION_CLASSIFY not in perms
+    assert Permission.CAPA_AUTHOR not in perms
+    assert Permission.CAPA_CLOSE not in perms
+    assert Permission.AE_RECORD not in perms
+
+
+def test_student_has_no_safety_perms() -> None:
+    """Student tier is meta-analysis only — explicitly no eCRF safety access."""
+    perms = ROLE_PERMISSIONS[Role.STUDENT]
+    for safety_perm in (
+        Permission.AE_RECORD,
+        Permission.AE_CLASSIFY,
+        Permission.SAE_REPORT,
+        Permission.DEVIATION_RECORD,
+        Permission.DEVIATION_CLASSIFY,
+        Permission.CAPA_AUTHOR,
+        Permission.CAPA_CLOSE,
+    ):
+        assert safety_perm not in perms, (
+            f"student must not have {safety_perm.value}"
+        )
+
+
 def test_skill_permission_covers_every_specialist() -> None:
     """Every workflow registered in `agent/specialists/` must map to a
     skill permission, or the dispatcher will fail-closed on it."""

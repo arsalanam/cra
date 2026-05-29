@@ -13,14 +13,19 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime
+from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, ConfigDict
+from fastapi.responses import Response
+from pydantic import BaseModel, ConfigDict, Field
 
 from ..auth import SessionPayload
 from ..auth.rbac import Permission
+from ..config import get_settings
 from ..domain.ecrf import FormDefinition
 from ..persistence.clinical.database import get_clinical_session
+from ..persistence.clinical.models import Subject
 from ..persistence.clinical.repository import (
     ClinicalError,
     ClinicalRepository,
@@ -209,6 +214,153 @@ class AuditEntryOut(BaseModel):
     reason: str | None
     actor_sub: str | None
     source: str
+    created_at: datetime
+
+
+# ── Safety subsystem (top-6 #4) ──────────────────────────────────────────
+
+
+class AdverseEventIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    term_text: str
+    severity_grade: int = Field(ge=1, le=5)
+    outcome: str = "unknown"
+    relationship_to_intervention: str = "unknown"
+    start_date: datetime
+    end_date: datetime | None = None
+    hospitalisation_flag: bool = False
+    life_threatening_flag: bool = False
+    persistent_disability_flag: bool = False
+    congenital_anomaly_flag: bool = False
+    other_medically_significant_flag: bool = False
+    narrative: str | None = None
+    form_instance_id: str | None = None
+
+
+class AdverseEventClassifyIn(BaseModel):
+    """PI / DM override of the auto-classification."""
+
+    model_config = ConfigDict(extra="forbid")
+    is_serious: bool | None = None
+    serious_reasons: list[str] | None = None
+    outcome: str | None = None
+    severity_grade: int | None = Field(default=None, ge=1, le=5)
+    narrative: str | None = None
+
+
+class AdverseEventMeddraIn(BaseModel):
+    """Manually-coded MedDRA Preferred Term.
+
+    Real MedDRA validation needs a deploy-time license; the field is
+    free-text here so the workflow ships without that gate.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    meddra_pt: str
+
+
+class AdverseEventOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    subject_id: str
+    deployment_id: str
+    form_instance_id: str | None
+    term_text: str
+    meddra_pt: str | None
+    start_date: datetime
+    end_date: datetime | None
+    severity_grade: int
+    outcome: str
+    relationship_to_intervention: str
+    is_serious: bool
+    serious_reasons: list[str]
+    reported_at: datetime
+    reportable_deadline: datetime | None
+    reported_to_authority_at: datetime | None
+    recorded_by: str | None
+    classified_by: str | None
+    narrative: str | None
+    created_at: datetime
+    updated_at: datetime
+
+    @classmethod
+    def from_orm_ae(cls, ae: Any) -> AdverseEventOut:
+        return cls(
+            id=ae.id,
+            subject_id=ae.subject_id,
+            deployment_id=ae.deployment_id,
+            form_instance_id=ae.form_instance_id,
+            term_text=ae.term_text,
+            meddra_pt=ae.meddra_pt,
+            start_date=ae.start_date,
+            end_date=ae.end_date,
+            severity_grade=ae.severity_grade,
+            outcome=ae.outcome,
+            relationship_to_intervention=ae.relationship_to_intervention,
+            is_serious=ae.is_serious,
+            serious_reasons=json.loads(ae.serious_reasons_json or "[]"),
+            reported_at=ae.reported_at,
+            reportable_deadline=ae.reportable_deadline,
+            reported_to_authority_at=ae.reported_to_authority_at,
+            recorded_by=ae.recorded_by,
+            classified_by=ae.classified_by,
+            narrative=ae.narrative,
+            created_at=ae.created_at,
+            updated_at=ae.updated_at,
+        )
+
+
+class DeviationIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    classification: str  # major | minor | critical
+    category: str
+    description: str
+    root_cause: str | None = None
+    subject_id: str | None = None  # only on the deployment-scoped variant
+
+
+class DeviationClassifyIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    classification: str | None = None
+    category: str | None = None
+    root_cause: str | None = None
+
+
+class DeviationOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    subject_id: str | None
+    deployment_id: str
+    classification: str
+    category: str
+    description: str
+    root_cause: str | None
+    status: str
+    discovered_at: datetime
+    discovered_by: str | None
+    classified_by: str | None
+    resolved_at: datetime | None
+    resolved_by: str | None
+
+
+class CapaIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    action_text: str
+    owner_sub: str | None = None
+    due_date: datetime | None = None
+
+
+class CapaOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    deviation_id: str
+    action_text: str
+    owner_sub: str | None
+    due_date: datetime | None
+    status: str
+    completed_at: datetime | None
+    completed_by: str | None
+    created_by: str | None
     created_at: datetime
 
 
@@ -619,5 +771,379 @@ def create_edc_router() -> APIRouter:
         async with get_clinical_session() as s:
             sigs = await ClinicalRepository(s).list_subject_signatures(subject_id)
             return [SubjectSignatureOut.model_validate(x) for x in sigs]
+
+    # ── Safety subsystem: adverse events (top-6 #4) ──────────────────────
+
+    @router.post(
+        "/subjects/{subject_id}/adverse-events",
+        response_model=AdverseEventOut,
+        status_code=201,
+    )
+    async def record_adverse_event(
+        subject_id: str,
+        body: AdverseEventIn,
+        user: SessionPayload = require_permission_scoped(
+            Permission.AE_RECORD, resource_param="subject_id"
+        ),
+    ) -> AdverseEventOut:
+        async with get_clinical_session() as s:
+            try:
+                ae = await ClinicalRepository(s).record_adverse_event(
+                    subject_id,
+                    term_text=body.term_text,
+                    severity_grade=body.severity_grade,
+                    outcome=body.outcome,
+                    relationship_to_intervention=body.relationship_to_intervention,
+                    start_date=body.start_date,
+                    end_date=body.end_date,
+                    hospitalisation_flag=body.hospitalisation_flag,
+                    life_threatening_flag=body.life_threatening_flag,
+                    persistent_disability_flag=body.persistent_disability_flag,
+                    congenital_anomaly_flag=body.congenital_anomaly_flag,
+                    other_medically_significant_flag=body.other_medically_significant_flag,
+                    narrative=body.narrative,
+                    form_instance_id=body.form_instance_id,
+                    actor_sub=user.sub,
+                )
+            except ClinicalError as e:
+                raise HTTPException(404, str(e)) from e
+            return AdverseEventOut.from_orm_ae(ae)
+
+    @router.get(
+        "/subjects/{subject_id}/adverse-events",
+        response_model=list[AdverseEventOut],
+    )
+    async def list_subject_adverse_events(
+        subject_id: str, user: CurrentUser
+    ) -> list[AdverseEventOut]:
+        async with get_clinical_session() as s:
+            aes = await ClinicalRepository(s).list_adverse_events(subject_id=subject_id)
+            return [AdverseEventOut.from_orm_ae(a) for a in aes]
+
+    @router.get("/ae/{ae_id}", response_model=AdverseEventOut)
+    async def get_adverse_event(
+        ae_id: str, user: CurrentUser
+    ) -> AdverseEventOut:
+        async with get_clinical_session() as s:
+            ae = await ClinicalRepository(s).get_adverse_event(ae_id)
+            if ae is None:
+                raise HTTPException(404, "Adverse event not found")
+            return AdverseEventOut.from_orm_ae(ae)
+
+    @router.patch("/ae/{ae_id}", response_model=AdverseEventOut)
+    async def classify_adverse_event(
+        ae_id: str,
+        body: AdverseEventClassifyIn,
+        user: SessionPayload = require_permission_scoped(
+            Permission.AE_CLASSIFY, resource_param="ae_id"
+        ),
+    ) -> AdverseEventOut:
+        # SeriousReason is a Literal — runtime acceptance is permissive
+        # (the rbac module only inspects the strings) but the repo
+        # accepts list[str] for the reasons override.
+        async with get_clinical_session() as s:
+            try:
+                ae = await ClinicalRepository(s).reclassify_adverse_event(
+                    ae_id,
+                    is_serious=body.is_serious,
+                    serious_reasons=body.serious_reasons,  # type: ignore[arg-type]
+                    outcome=body.outcome,
+                    severity_grade=body.severity_grade,
+                    narrative=body.narrative,
+                    actor_sub=user.sub,
+                )
+            except ClinicalError as e:
+                raise HTTPException(404, str(e)) from e
+            return AdverseEventOut.from_orm_ae(ae)
+
+    @router.patch("/ae/{ae_id}/meddra-pt", response_model=AdverseEventOut)
+    async def code_adverse_event_meddra(
+        ae_id: str,
+        body: AdverseEventMeddraIn,
+        user: SessionPayload = require_permission_scoped(
+            Permission.AE_CLASSIFY, resource_param="ae_id"
+        ),
+    ) -> AdverseEventOut:
+        """Manually code a MedDRA Preferred Term.
+
+        For production deployments needing real MedDRA validation,
+        wire a licensed MedDRA dictionary into the validator at this
+        endpoint. The roadmap and rbac-design docs both flag the
+        license as a deploy-time concern.
+        """
+        async with get_clinical_session() as s:
+            try:
+                ae = await ClinicalRepository(s).reclassify_adverse_event(
+                    ae_id, meddra_pt=body.meddra_pt, actor_sub=user.sub
+                )
+            except ClinicalError as e:
+                raise HTTPException(404, str(e)) from e
+            return AdverseEventOut.from_orm_ae(ae)
+
+    @router.get(
+        "/deployments/{deployment_id}/sae/overdue",
+        response_model=list[AdverseEventOut],
+    )
+    async def list_overdue_saes(
+        deployment_id: str,
+        user: SessionPayload = require_permission_scoped(
+            Permission.SAE_REPORT, resource_param="deployment_id"
+        ),
+    ) -> list[AdverseEventOut]:
+        async with get_clinical_session() as s:
+            aes = await ClinicalRepository(s).list_overdue_serious_aes(deployment_id)
+            return [AdverseEventOut.from_orm_ae(a) for a in aes]
+
+    @router.post("/ae/{ae_id}/mark-reported", response_model=AdverseEventOut)
+    async def mark_ae_reported(
+        ae_id: str,
+        user: SessionPayload = require_permission_scoped(
+            Permission.SAE_REPORT, resource_param="ae_id"
+        ),
+    ) -> AdverseEventOut:
+        async with get_clinical_session() as s:
+            try:
+                ae = await ClinicalRepository(s).mark_ae_reported_to_authority(
+                    ae_id, actor_sub=user.sub
+                )
+            except ClinicalError as e:
+                raise HTTPException(404, str(e)) from e
+            return AdverseEventOut.from_orm_ae(ae)
+
+    @router.get("/ae/{ae_id}/report/fda-3500a/{fmt}")
+    async def download_fda_3500a(
+        ae_id: str,
+        fmt: str,
+        user: SessionPayload = require_permission_scoped(
+            Permission.SAE_REPORT, resource_param="ae_id"
+        ),
+    ) -> Response:
+        """Generate an FDA 3500A IND safety report draft for the AE.
+
+        Sponsor regulatory affairs reviews + submits via the FDA gateway
+        or paper — this endpoint produces the draft only. PHI minimised:
+        subject_code is the only patient identifier emitted.
+        """
+        if fmt not in ("pdf", "docx"):
+            raise HTTPException(400, "fmt must be 'pdf' or 'docx'")
+
+        async with get_clinical_session() as s:
+            ae = await ClinicalRepository(s).get_adverse_event(ae_id)
+            if ae is None:
+                raise HTTPException(404, "Adverse event not found")
+            subject = await s.get(Subject, ae.subject_id)
+            from ..persistence.clinical.models import StudyDeployment
+
+            deployment = await s.get(StudyDeployment, ae.deployment_id)
+            research_study_id = deployment.research_study_id if deployment else None
+
+        # Cross-DB: pull the human-readable study name from the research DB
+        # so the product field is populated.
+        research_study_name: str | None = None
+        if research_study_id:
+            async with get_db_session() as rs:
+                study = await EcrfRepository(rs).get_study(research_study_id)
+                if study is not None:
+                    research_study_name = study.name
+
+        from ..reports import sae_3500a as _3500a
+
+        data = _3500a.assemble_3500a_data(
+            ae=ae,
+            subject=subject,
+            deployment=deployment,
+            research_study_name=research_study_name,
+        )
+        builder = _3500a.build_pdf if fmt == "pdf" else _3500a.build_docx
+        payload = builder(data, Path(get_settings().images_dir))
+        media = (
+            "application/pdf"
+            if fmt == "pdf"
+            else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )
+        filename = f"fda-3500a-{ae_id[:8]}.{fmt}"
+        return Response(
+            content=payload,
+            media_type=media,
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "Cache-Control": "no-store",
+            },
+        )
+
+    # ── Safety subsystem: protocol deviations + CAPA ─────────────────────
+
+    @router.post(
+        "/subjects/{subject_id}/deviations",
+        response_model=DeviationOut,
+        status_code=201,
+    )
+    async def record_subject_deviation(
+        subject_id: str,
+        body: DeviationIn,
+        user: SessionPayload = require_permission_scoped(
+            Permission.DEVIATION_RECORD, resource_param="subject_id"
+        ),
+    ) -> DeviationOut:
+        async with get_clinical_session() as s:
+            subject = await s.get(Subject, subject_id)
+            if subject is None:
+                raise HTTPException(404, "Subject not found")
+            try:
+                dev = await ClinicalRepository(s).record_deviation(
+                    deployment_id=subject.deployment_id,
+                    subject_id=subject_id,
+                    classification=body.classification,
+                    category=body.category,
+                    description=body.description,
+                    root_cause=body.root_cause,
+                    actor_sub=user.sub,
+                )
+            except ClinicalError as e:
+                raise HTTPException(422, str(e)) from e
+            return DeviationOut.model_validate(dev)
+
+    @router.post(
+        "/deployments/{deployment_id}/deviations",
+        response_model=DeviationOut,
+        status_code=201,
+    )
+    async def record_deployment_deviation(
+        deployment_id: str,
+        body: DeviationIn,
+        user: SessionPayload = require_permission_scoped(
+            Permission.DEVIATION_RECORD, resource_param="deployment_id"
+        ),
+    ) -> DeviationOut:
+        """Deployment-wide deviation (no specific subject) — e.g. a
+        central drug-supply temperature excursion."""
+        async with get_clinical_session() as s:
+            try:
+                dev = await ClinicalRepository(s).record_deviation(
+                    deployment_id=deployment_id,
+                    subject_id=body.subject_id,
+                    classification=body.classification,
+                    category=body.category,
+                    description=body.description,
+                    root_cause=body.root_cause,
+                    actor_sub=user.sub,
+                )
+            except ClinicalError as e:
+                raise HTTPException(422, str(e)) from e
+            return DeviationOut.model_validate(dev)
+
+    @router.get(
+        "/deployments/{deployment_id}/deviations",
+        response_model=list[DeviationOut],
+    )
+    async def list_deployment_deviations(
+        deployment_id: str,
+        user: CurrentUser,
+        status: str | None = None,
+    ) -> list[DeviationOut]:
+        async with get_clinical_session() as s:
+            devs = await ClinicalRepository(s).list_deviations(
+                deployment_id=deployment_id, status=status
+            )
+            return [DeviationOut.model_validate(d) for d in devs]
+
+    @router.get(
+        "/subjects/{subject_id}/deviations",
+        response_model=list[DeviationOut],
+    )
+    async def list_subject_deviations(
+        subject_id: str, user: CurrentUser
+    ) -> list[DeviationOut]:
+        async with get_clinical_session() as s:
+            devs = await ClinicalRepository(s).list_deviations(subject_id=subject_id)
+            return [DeviationOut.model_validate(d) for d in devs]
+
+    @router.patch("/deviations/{deviation_id}", response_model=DeviationOut)
+    async def classify_deviation(
+        deviation_id: str,
+        body: DeviationClassifyIn,
+        user: SessionPayload = require_permission_scoped(
+            Permission.DEVIATION_CLASSIFY, resource_param="deviation_id"
+        ),
+    ) -> DeviationOut:
+        async with get_clinical_session() as s:
+            try:
+                dev = await ClinicalRepository(s).reclassify_deviation(
+                    deviation_id,
+                    classification=body.classification,
+                    category=body.category,
+                    root_cause=body.root_cause,
+                    actor_sub=user.sub,
+                )
+            except ClinicalError as e:
+                raise HTTPException(404, str(e)) from e
+            return DeviationOut.model_validate(dev)
+
+    @router.post(
+        "/deviations/{deviation_id}/capa",
+        response_model=CapaOut,
+        status_code=201,
+    )
+    async def add_capa(
+        deviation_id: str,
+        body: CapaIn,
+        user: SessionPayload = require_permission_scoped(
+            Permission.CAPA_AUTHOR, resource_param="deviation_id"
+        ),
+    ) -> CapaOut:
+        async with get_clinical_session() as s:
+            try:
+                capa = await ClinicalRepository(s).add_capa(
+                    deviation_id,
+                    action_text=body.action_text,
+                    owner_sub=body.owner_sub,
+                    due_date=body.due_date,
+                    actor_sub=user.sub,
+                )
+            except ClinicalError as e:
+                raise HTTPException(409, str(e)) from e
+            return CapaOut.model_validate(capa)
+
+    @router.get(
+        "/deviations/{deviation_id}/capa", response_model=list[CapaOut]
+    )
+    async def list_capas(
+        deviation_id: str, user: CurrentUser
+    ) -> list[CapaOut]:
+        async with get_clinical_session() as s:
+            capas = await ClinicalRepository(s).list_capas(deviation_id)
+            return [CapaOut.model_validate(c) for c in capas]
+
+    @router.post("/capa/{capa_id}/complete", response_model=CapaOut)
+    async def complete_capa(
+        capa_id: str,
+        user: SessionPayload = require_permission_scoped(
+            Permission.CAPA_AUTHOR, resource_param="capa_id"
+        ),
+    ) -> CapaOut:
+        async with get_clinical_session() as s:
+            try:
+                capa = await ClinicalRepository(s).complete_capa(
+                    capa_id, actor_sub=user.sub
+                )
+            except ClinicalError as e:
+                raise HTTPException(404, str(e)) from e
+            return CapaOut.model_validate(capa)
+
+    @router.post("/deviations/{deviation_id}/close", response_model=DeviationOut)
+    async def close_deviation(
+        deviation_id: str,
+        user: SessionPayload = require_permission_scoped(
+            Permission.CAPA_CLOSE, resource_param="deviation_id"
+        ),
+    ) -> DeviationOut:
+        async with get_clinical_session() as s:
+            try:
+                dev = await ClinicalRepository(s).close_deviation(
+                    deviation_id, actor_sub=user.sub
+                )
+            except ClinicalError as e:
+                raise HTTPException(409, str(e)) from e
+            return DeviationOut.model_validate(dev)
 
     return router

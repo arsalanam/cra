@@ -22,12 +22,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ...domain.ecrf import FormDefinition
 from ...ecrf.edit_checks import CheckResult, evaluate_form, required_blank_items
 from .models import (
+    AdverseEvent,
     AuditEntry,
+    CapaAction,
     DeployedForm,
     EventInstance,
     FormInstance,
     ItemData,
     ParticipantAccess,
+    ProtocolDeviation,
     Query,
     QueryResponse,
     Signature,
@@ -36,6 +39,11 @@ from .models import (
     Subject,
     SubjectSignature,
     Verification,
+)
+from .safety_rules import (
+    SeriousReason,
+    auto_classify_serious,
+    compute_reporting_deadline,
 )
 
 logger = logging.getLogger(__name__)
@@ -834,3 +842,378 @@ class ClinicalRepository:
             .order_by(AuditEntry.created_at, AuditEntry.id)
         )
         return list(rows.all())
+
+    # ── Adverse events (top-6 #4 safety subsystem) ──────────────────────────
+
+    async def record_adverse_event(
+        self,
+        subject_id: str,
+        *,
+        term_text: str,
+        severity_grade: int,
+        outcome: str,
+        relationship_to_intervention: str,
+        start_date: datetime,
+        end_date: datetime | None = None,
+        hospitalisation_flag: bool = False,
+        life_threatening_flag: bool = False,
+        persistent_disability_flag: bool = False,
+        congenital_anomaly_flag: bool = False,
+        other_medically_significant_flag: bool = False,
+        narrative: str | None = None,
+        form_instance_id: str | None = None,
+        actor_sub: str | None = None,
+    ) -> AdverseEvent:
+        """Capture a new AE; auto-classifies serious + sets the 24h deadline."""
+        subject = await self._s.get(Subject, subject_id)
+        if subject is None:
+            raise ClinicalError(f"Subject {subject_id!r} not found.")
+        if severity_grade < 1 or severity_grade > 5:
+            raise ClinicalError("severity_grade must be 1–5 (CTCAE scale).")
+
+        is_serious, reasons = auto_classify_serious(
+            severity_grade=severity_grade,
+            outcome=outcome,
+            hospitalisation_flag=hospitalisation_flag,
+            life_threatening_flag=life_threatening_flag,
+            persistent_disability_flag=persistent_disability_flag,
+            congenital_anomaly_flag=congenital_anomaly_flag,
+            other_medically_significant_flag=other_medically_significant_flag,
+        )
+        reported_at = datetime.now(UTC)
+        deadline = compute_reporting_deadline(
+            is_serious=is_serious, reported_at=reported_at
+        )
+
+        ae = AdverseEvent(
+            subject_id=subject_id,
+            deployment_id=subject.deployment_id,
+            form_instance_id=form_instance_id,
+            term_text=term_text,
+            severity_grade=severity_grade,
+            outcome=outcome,
+            relationship_to_intervention=relationship_to_intervention,
+            start_date=start_date,
+            end_date=end_date,
+            is_serious=is_serious,
+            serious_reasons_json=json.dumps(reasons),
+            reported_at=reported_at,
+            reportable_deadline=deadline,
+            recorded_by=actor_sub,
+            narrative=narrative,
+        )
+        self._s.add(ae)
+        await self._s.flush()
+        self._audit(
+            entity_type="adverse_event",
+            entity_id=ae.id,
+            action="create",
+            actor_sub=actor_sub,
+            new_value=f"severity={severity_grade}, serious={is_serious}",
+        )
+        return ae
+
+    async def get_adverse_event(self, ae_id: str) -> AdverseEvent | None:
+        return await self._s.get(AdverseEvent, ae_id)
+
+    async def list_adverse_events(
+        self,
+        *,
+        subject_id: str | None = None,
+        deployment_id: str | None = None,
+        serious_only: bool = False,
+    ) -> list[AdverseEvent]:
+        stmt = select(AdverseEvent).order_by(AdverseEvent.reported_at.desc())
+        if subject_id is not None:
+            stmt = stmt.where(AdverseEvent.subject_id == subject_id)
+        if deployment_id is not None:
+            stmt = stmt.where(AdverseEvent.deployment_id == deployment_id)
+        if serious_only:
+            stmt = stmt.where(AdverseEvent.is_serious.is_(True))
+        return list((await self._s.scalars(stmt)).all())
+
+    async def list_overdue_serious_aes(self, deployment_id: str) -> list[AdverseEvent]:
+        """Serious AEs past their 24h escalation deadline that haven't
+        been reported to authority yet — drives the platform's safety
+        dashboard."""
+        now = datetime.now(UTC)
+        stmt = (
+            select(AdverseEvent)
+            .where(
+                AdverseEvent.deployment_id == deployment_id,
+                AdverseEvent.is_serious.is_(True),
+                AdverseEvent.reportable_deadline.is_not(None),
+                AdverseEvent.reportable_deadline < now,
+                AdverseEvent.reported_to_authority_at.is_(None),
+            )
+            .order_by(AdverseEvent.reportable_deadline.asc())
+        )
+        return list((await self._s.scalars(stmt)).all())
+
+    async def reclassify_adverse_event(
+        self,
+        ae_id: str,
+        *,
+        is_serious: bool | None = None,
+        serious_reasons: list[SeriousReason] | None = None,
+        outcome: str | None = None,
+        severity_grade: int | None = None,
+        meddra_pt: str | None = None,
+        narrative: str | None = None,
+        actor_sub: str | None = None,
+    ) -> AdverseEvent:
+        """PI/DM override of the auto-classification.
+
+        Only the fields explicitly passed are touched. Setting
+        `is_serious=False` clears the reportable_deadline; setting it to
+        True (re)computes it from `reported_at`. Every change is audited.
+        """
+        ae = await self._s.get(AdverseEvent, ae_id)
+        if ae is None:
+            raise ClinicalError(f"AdverseEvent {ae_id!r} not found.")
+        old_is_serious = ae.is_serious
+        if severity_grade is not None:
+            if severity_grade < 1 or severity_grade > 5:
+                raise ClinicalError("severity_grade must be 1–5.")
+            ae.severity_grade = severity_grade
+        if outcome is not None:
+            ae.outcome = outcome
+        if is_serious is not None:
+            ae.is_serious = is_serious
+            if is_serious and serious_reasons is None:
+                # Re-derive reasons from the existing fields.
+                _, reasons = auto_classify_serious(
+                    severity_grade=ae.severity_grade,
+                    outcome=ae.outcome,
+                )
+                ae.serious_reasons_json = json.dumps(reasons)
+            ae.reportable_deadline = compute_reporting_deadline(
+                is_serious=is_serious, reported_at=ae.reported_at
+            )
+        if serious_reasons is not None:
+            ae.serious_reasons_json = json.dumps(serious_reasons)
+        if meddra_pt is not None:
+            ae.meddra_pt = meddra_pt
+        if narrative is not None:
+            ae.narrative = narrative
+        ae.classified_by = actor_sub
+        await self._s.flush()
+        self._audit(
+            entity_type="adverse_event",
+            entity_id=ae.id,
+            action="classify",
+            actor_sub=actor_sub,
+            old_value=f"serious={old_is_serious}",
+            new_value=f"serious={ae.is_serious}, severity={ae.severity_grade}",
+        )
+        return ae
+
+    async def mark_ae_reported_to_authority(
+        self, ae_id: str, *, actor_sub: str | None = None
+    ) -> AdverseEvent:
+        """Stamp the AE as reported (3500A generated + acknowledged).
+
+        Clears the reportable_deadline so the overdue endpoint stops
+        surfacing it. Idempotent — re-stamping is a no-op.
+        """
+        ae = await self._s.get(AdverseEvent, ae_id)
+        if ae is None:
+            raise ClinicalError(f"AdverseEvent {ae_id!r} not found.")
+        if ae.reported_to_authority_at is not None:
+            return ae
+        ae.reported_to_authority_at = datetime.now(UTC)
+        ae.reportable_deadline = None
+        await self._s.flush()
+        self._audit(
+            entity_type="adverse_event",
+            entity_id=ae.id,
+            action="reported_to_authority",
+            actor_sub=actor_sub,
+        )
+        return ae
+
+    # ── Protocol deviations + CAPA ──────────────────────────────────────────
+
+    async def record_deviation(
+        self,
+        *,
+        deployment_id: str,
+        subject_id: str | None,
+        classification: str,
+        category: str,
+        description: str,
+        root_cause: str | None = None,
+        actor_sub: str | None = None,
+    ) -> ProtocolDeviation:
+        if classification not in ("major", "minor", "critical"):
+            raise ClinicalError(
+                "classification must be 'major', 'minor', or 'critical'."
+            )
+        dev = ProtocolDeviation(
+            subject_id=subject_id,
+            deployment_id=deployment_id,
+            classification=classification,
+            category=category,
+            description=description,
+            root_cause=root_cause,
+            discovered_by=actor_sub,
+        )
+        self._s.add(dev)
+        await self._s.flush()
+        self._audit(
+            entity_type="protocol_deviation",
+            entity_id=dev.id,
+            action="create",
+            actor_sub=actor_sub,
+            new_value=f"classification={classification}, category={category}",
+        )
+        return dev
+
+    async def reclassify_deviation(
+        self,
+        deviation_id: str,
+        *,
+        classification: str | None = None,
+        category: str | None = None,
+        root_cause: str | None = None,
+        actor_sub: str | None = None,
+    ) -> ProtocolDeviation:
+        dev = await self._s.get(ProtocolDeviation, deviation_id)
+        if dev is None:
+            raise ClinicalError(f"Deviation {deviation_id!r} not found.")
+        old_classification = dev.classification
+        if classification is not None:
+            if classification not in ("major", "minor", "critical"):
+                raise ClinicalError(
+                    "classification must be 'major', 'minor', or 'critical'."
+                )
+            dev.classification = classification
+        if category is not None:
+            dev.category = category
+        if root_cause is not None:
+            dev.root_cause = root_cause
+        dev.classified_by = actor_sub
+        await self._s.flush()
+        self._audit(
+            entity_type="protocol_deviation",
+            entity_id=dev.id,
+            action="classify",
+            actor_sub=actor_sub,
+            old_value=f"classification={old_classification}",
+            new_value=f"classification={dev.classification}",
+        )
+        return dev
+
+    async def get_deviation(self, deviation_id: str) -> ProtocolDeviation | None:
+        return await self._s.get(ProtocolDeviation, deviation_id)
+
+    async def list_deviations(
+        self,
+        *,
+        deployment_id: str | None = None,
+        subject_id: str | None = None,
+        status: str | None = None,
+    ) -> list[ProtocolDeviation]:
+        stmt = select(ProtocolDeviation).order_by(
+            ProtocolDeviation.discovered_at.desc()
+        )
+        if deployment_id is not None:
+            stmt = stmt.where(ProtocolDeviation.deployment_id == deployment_id)
+        if subject_id is not None:
+            stmt = stmt.where(ProtocolDeviation.subject_id == subject_id)
+        if status is not None:
+            stmt = stmt.where(ProtocolDeviation.status == status)
+        return list((await self._s.scalars(stmt)).all())
+
+    async def add_capa(
+        self,
+        deviation_id: str,
+        *,
+        action_text: str,
+        owner_sub: str | None = None,
+        due_date: datetime | None = None,
+        actor_sub: str | None = None,
+    ) -> CapaAction:
+        dev = await self._s.get(ProtocolDeviation, deviation_id)
+        if dev is None:
+            raise ClinicalError(f"Deviation {deviation_id!r} not found.")
+        if dev.status == "closed":
+            raise ClinicalError(
+                "Cannot add CAPA — deviation is closed. Reopen it first."
+            )
+        capa = CapaAction(
+            deviation_id=deviation_id,
+            action_text=action_text,
+            owner_sub=owner_sub,
+            due_date=due_date,
+            created_by=actor_sub,
+        )
+        self._s.add(capa)
+        # Adding a CAPA flips the parent deviation to under_capa if it
+        # was open. Idempotent — already-under_capa stays under_capa.
+        if dev.status == "open":
+            dev.status = "under_capa"
+        await self._s.flush()
+        self._audit(
+            entity_type="capa_action",
+            entity_id=capa.id,
+            action="create",
+            actor_sub=actor_sub,
+            reason=f"deviation={deviation_id}",
+        )
+        return capa
+
+    async def complete_capa(
+        self, capa_id: str, *, actor_sub: str | None = None
+    ) -> CapaAction:
+        capa = await self._s.get(CapaAction, capa_id)
+        if capa is None:
+            raise ClinicalError(f"CAPA {capa_id!r} not found.")
+        if capa.status == "completed":
+            return capa
+        capa.status = "completed"
+        capa.completed_at = datetime.now(UTC)
+        capa.completed_by = actor_sub
+        await self._s.flush()
+        self._audit(
+            entity_type="capa_action",
+            entity_id=capa.id,
+            action="complete",
+            actor_sub=actor_sub,
+        )
+        return capa
+
+    async def list_capas(self, deviation_id: str) -> list[CapaAction]:
+        stmt = (
+            select(CapaAction)
+            .where(CapaAction.deviation_id == deviation_id)
+            .order_by(CapaAction.created_at)
+        )
+        return list((await self._s.scalars(stmt)).all())
+
+    async def close_deviation(
+        self, deviation_id: str, *, actor_sub: str | None = None
+    ) -> ProtocolDeviation:
+        """PI closes a deviation — refused if any CAPA is still open."""
+        dev = await self._s.get(ProtocolDeviation, deviation_id)
+        if dev is None:
+            raise ClinicalError(f"Deviation {deviation_id!r} not found.")
+        if dev.status == "closed":
+            return dev
+        capas = await self.list_capas(deviation_id)
+        open_capas = [c for c in capas if c.status != "completed"]
+        if open_capas:
+            raise ClinicalError(
+                f"Cannot close — {len(open_capas)} CAPA action(s) still open."
+            )
+        dev.status = "closed"
+        dev.resolved_at = datetime.now(UTC)
+        dev.resolved_by = actor_sub
+        await self._s.flush()
+        self._audit(
+            entity_type="protocol_deviation",
+            entity_id=dev.id,
+            action="close",
+            actor_sub=actor_sub,
+        )
+        return dev

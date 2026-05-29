@@ -320,6 +320,243 @@ class SubjectSignature(ClinicalBase):
     )
 
 
+# ── Safety subsystem (AE/SAE + protocol deviations + CAPA) — top-6 #4 ────
+
+
+class AdverseEvent(ClinicalBase):
+    """An adverse event recorded against a subject.
+
+    Captured by coordinators at the point of care (`ae.record`), then
+    reviewed by the PI who can override the auto-classifier
+    (`ae.classify`). The auto-classification fires at write time via
+    `safety_rules.auto_classify_serious(...)`; the resulting
+    `is_serious` + `serious_reasons` are PERSISTED so a later rule
+    change doesn't quietly re-classify historical events. `reportable_
+    deadline` is the platform's 24-hour internal escalation timer
+    (NOT the FDA regulatory clock — that's documented in the IND
+    safety report draft).
+
+    `meddra_pt` is captured as free text — real MedDRA preferred-term
+    validation requires a license at deploy time. Treat the field as
+    "what the PI chose to code this as"; for production use, wire a
+    MedDRA dictionary into the validate-on-write path.
+
+    `form_instance_id` is nullable — AEs can be captured from a
+    dedicated form instance OR ad-hoc from the safety panel. When
+    present, the link gives a one-click jump from the AE record back
+    to the source form.
+    """
+
+    __tablename__ = "adverse_events"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    subject_id: Mapped[str] = mapped_column(
+        ForeignKey("subjects.id", ondelete="CASCADE"), index=True
+    )
+    deployment_id: Mapped[str] = mapped_column(Text, index=True)
+    form_instance_id: Mapped[str | None] = mapped_column(
+        ForeignKey("form_instances.id", ondelete="SET NULL"),
+        nullable=True,
+        default=None,
+        index=True,
+    )
+
+    term_text: Mapped[str] = mapped_column(
+        Text, doc="Verbatim AE description from the reporter."
+    )
+    meddra_pt: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        default=None,
+        doc=(
+            "MedDRA Preferred Term — free text in MVP; deploy with a "
+            "MedDRA license to validate against the dictionary."
+        ),
+    )
+
+    start_date: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    end_date: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
+    severity_grade: Mapped[int] = mapped_column(
+        Integer,
+        doc="CTCAE 1–5 scale; 5 = death related to AE.",
+    )
+    outcome: Mapped[str] = mapped_column(
+        Text,
+        default="unknown",
+        doc="recovered | recovering | not_recovered | death | unknown",
+    )
+    relationship_to_intervention: Mapped[str] = mapped_column(
+        Text,
+        default="unknown",
+        doc="unrelated | unlikely | possible | probable | definite | unknown",
+    )
+
+    is_serious: Mapped[bool] = mapped_column(Boolean, default=False)
+    serious_reasons_json: Mapped[str] = mapped_column(
+        Text,
+        default="[]",
+        doc="JSON list of safety_rules.SeriousReason values that fired.",
+    )
+
+    reported_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=_utcnow,
+        doc="When the event was first recorded in the platform.",
+    )
+    reportable_deadline: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        default=None,
+        doc=(
+            "Platform 24h internal-triage deadline; populated for serious "
+            "AEs. NULL when is_serious=False or after the event is reported."
+        ),
+    )
+    reported_to_authority_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        default=None,
+        doc="Set when the FDA 3500A (or equivalent) is generated + acknowledged.",
+    )
+
+    recorded_by: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    classified_by: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        default=None,
+        doc="The sub of the last PI/DM who reviewed + locked the classification.",
+    )
+    narrative: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        default=None,
+        doc="Long-form clinical narrative; required for the FDA 3500A report.",
+    )
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
+
+
+class ProtocolDeviation(ClinicalBase):
+    """A deviation from the approved protocol.
+
+    Logged by coordinators or monitors (`deviation.record`), classified
+    by the data manager / PI (`deviation.classify`). A deviation can
+    sit at `open` indefinitely; once a CAPA is added, status flips to
+    `under_capa`. The PI closes the deviation (`capa.close`) only after
+    every linked CapaAction is completed.
+
+    `category` captures the kind of deviation so trends are queryable
+    (e.g. recurring eligibility issues at a site point at process
+    training needs). Free-text categories drift; a closed enum keeps
+    reporting stable.
+    """
+
+    __tablename__ = "protocol_deviations"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    subject_id: Mapped[str | None] = mapped_column(
+        ForeignKey("subjects.id", ondelete="SET NULL"),
+        nullable=True,
+        default=None,
+        index=True,
+        doc=(
+            "Nullable for deployment-wide deviations (e.g. a temperature "
+            "excursion in the central drug supply) that don't tie to a "
+            "single subject."
+        ),
+    )
+    deployment_id: Mapped[str] = mapped_column(Text, index=True)
+
+    classification: Mapped[str] = mapped_column(
+        Text,
+        default="minor",
+        doc="major | minor | critical (drives reportability + DMC visibility)",
+    )
+    category: Mapped[str] = mapped_column(
+        Text,
+        doc=(
+            "consent | eligibility | procedure | visit_window | "
+            "drug_compliance | ae_not_reported | data_capture | other"
+        ),
+    )
+    description: Mapped[str] = mapped_column(Text)
+    root_cause: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+
+    status: Mapped[str] = mapped_column(
+        Text,
+        default="open",
+        doc="open | under_capa | closed",
+    )
+    discovered_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
+    discovered_by: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    classified_by: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    resolved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
+    resolved_by: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
+
+    capas: Mapped[list[CapaAction]] = relationship(
+        back_populates="deviation", cascade="all, delete-orphan"
+    )
+
+
+class CapaAction(ClinicalBase):
+    """A Corrective And Preventive Action attached to a deviation.
+
+    Authored by the data manager (`capa.author`), executed by the
+    assigned owner. The owner marks their own action complete; the PI
+    closes the deviation once every CAPA is `completed`. An audit
+    entry is written for every transition.
+    """
+
+    __tablename__ = "capa_actions"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    deviation_id: Mapped[str] = mapped_column(
+        ForeignKey("protocol_deviations.id", ondelete="CASCADE"), index=True
+    )
+    action_text: Mapped[str] = mapped_column(Text)
+    owner_sub: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        default=None,
+        doc=(
+            "Cognito sub of the person assigned to execute. NULL = "
+            "unassigned (the data manager will fill in)."
+        ),
+    )
+    due_date: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
+    status: Mapped[str] = mapped_column(
+        Text, default="open", doc="open | completed"
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
+    completed_by: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+
+    created_by: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
+
+    deviation: Mapped[ProtocolDeviation] = relationship(back_populates="capas")
+
+
 class AuditEntry(ClinicalBase):
     """Append-only audit trail (ALCOA+ / 21 CFR Part 11 §11.10(e)).
 
