@@ -51,11 +51,11 @@ Where the item sits in the research lifecycle:
 | Start-up | ClinicalTrials.gov / EU CTR registration drafter | **P0** | 💡 proposed | M |
 | Start-up | IRB / ethics submission packet + ICF drafter | **P0** | 💡 proposed | L |
 | Execution | Randomisation / IRT service | **P0** | 💡 proposed | M |
-| Execution | AE / SAE workflow (detect, code, escalate) | **P0** | 💡 proposed | M |
+| Execution | AE / SAE workflow (detect, code, escalate) | **P0** | ✅ shipped 2026-05-29 | M |
 | Execution | eCRF formal validation pack (CSV / IQ-OQ-PQ) | **P0** | 📝 planned (feature-guide) | L |
 | Analysis | CDISC SDTM mapping → ADaM → TLF | **P0** | 💡 proposed | XL |
 | Analysis | CSR (ICH E3) drafter | **P0** | 💡 proposed | XL |
-| Execution | Protocol-deviation tracking + CAPA | **P1** | 💡 proposed | M |
+| Execution | Protocol-deviation tracking + CAPA | **P1** | ✅ shipped 2026-05-29 | M |
 | Execution | Recruitment / screening logs | **P1** | 💡 proposed | S |
 | Execution | Visit scheduling + participant reminders | **P1** | 💡 proposed | M |
 | Execution | Source-document extraction (EHR → eCRF / extraction table) | **P1** | 📝 planned (feature-guide) | L |
@@ -97,6 +97,7 @@ The starting state for this roadmap. Anything listed here is in production today
 | RBAC (scoped roles + permission matrix + skill gating + ownership) — RBAC-1/2/3 all shipped 2026-05-29, including Student tier | `src/research_assistant/auth/rbac.py`, `web/authz.py`, `agent/dispatcher.authorize_workflow`, role-admin UI in `admin.html` |
 | SR screening — title/abstract + full-text dual review (R1/R2/Adjudicator) + AI-assist + PRISMA flow diagram (SVG); 14 routes under `/api/sr/*`, `sr.html` UI | `src/research_assistant/persistence/sr_repository.py`, `web/sr.py`, `agent/specialists/sr_screening_assist.py`, `web/static/sr.html` |
 | Sample-size calculator + SAP drafter — four formulas (two-proportions / two-means / time-to-event / paired) + ICH-E9-shaped Statistical Analysis Plan with PDF/DOCX export; multi-step PICOT → sample_size → analysis_plan → sap_document workflow | `src/research_assistant/tools/data_science/sample_size.py`, `agent/specialists/sap_drafter.py`, `reports/sap.py`, `domain/sap.py` |
+| eCRF safety subsystem — AE/SAE auto-classification (ICH E2A criteria) + 24h reporting timer + overdue SAE dashboard + MedDRA-PT field (free-text MVP; deploy with license for validation) + FDA 3500A draft PDF/DOCX; protocol-deviation log with major/minor/critical classification + CAPA lifecycle; subject-level safety panel in collector.html | `src/research_assistant/persistence/clinical/safety_rules.py`, `persistence/clinical/repository.py` (AE/deviation/CAPA methods), `reports/sae_3500a.py`, `web/edc.py` (16 safety endpoints), `web/static/collector.html` safety panel |
 | Sandboxed Python execution (Docker, network-disabled, capped CPU/RAM, RW output dir) | `src/research_assistant/tools/data_science/sandbox_exec.py` |
 | Multi-source paper search behind `PaperSource` Protocol (PubMed + Europe PMC live; Embase / Cochrane / Scopus / WoS as pluggable additions) | `src/research_assistant/tools/clinical/sources/` |
 | Per-thread quotas, per-turn ceilings, daily token caps | `src/research_assistant/services/quota.py`, `config/settings.py` |
@@ -188,20 +189,9 @@ A prospective trial without randomisation isn't a trial. Block-randomised, strat
 - **Dependencies:** RBAC (the IRT call is the moment role-separation between coordinator/investigator/sponsor matters most).
 - **Unlocks:** the RCT market for the eCRF subsystem.
 
-#### AE / SAE workflow on top of eCRF · 💡 · M
+#### ~~AE / SAE workflow on top of eCRF~~ · ✅ shipped 2026-05-29 · M
 
-AE capture exists in eCRFs; the **workflow** doesn't. Components:
-
-- SAE detection rules (grade ≥3, hospitalisation, death, …)
-- 24-hour reporting timer with sponsor inbox escalation
-- MedDRA preferred-term coding (requires MedDRA license at deploy)
-- IND safety report drafting (FDA 3500A shape)
-- SUSAR (Suspected Unexpected Serious Adverse Reaction) handling
-
-Compliance-critical for trial use; absent today.
-
-- **Dependencies:** none hard; MedDRA license at deploy time.
-- **Unlocks:** trial compliance posture; IND / CTA submissions.
+Was a compliance-critical gap — closed. New `safety_rules.auto_classify_serious()` applies ICH E2A §III.A criteria (grade ≥3, death, life-threatening, hospitalisation, congenital, persistent disability, other medically significant) on every AE write; `compute_reporting_deadline()` stamps a 24-hour platform escalation timer for serious events. The overdue-SAE endpoint surfaces past-deadline events that haven't been reported. PI overrides flow through `PATCH /api/edc/ae/{id}` and clear the deadline on downgrade. FDA 3500A IND safety report draft shipped via `reports/sae_3500a.py` — fields the platform can derive are filled; sponsor-supplied fields (IND number, NDA/BLA number, investigator name + address) are marked `[SPONSOR INPUT REQUIRED]` rather than fabricated. PHI minimisation enforced (only subject_code; never participant name). MedDRA Preferred Term is captured as free text; real validation needs a MedDRA license at deploy — documented in the endpoint docstring + this row. SUSAR detection is the next-most-natural follow-up (it's an SAE subset with `unexpected=True` and `relationship_to_intervention >= probable`) and remains intentionally deferred.
 
 ### Analysis / Reporting
 
@@ -229,9 +219,9 @@ A real CSR is 80–150 TLF artefacts plus narrative. The per-workflow report eng
 
 ### Execution
 
-#### Protocol-deviation tracking + CAPA · 💡 · M
+#### ~~Protocol-deviation tracking + CAPA~~ · ✅ shipped 2026-05-29 · M
 
-A regulator's first ask at inspection. Per-subject log with classification (major / minor / critical), root cause, Corrective and Preventive Action (CAPA) workflow. The eCRF audit trail records *what changed*; deviations are a higher-level classification on top.
+Was a regulator's first ask at inspection — closed. New `ProtocolDeviation` + `CapaAction` clinical-store models with full lifecycle: log (coordinator/monitor) → classify (data_manager/PI) → add CAPAs (data_manager) → complete CAPAs (owner) → close deviation (PI; refused while any CAPA is still open). The eCRF audit trail records *what changed* on individual items; this layer is the higher-level classification on top. Surfaces in the collector's per-subject safety panel.
 
 #### Recruitment / screening logs · 💡 · S
 
@@ -362,8 +352,8 @@ Best ordering given unlock value × dependencies × effort:
 |---|---|---|
 | ~~1~~ | ~~**RBAC implementation**~~ — ✅ shipped 2026-05-29 | (Done — RBAC-1+2+3 + Student tier landed.) |
 | ~~2~~ | ~~**SR screening UI + PRISMA flow diagram**~~ — ✅ shipped 2026-05-29 | (Done — dual review + AI-assist + PRISMA SVG.) |
-| ~~3~~ | ~~**Sample-size + SAP drafter (paired)**~~ — ✅ shipped 2026-05-29 | (Done — four formulas + ICH-E9 SAP workflow + PDF/DOCX export, 498 tests pass.) |
-| 4 | **AE/SAE workflow + protocol-deviation tracking (paired)** | Compliance-critical eCRF v2 features; lifts eCRF subsystem from "research-grade" to "trial-grade". No new architecture; bolts onto existing capture. |
+| ~~3~~ | ~~**Sample-size + SAP drafter (paired)**~~ — ✅ shipped 2026-05-29 | (Done — four formulas + ICH-E9 SAP workflow + PDF/DOCX export.) |
+| ~~4~~ | ~~**AE/SAE workflow + protocol-deviation tracking (paired)**~~ — ✅ shipped 2026-05-29 | (Done — ICH E2A auto-classification, 24h timer, FDA 3500A draft, CAPA lifecycle, 544 tests pass.) |
 | 5 | **Manuscript drafter (IMRaD) + reviewer-response loop** | Composes existing per-workflow reports into journal-shaped artefacts. 80% of the primitives carry forward into CSR. Reviewer-response is a high-delight feature with low marginal cost. |
 | 6 | **CDISC SDTM mapping (start the multi-quarter build)** | Largest effort item; needs to start now so it lands when CSR begins to demand it. Choose OSS library vs build during the design pass. |
 

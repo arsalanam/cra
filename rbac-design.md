@@ -129,6 +129,8 @@ magic-link token (`ParticipantAccess`), already isolated to one subject.
 skill.meta_analysis · skill.search_strategy · skill.sr_protocol ·
 skill.risk_of_bias · skill.general_qa · skill.ecrf_design ·
 skill.sap_drafter
+ae.record · ae.classify · sae.report
+deviation.record · deviation.classify · capa.author · capa.close
 library.read · library.write
 watch.read · watch.manage
 study.read · study.author · study.publish · study.create
