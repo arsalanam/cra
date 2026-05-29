@@ -11,8 +11,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import matplotlib.pyplot as plt
-import numpy as np
+import matplotlib
+
+matplotlib.use("Agg")
+
+import matplotlib.pyplot as plt  # noqa: E402
+import numpy as np  # noqa: E402
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY, TA_LEFT
 from reportlab.lib.pagesizes import LETTER
@@ -258,6 +262,38 @@ styles = {
         alignment=TA_LEFT,
         spaceAfter=4,
     ),
+    "Cell": ParagraphStyle(
+        "Cell",
+        parent=base["BodyText"],
+        fontName="Helvetica",
+        fontSize=7.5,
+        leading=9.5,
+        textColor=SLATE,
+        alignment=TA_LEFT,
+        spaceAfter=0,
+    ),
+    "CellHead": ParagraphStyle(
+        "CellHead",
+        parent=base["BodyText"],
+        fontName="Helvetica-Bold",
+        fontSize=8,
+        leading=10,
+        textColor=colors.white,
+        alignment=TA_LEFT,
+        spaceAfter=0,
+    ),
+    "Bullet": ParagraphStyle(
+        "Bullet",
+        parent=base["BodyText"],
+        fontName="Helvetica",
+        fontSize=10,
+        leading=14,
+        textColor=SLATE,
+        alignment=TA_LEFT,
+        spaceAfter=6,
+        leftIndent=12,
+        bulletIndent=0,
+    ),
 }
 
 
@@ -394,6 +430,36 @@ def cost_card(figure: str, label: str, sub: str, width: float) -> Table:
     return t
 
 
+def matrix_table(
+    headers: list[str],
+    rows: list[list[str]],
+    col_widths: list[float],
+    header_bg: colors.Color = NAVY,
+) -> Table:
+    """Compact multi-column reference table for the appendices."""
+    data = [[Paragraph(h, styles["CellHead"]) for h in headers]]
+    for row in rows:
+        data.append([Paragraph(c, styles["Cell"]) for c in row])
+    t = Table(data, colWidths=col_widths, repeatRows=1)
+    t.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), header_bg),
+                ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
+                ("TOPPADDING", (0, 0), (-1, 0), 6),
+                ("LEFTPADDING", (0, 0), (-1, -1), 5),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+                ("TOPPADDING", (0, 1), (-1, -1), 4),
+                ("BOTTOMPADDING", (0, 1), (-1, -1), 4),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, LIGHT]),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("GRID", (0, 0), (-1, -1), 0.3, BORDER),
+            ]
+        )
+    )
+    return t
+
+
 # ── Document build ─────────────────────────────────────────────────────────
 
 
@@ -466,14 +532,14 @@ def build_pdf() -> None:
         )
     )
 
-    story.append(PageBreak())
-    story.append(Paragraph("", styles["Body"]))  # ensure new template applied
-
-    # Switch to content template
+    # Page 1 uses the cover template; switch to the content template *before*
+    # the page break so page 2 onward render as white content pages (not under
+    # the cover's navy band).
     from reportlab.platypus import NextPageTemplate
 
     story.insert(0, NextPageTemplate("cover"))
     story.append(NextPageTemplate("content"))
+    story.append(PageBreak())
 
     # ── WHY ──────────────────────────────────────────────────────────────
     story.append(Paragraph("Why this exists", styles["H1"]))
@@ -499,11 +565,15 @@ def build_pdf() -> None:
     )
 
     story.append(Spacer(1, 0.1 * inch))
-    story.append(Paragraph("What it does today", styles["H1"]))
+    story.append(Paragraph("What the assistant does", styles["H1"]))
     story.append(
         Paragraph(
-            "Five guided workflows plus a continuous-monitoring service. Each one launches from "
-            "natural language or a slash command and produces a structured, citation-anchored output.",
+            "Five guided evidence workflows, a continuous-monitoring service, a local research store "
+            "that grows in value the more you use it, and a regulatory-grade <b>electronic "
+            "data-capture (eCRF/EDC)</b> subsystem for running your own studies. Each workflow "
+            "launches from natural language or a slash command and produces a structured, "
+            "citation-anchored output you can take into a manuscript, a registration, or a grant "
+            "application.",
             styles["Body"],
         )
     )
@@ -513,23 +583,26 @@ def build_pdf() -> None:
         (
             "1",
             "Meta-analysis workflow",
-            "End-to-end from a research question to a forest plot. The assistant walks the user "
-            "through <b>PICO</b> confirmation, runs the literature search across configured "
-            "databases, "
-            "presents candidates for inclusion/exclusion, captures the extraction table, then "
-            "computes the pooled effect estimate with heterogeneity statistics and renders a "
-            "publication-grade forest plot inside an isolated compute sandbox.",
-            "what used to be a multi-week analyst engagement becomes a single guided session. "
-            "Every PMID traces back to a real database hit.",
+            "End-to-end: from a research question to a forest plot. The assistant walks the user "
+            "through <b>PICO</b> confirmation, runs the literature search across every database your "
+            "institution has licensed, presents candidate studies for inclusion/exclusion, captures "
+            "the extraction table, then computes the pooled effect estimate with heterogeneity "
+            "statistics and renders a publication-grade forest plot inside an isolated compute "
+            "sandbox.",
+            "what used to be a multi-week analyst engagement is a single guided session. "
+            "Every PMID in the output traces back to a real database hit — the model is structurally "
+            "prevented from inventing citations.",
         ),
         (
             "2",
             "Search-strategy builder",
             "Constructs Boolean queries with MeSH terms, field tags, and database-specific syntax "
-            "(PubMed today; Embase / Cochrane on the roadmap). Iterates on <b>broaden / tighten</b> "
-            "suggestions with the user until the strategy is registration-ready.",
-            "defensible, reproducible search strings in minutes instead of half a day, with full "
-            "iteration history preserved.",
+            "across <b>PubMed, Europe PMC, Embase, Cochrane Library, Scopus, and Web of Science</b> "
+            "— whichever your institution has licensed, in a single fan-out. Iterates on "
+            "<b>broaden / tighten</b> suggestions with the user until the strategy is "
+            "registration-ready.",
+            "information specialists get a defensible, multi-database, reproducible search string in "
+            "minutes instead of half a day, with the iteration history preserved.",
         ),
         (
             "3",
@@ -537,22 +610,24 @@ def build_pdf() -> None:
             "Generates a <b>PRISMA-P–aligned</b> protocol skeleton — background, objectives, "
             "eligibility, search methods, screening plan, data items, risk-of-bias plan, synthesis "
             "approach — ready to deposit in <b>PROSPERO</b>.",
-            "a protocol-ready first draft your methodologist edits, not writes from scratch.",
+            "a protocol-ready first draft your methodologist edits, not writes from scratch. Helps "
+            "surface gaps before they cost you a peer-review round.",
         ),
         (
             "4",
             "Risk-of-Bias assessor",
             "Supports the major instruments: <b>RoB 2</b> (RCTs), <b>ROBINS-I</b> (non-randomised), "
             "<b>Newcastle-Ottawa</b> (observational), <b>QUADAS-2</b> (diagnostic accuracy). Walks "
-            "domain-by-domain, asks the judgement questions, and produces the structured assessment "
-            "table.",
+            "domain-by-domain, asks the operator the judgement questions, and produces the structured "
+            "assessment table for the review.",
             "consistency across reviewers and a clean audit trail of why each judgement landed where "
             "it did.",
         ),
         (
             "5",
             "General clinical Q&amp;A",
-            "Background reading, definitions, guideline navigation. Uses web and Wikipedia tools, "
+            "For the questions that aren't a full systematic review: background reading, definition "
+            "of methods, navigation of guidelines. The assistant uses web and Wikipedia tools, "
             "but is <b>hard-prevented from quoting effect sizes, PMIDs, or guideline citations from "
             "training data</b> — a regex-level validator blocks unsupported clinical claims before "
             "they reach the user.",
@@ -562,12 +637,31 @@ def build_pdf() -> None:
         (
             "6",
             "Living-review watches (scheduled monitoring)",
-            "Pin a PICO and a search strategy as a <b>watch</b>, set a cadence (daily / weekly / "
-            "monthly), and the assistant re-runs the search on schedule, diffs against the baseline "
-            "corpus, triages newly published papers against the original PICO, and "
-            "<b>notifies the team when something materially shifts the evidence base</b>.",
+            "A meta-analysis or systematic review doesn't have to be a snapshot. Pin a PICO and a "
+            "search strategy as a <b>watch</b>, set a cadence (daily / weekly / monthly), and the "
+            "assistant re-runs the search on schedule, diffs against the baseline corpus, triages "
+            "newly published papers against the original PICO, and <b>notifies the team when "
+            "something materially shifts the evidence base</b>.",
             "living reviews stop drifting out of date. Guideline committees and HTA bodies get "
             "alerted to practice-changing evidence as it lands.",
+        ),
+        (
+            "7",
+            "Electronic data capture (eCRF / EDC)",
+            "Beyond synthesising other people's evidence, the assistant runs <b>your own studies' "
+            "data collection</b> — an electronic case-report-form (eCRF) and data-capture (EDC) "
+            "subsystem built to <b>CDISC</b> and <b>21 CFR Part 11 / ALCOA+</b> conventions. Paste a "
+            "protocol and the assistant drafts CDASH-aligned forms plus a visit schedule (a designer "
+            "reviews — never auto-publish); versioned, immutable definitions export as <b>CDISC "
+            "ODM-XML</b>. Two capture surfaces — a <b>site EDC</b> screen and a consent-gated, "
+            "magic-link <b>participant ePRO</b> surface — validate on entry, with hard/soft "
+            "edit-checks feeding a full query workflow. Subject PHI lives in a <b>separate "
+            "clinical-data store</b>, never sent to the model. E-signatures bind to the exact signed "
+            "data, lock against edits, and roll up to a subject-casebook sign-off; source-data "
+            "verification and a <b>tamper-proof, append-only audit trail enforced by the database</b> "
+            "capture every change with who, when, old→new value, and reason.",
+            "the weeks-long investigator↔data-manager round-trip at study start-up collapses to a "
+            "guided session, and the resulting capture system is audit-ready by construction.",
         ),
     ]
     for num, title, body, outcome in workflows[:3]:
@@ -582,7 +676,7 @@ def build_pdf() -> None:
     story.append(Paragraph("What makes it different", styles["H1"]))
     differentiators = [
         (
-            "Anti-hallucination enforced in code",
+            "Anti-hallucination enforced in code, not just prompt",
             "A regex validator and tool-gated PMID rule block fabricated citations even if the "
             "underlying model drifts. Your investigators can trust the bibliography.",
         ),
@@ -590,37 +684,47 @@ def build_pdf() -> None:
             "Source-agnostic search across paid + open databases",
             "PubMed, Europe PMC, Embase, Cochrane Library, Scopus, Web of Science — all live "
             "behind a pluggable <b>PaperSource</b> interface and fanned out in parallel with "
-            "cross-source de-duplication. One admin panel for credentials and rate limits.",
+            "cross-source de-duplication. One admin panel for credentials, rate-limits, "
+            "enable/disable.",
         ),
         (
             "Local research cache + RAG over pulled content",
-            "Every abstract, full-text article, and extraction table you pull lands in the local "
-            "research store. A retrieval-augmented pipeline searches that store first, so the "
-            "same paper isn't re-fetched — or re-billed — across reviews. Pull paid content "
+            "Every abstract, full-text article, MeSH lookup, and extraction table you pull lands in "
+            "the local research store. A retrieval-augmented pipeline searches that store first, so "
+            "the same paper isn't re-fetched — or re-billed — across reviews. Pull paid content "
             "once; reuse it across the entire research programme.",
         ),
         (
             "Sandboxed statistical compute",
             "All Python analysis runs inside a Docker container with networking disabled, "
-            "read-only inputs, and capped CPU/memory. No host access; no leakage.",
+            "read-only inputs, and capped CPU/memory. The model can run a random-effects "
+            "meta-analysis without ever touching the host or the wider internet.",
         ),
         (
             "Workflow-gated tools",
-            "The assistant can't skip ahead — no meta-analysis before a confirmed PICO; no full "
-            "text before studies are selected. The methodology <i>is</i> the guardrail.",
+            "The assistant cannot skip ahead. It can't run a meta-analysis before a PICO is "
+            "confirmed; it can't fetch full text before studies are selected. The methodology "
+            "<i>is</i> the guardrail.",
         ),
         (
-            "Flexible, role-aware deployment",
-            "Deploy <b>on-premises or in your cloud</b> — the FastAPI core runs anywhere from a "
-            "single workstation to a managed container platform. <b>Role-based access control</b> "
-            "gates each workflow per user, and onboarding a new researcher is a one-step "
-            "provisioning action that scopes their search-API keys, model access, and visibility "
-            "into shared review threads from day one.",
+            "Regulatory-grade data capture built in",
+            "The eCRF/EDC subsystem follows <b>CDISC</b> (ODM-XML export, CDASH naming) and "
+            "<b>21 CFR Part 11 / ALCOA+</b>: subject PHI in a separate store, e-signatures bound to "
+            "the signed data, source-data verification, and an <b>append-only audit trail enforced "
+            "by the database</b> — not just application code. Author a CRF, deploy it, and collect "
+            "site + participant data without leaving the platform.",
+        ),
+        (
+            "Flexible, secure deployment",
+            "Deploy on-premises or in your cloud. <b>OAuth2 / OpenID Connect</b> integrates with "
+            "your existing identity provider; <b>role-based access control</b> scopes each workflow "
+            "per user; sensitive material (API keys, PHI) lives in your <b>secrets manager</b>, "
+            "never in plaintext config.",
         ),
         (
             "Full conversation persistence",
             "Every turn — PICO, included studies, extraction table, generated code, plot — is "
-            "stored. Reproducing an analysis a year later is just re-opening the thread.",
+            "stored. Reproducing an analysis a year later means re-opening the thread.",
         ),
     ]
     story.append(differentiator_table(differentiators))
@@ -643,28 +747,38 @@ def build_pdf() -> None:
     cost_left = cost_card(
         "$200 – $300",
         "ACTIVE RESEARCH DAY (PER USER)",
-        "Envelope for a productive day of meta-analysis work: PICO refinement, multi-database "
+        "Covers Bedrock tokens + Tavily for a productive day: PICO refinement, multi-database "
         "search, screening + extraction across dozens of papers, statistical analysis with code "
-        "generation, and forest-plot rendering. Covers <b>Bedrock model tokens + Tavily "
-        "web search</b>.",
-        3.1 * inch,
+        "generation, forest-plot rendering.",
+        2.0 * inch,
+    )
+    cost_mid = cost_card(
+        "≈ $0",
+        "RE-OPEN / INSPECT A THREAD",
+        "Past tool results (papers, extractions, generated code, plots) are already in the local "
+        "store. Re-opening costs only the few tokens of the current turn.",
+        2.0 * inch,
     )
     cost_right = cost_card(
         "≈ $0",
-        "INCREMENTAL COST OF A RE-OPEN",
-        "Re-opening an existing thread to inspect, audit, or re-export the analysis costs only "
-        "the few tokens of the current turn. Past tool results (papers, extractions, generated "
-        "code, plots) are already persisted in the local store.",
-        3.1 * inch,
+        "RE-USE A PAPER ACROSS REVIEWS",
+        "The RAG pipeline hits the local research store first. The same landmark trial reused "
+        "across cardio / onco / ID reviews is paid for once.",
+        2.0 * inch,
     )
 
-    cost_row = Table([[cost_left, cost_right]], colWidths=[3.2 * inch, 3.2 * inch])
+    cost_row = Table(
+        [[cost_left, cost_mid, cost_right]],
+        colWidths=[2.43 * inch, 2.43 * inch, 2.43 * inch],
+    )
     cost_row.setStyle(
         TableStyle(
             [
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 0),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("LEFTPADDING", (0, 0), (0, -1), 0),
+                ("RIGHTPADDING", (-1, 0), (-1, -1), 0),
+                ("LEFTPADDING", (1, 0), (-1, -1), 5),
+                ("RIGHTPADDING", (0, 0), (1, -1), 5),
                 ("TOPPADDING", (0, 0), (-1, -1), 0),
                 ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
             ]
@@ -672,55 +786,16 @@ def build_pdf() -> None:
     )
     story.append(Spacer(1, 0.05 * inch))
     story.append(cost_row)
-    story.append(Spacer(1, 0.12 * inch))
+    story.append(Spacer(1, 0.14 * inch))
 
-    story.append(Paragraph("How the envelope is built", styles["H2"]))
-    story.append(
-        Paragraph(
-            "An active meta-analysis session is token-heavy because the model reads abstracts, "
-            "reasons over extraction tables, writes statistical code, and reviews its own outputs. "
-            "On Claude Sonnet–class pricing, a serious day of work lands in the <b>$200–$300</b> "
-            "range — comfortably below the cost of an equivalent human-analyst day. Light browsing, "
-            "background reading, or quick definitional Q&amp;A sessions run at a small fraction of "
-            "that figure.",
-            styles["Body"],
-        )
-    )
-    story.append(
-        Paragraph(
-            "Tavily web search is consumed only by the General Q&amp;A and protocol-drafting flows; "
-            "the clinical search itself runs against PubMed and Europe PMC and does <b>not</b> "
-            "consume Tavily credits.",
-            styles["Body"],
-        )
-    )
-
-    story.append(Paragraph("Why the local store keeps costs flat", styles["H2"]))
-    story.append(
-        Paragraph(
-            "Pulled study material — abstracts, MeSH lookups, fetched PMC full text, generated "
-            "extraction tables — is persisted in CRA's local store. The next time the same study or "
-            "the same PICO is touched (e.g. by a living-review watch, by a sibling project, or by a "
-            "re-run on updated data), the assistant reads from the local cache instead of re-issuing "
-            "API calls. <b>The marginal cost of revisiting prior work approaches zero.</b>",
-            styles["Body"],
-        )
-    )
-    story.append(
-        Paragraph(
-            "This matters most for teams running <b>multiple parallel reviews</b> in overlapping "
-            "areas — cardiovascular, oncology, infectious disease — where the same landmark trials "
-            "show up across many questions. The first review pays for the lookup; every subsequent "
-            "review reuses it for free.",
-            styles["Body"],
-        )
-    )
+    story.append(Paragraph("Cost-control levers built in", styles["H2"]))
 
     # Cost-control levers — a small reference table
     levers = [
         (
-            "Local study cache",
-            "Re-use of pulled abstracts / full text across reviews — no repeat API spend.",
+            "Local cache + RAG",
+            "Re-use of pulled abstracts and full text across reviews — no repeat API spend on "
+            "content you've already paid for.",
         ),
         (
             "Workflow-gated tools",
@@ -733,9 +808,13 @@ def build_pdf() -> None:
             "known maximum cost.",
         ),
         (
-            "Configurable model tier",
-            "Drop to a cheaper Sonnet / Haiku variant per workflow when full Opus reasoning isn't "
-            "required.",
+            "Configurable model tier per workflow",
+            "Drop to a cheaper Sonnet / Haiku variant when full Opus reasoning isn't required.",
+        ),
+        (
+            "Tavily scoped to two flows",
+            "Tavily is consumed only by general Q&amp;A + protocol drafting; the clinical search "
+            "runs against bibliographic databases and does not consume Tavily credits.",
         ),
     ]
     lever_data = [["Cost-control lever", "How it keeps spend predictable"]]
@@ -763,6 +842,78 @@ def build_pdf() -> None:
     )
     story.append(Spacer(1, 0.06 * inch))
     story.append(lever_table)
+    story.append(Spacer(1, 0.1 * inch))
+    story.append(
+        Paragraph(
+            "A token-heavy day still lands comfortably <b>below the cost of an equivalent "
+            "human-analyst day</b> — and per-paper marginal cost flattens as your local store grows.",
+            styles["Body"],
+        )
+    )
+
+    story.append(PageBreak())
+
+    # ── DEPLOYMENT & GOVERNANCE ──────────────────────────────────────────
+    story.append(Paragraph("Deployment &amp; governance", styles["H1"]))
+    governance = [
+        (
+            "Flexible deployment",
+            "Runs on-premises or in your cloud (AWS, GCP, Azure). Single-tenant by default; same "
+            "codebase, your choice of trust boundary.",
+        ),
+        (
+            "Authentication",
+            "OAuth2 / OpenID Connect — drops into Okta, Azure AD, Auth0, Keycloak, or your "
+            "homegrown IdP. No bespoke user database.",
+        ),
+        (
+            "Authorisation",
+            "Role-based access control per user. New-researcher onboarding is a one-step "
+            "provisioning action that scopes their search-API entitlements, model access, and "
+            "visibility into shared review threads.",
+        ),
+        (
+            "Sensitive data",
+            "API keys, Bedrock credentials, and any PHI live in a secrets manager (AWS Secrets "
+            "Manager, HashiCorp Vault, etc.) — never in plaintext config or SQLite.",
+        ),
+        (
+            "Data egress",
+            "Outbound traffic is limited to your configured bibliographic APIs and your Bedrock "
+            "endpoint. No telemetry. No shared multi-tenant cloud — LLM calls go to your own AWS "
+            "account, so PHI-grade compute stays inside your trust boundary.",
+        ),
+        (
+            "Audit",
+            "Every turn is persisted with full message + tool-call history. Re-opening a thread "
+            "reproduces the analysis exactly. Exportable as part of a regulatory submission package.",
+        ),
+    ]
+    gov_data = [["Area", "What you get"]]
+    for name, why in governance:
+        gov_data.append(
+            [Paragraph(f"<b>{name}</b>", styles["BodyTight"]), Paragraph(why, styles["BodyTight"])]
+        )
+    gov_table = Table(gov_data, colWidths=[1.6 * inch, 4.8 * inch])
+    gov_table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), NAVY),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, 0), 10),
+                ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
+                ("TOPPADDING", (0, 0), (-1, 0), 6),
+                ("LEFTPADDING", (0, 0), (-1, -1), 8),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, LIGHT]),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("GRID", (0, 0), (-1, -1), 0.3, BORDER),
+            ]
+        )
+    )
+    story.append(Spacer(1, 0.05 * inch))
+    story.append(gov_table)
 
     story.append(PageBreak())
 
@@ -770,28 +921,32 @@ def build_pdf() -> None:
     story.append(Paragraph("On the roadmap", styles["H1"]))
     story.append(
         Paragraph(
-            "Beyond the v1 capability set, the architecture was built to absorb these without "
+            "Beyond the v1 capability set above, the architecture was built to absorb these without "
             "rebuilding the core. Each is a tractable next increment, not a moonshot.",
             styles["Body"],
         )
     )
 
-    story.append(Paragraph("Automated clinical data collection", styles["H2"]))
+    story.append(Paragraph("Source-document extraction", styles["H2"]))
     story.append(
         Paragraph(
-            "<b>eCRF designer</b> — generate a draft electronic case-report form directly from a "
-            "study protocol, with field types, validation rules, and skip logic mapped to the "
-            "protocol's data items. Reduces the weeks-long round-trip between investigator and "
-            "data manager at study start-up.",
+            "The eCRF / EDC subsystem (§7 above) now ships. The remaining piece of automated data "
+            "collection is <b>source-document extraction</b> — point the assistant at structured "
+            "exports from your EHR / registry / trial-management system and have it populate the "
+            "extraction table (or pre-fill eCRF instances) for retrospective studies or "
+            "patient-level meta-analyses, with an audit trail of which source row produced which "
+            "output cell.",
             styles["Body"],
         )
     )
+
+    story.append(Paragraph("Deepening eCRF compliance toward a formal validation pack", styles["H2"]))
     story.append(
         Paragraph(
-            "<b>Source-document extraction</b> — point the assistant at structured exports from your "
-            "EHR / registry / trial-management system and have it populate the extraction table for "
-            "retrospective studies or patient-level meta-analyses, with an audit trail of which "
-            "source row produced which output cell.",
+            "The eCRF subsystem is built to Part 11 / ALCOA+ conventions; the next increments "
+            "formalise it for an audited deployment: full password re-authentication at signing, "
+            "study-level (not just subject-level) lock, and a documented computer-system-validation "
+            "(IQ/OQ/PQ) package.",
             styles["Body"],
         )
     )
@@ -802,9 +957,9 @@ def build_pdf() -> None:
             "Generate <b>plain-language summaries</b> of a study's objectives, what participation "
             "involves, and what the early evidence suggests — at a configurable reading level, in "
             "the patient's preferred language. Designed for <b>research participant recruitment</b>, "
-            "<b>shared decision-making</b> conversations, and <b>return-of-results</b> obligations "
-            "under modern IRB / ethics guidance. The lay summary and the manuscript share a single "
-            "evidence base, so they cannot drift apart.",
+            "<b>shared-decision-making conversations</b>, and <b>post-study return-of-results</b> "
+            "obligations under modern IRB / ethics guidance. Sources back to the same evidence base "
+            "the clinical workflow uses, so the lay summary and the manuscript are in lock-step.",
             styles["Body"],
         )
     )
@@ -830,6 +985,7 @@ def build_pdf() -> None:
     )
 
     story.append(Spacer(1, 0.2 * inch))
+    story.append(Paragraph("In short", styles["H2"]))
     story.append(
         Paragraph(
             '<font color="#6B7280" size="9"><i>'
@@ -840,6 +996,225 @@ def build_pdf() -> None:
             styles["BodyTight"],
         )
     )
+
+    # ── APPENDIX A — CAPABILITY MATRIX ───────────────────────────────────
+    story.append(PageBreak())
+    story.append(Paragraph("Appendix A — Capability Matrix", styles["H1"]))
+    cap_headers = [
+        "Workflow",
+        "Trigger / slash",
+        "Inputs collected",
+        "Tools available",
+        "Structured outputs",
+        "Hardened guardrails",
+    ]
+    cap_rows = [
+        [
+            "<b>Meta-analysis</b>",
+            '"meta-analysis on…", "pooled effect of…", /meta',
+            "PICO → included studies → extraction table",
+            "search_papers, rag_search, mesh_lookup, fetch_pmc_fulltext, sandbox_exec, calculator",
+            "PICO card, study-selection card, extraction card, forest plot + summary",
+            "PMIDs must come from search; plot rules enforced in sandbox",
+        ],
+        [
+            "<b>Search strategy</b>",
+            '"build a search strategy…", /search',
+            "Concept terms, MeSH, filters",
+            "mesh_lookup, search_papers (preview counts)",
+            "Boolean string per database, MeSH map, broaden/tighten suggestions",
+            "None needed — output is the query itself",
+        ],
+        [
+            "<b>SR protocol</b>",
+            '"draft a protocol…", /protocol, /prisma',
+            "PICO + scope choices",
+            "web_search, wikipedia, fetch_document",
+            "PRISMA-P–shaped protocol sections",
+            "No effect-size or PMID synthesis allowed",
+        ],
+        [
+            "<b>Risk of Bias</b>",
+            '"risk of bias…", "RoB 2", /rob',
+            "Tool choice + per-study source",
+            "fetch_pmc_fulltext, rag_search, read_file",
+            "Domain-by-domain judgements with rationale",
+            "Operator must confirm each judgement",
+        ],
+        [
+            "<b>General Q&amp;A</b>",
+            "Everything else, /general",
+            "Free-form question",
+            "web_search, wikipedia, fetch_document, rag_search, read_file, describe_image",
+            "Cited prose answer",
+            "Regex validator blocks unsupported clinical claims",
+        ],
+        [
+            "<b>Watch triage</b> <i>(background)</i>",
+            "Configured per-PICO schedule",
+            "New PMIDs since last run",
+            "(none — text-only)",
+            "Per-paper triage + run summary + optional notification",
+            "Same anti-hallucination posture as user-facing flows",
+        ],
+        [
+            "<b>eCRF authoring</b>",
+            'Form Builder UI · "draft CRFs from protocol"',
+            "Protocol text → form definitions",
+            "ecrf_design specialist",
+            "Versioned form definitions, ODM-XML export",
+            "Integrity-validated definitions; human review before publish; AI never auto-publishes",
+        ],
+        [
+            "<b>EDC capture</b> <i>(site)</i>",
+            "Data Capture UI",
+            "Subject data against deployed forms",
+            "(collection API)",
+            "Captured item data, queries, signatures",
+            "Edit-checks (hard block / soft query); signed forms edit-locked; append-only audit "
+            "(DB-enforced)",
+        ],
+        [
+            "<b>ePRO capture</b> <i>(participant)</i>",
+            "Magic-link /epro",
+            "Patient-reported outcomes",
+            "(token-scoped API)",
+            "Captured item data",
+            "Consent gate; per-subject token scope; same edit-checks + audit",
+        ],
+    ]
+    story.append(Spacer(1, 0.05 * inch))
+    story.append(
+        matrix_table(
+            cap_headers,
+            cap_rows,
+            col_widths=[
+                0.78 * inch,
+                1.12 * inch,
+                1.12 * inch,
+                1.42 * inch,
+                1.26 * inch,
+                1.6 * inch,
+            ],
+        )
+    )
+
+    story.append(Spacer(1, 0.16 * inch))
+    story.append(Paragraph("Tool inventory", styles["H2"]))
+    tool_rows = [
+        [
+            "Clinical",
+            "search_papers",
+            "Fan-out search across enabled databases (PubMed, Europe PMC, Embase, Cochrane, Scopus, "
+            "Web of Science); dedupes by PMID → DOI → source-id",
+        ],
+        [
+            "Clinical",
+            "rag_search",
+            "Retrieval-augmented search over the local research store — checks pulled content before "
+            "re-issuing API calls",
+        ],
+        ["Clinical", "mesh_lookup", "MeSH term resolution + tree-walk"],
+        [
+            "Clinical",
+            "fetch_pmc_fulltext",
+            "Full-text retrieval; results cached into the local research store",
+        ],
+        [
+            "Data science",
+            "sandbox_exec",
+            "Docker-isolated Python with pandas / numpy / scipy / statsmodels / matplotlib / seaborn "
+            "/ forestplot — no network, capped CPU &amp; memory",
+        ],
+        ["Data science", "python_repl", "Lightweight in-process Python for arithmetic-only ops"],
+        ["Data science", "calculator", "Safe arithmetic evaluator"],
+        ["General", "web_search", "Tavily-backed search for non-clinical context"],
+        ["General", "wikipedia", "Definitional / background lookups"],
+        ["General", "fetch_document", "Fetch + extract text from arbitrary URLs"],
+        ["General", "read_file", "Read user-uploaded documents (PDF, DOCX, TXT)"],
+        ["General", "describe_image", "Vision model for chart / figure / scan interpretation"],
+    ]
+    story.append(Spacer(1, 0.04 * inch))
+    story.append(
+        matrix_table(
+            ["Category", "Tool", "What it does"],
+            tool_rows,
+            col_widths=[0.9 * inch, 1.3 * inch, 5.1 * inch],
+            header_bg=TEAL,
+        )
+    )
+
+    story.append(Spacer(1, 0.16 * inch))
+    story.append(Paragraph("Configuration surface", styles["H2"]))
+    config_rows = [
+        [
+            "Paper-source enable / disable, rate limits, credentials",
+            "Admin panel (credentials read from your secrets manager)",
+            "Plug in your institution's PubMed / NCBI key, Embase, Cochrane, Scopus, Web of Science "
+            "subscriptions — toggle without redeploying",
+        ],
+        ["Identity provider", "OIDC client config", "Wire to Okta / Azure AD / Auth0 / Keycloak / homegrown"],
+        [
+            "Role-based access",
+            "Admin panel",
+            "Per-user scoping of search entitlements, model tier, and shared-thread visibility",
+        ],
+        [
+            "LLM model + region",
+            "Per-workflow config",
+            "Pin a Sonnet / Opus / Haiku version your governance team has approved; drop to cheaper "
+            "tier for lighter workflows",
+        ],
+        [
+            "Sandbox limits",
+            "Config (sandbox_timeout_seconds, sandbox_memory_mb, sandbox_cpu)",
+            "Cap compute per-analysis",
+        ],
+        [
+            "Context window &amp; summarisation",
+            "Config (context_window_messages, summarize_after_messages)",
+            "Keep long meta-analysis threads from blowing past model limits",
+        ],
+        [
+            "Runaway-loop bounds",
+            "Config (max_model_requests, agent_timeout_seconds)",
+            "Hard ceilings on per-turn cost",
+        ],
+    ]
+    story.append(Spacer(1, 0.04 * inch))
+    story.append(
+        matrix_table(
+            ["Setting", "Where", "Why an admin cares"],
+            config_rows,
+            col_widths=[2.0 * inch, 1.8 * inch, 3.5 * inch],
+        )
+    )
+
+    # ── APPENDIX B — COMPLIANCE & GUARDRAILS ─────────────────────────────
+    story.append(PageBreak())
+    story.append(Paragraph("Appendix B — Compliance &amp; guardrails at a glance", styles["H1"]))
+    story.append(Spacer(1, 0.05 * inch))
+    compliance = [
+        "<b>No fabricated citations.</b> Clinical PMIDs are only emitted when they originated from "
+        "a live search_papers call. The general Q&amp;A flow has a separate regex validator that "
+        "rejects answers attempting to quote effect sizes, PMIDs, or guideline statements not "
+        "present in the conversation's tool results.",
+        "<b>No silent skipping.</b> Workflow specialists hide downstream tools until the upstream "
+        "stage is confirmed by the user — e.g. sandbox_exec is invisible to the model until an "
+        "extraction table exists.",
+        "<b>No host access from generated code.</b> The Python sandbox runs in a Docker container "
+        "with networking disabled, the script and inputs mounted read-only, and only a designated "
+        "output directory writable.",
+        "<b>No plaintext secrets.</b> API keys, model credentials, and any PHI live in your secrets "
+        "manager and are read at runtime — never persisted in config files or the local database.",
+        "<b>No third-party LLM intermediary.</b> Model calls go directly to your AWS Bedrock "
+        "account; you choose the region; the assistant has no shared multi-tenant cloud.",
+        "<b>Full reproducibility.</b> Threads persist every user message, model message, tool call, "
+        "tool result, and structured output. The same thread re-opened tomorrow reproduces today's "
+        "forest plot.",
+    ]
+    for item in compliance:
+        story.append(Paragraph(item, styles["Bullet"], bulletText="•"))
 
     doc.build(story)
     print(f"Wrote {OUT_PATH.relative_to(ROOT)}")
