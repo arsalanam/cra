@@ -44,8 +44,8 @@ Where the item sits in the research lifecycle:
 | Phase | Item | Priority | Status | Effort |
 |---|---|---|---|---|
 | Cross-cutting | RBAC (scoped roles + permission matrix) | **P0** | ✅ shipped (RBAC-1+2+3) | L |
-| Synthesis | SR title/abstract + full-text screening UI | **P0** | 💡 proposed | M |
-| Synthesis | PRISMA flow diagram generation | **P0** | 💡 proposed | S |
+| Synthesis | SR title/abstract + full-text screening UI | **P0** | ✅ shipped 2026-05-29 | M |
+| Synthesis | PRISMA flow diagram generation | **P0** | ✅ shipped 2026-05-29 | S |
 | Design | Sample-size + power calculator | **P0** | 💡 proposed | S |
 | Design | Statistical Analysis Plan (SAP) drafter | **P0** | 💡 proposed | M |
 | Start-up | ClinicalTrials.gov / EU CTR registration drafter | **P0** | 💡 proposed | M |
@@ -95,6 +95,7 @@ The starting state for this roadmap. Anything listed here is in production today
 | Publication cache + Titan v2 embeddings + hybrid `rag_search` + PDF upload + library UI (R0–R4) | `src/research_assistant/tools/clinical/rag_search.py`, `services/library/*` |
 | OAuth2 / OIDC via Cognito; multi-tenant pool support; role-based admin gating; invite flow | `src/research_assistant/web/auth.py`, `scripts/cognito_setup.py` |
 | RBAC (scoped roles + permission matrix + skill gating + ownership) — RBAC-1/2/3 all shipped 2026-05-29, including Student tier | `src/research_assistant/auth/rbac.py`, `web/authz.py`, `agent/dispatcher.authorize_workflow`, role-admin UI in `admin.html` |
+| SR screening — title/abstract + full-text dual review (R1/R2/Adjudicator) + AI-assist + PRISMA flow diagram (SVG); 14 routes under `/api/sr/*`, `sr.html` UI | `src/research_assistant/persistence/sr_repository.py`, `web/sr.py`, `agent/specialists/sr_screening_assist.py`, `web/static/sr.html` |
 | Sandboxed Python execution (Docker, network-disabled, capped CPU/RAM, RW output dir) | `src/research_assistant/tools/data_science/sandbox_exec.py` |
 | Multi-source paper search behind `PaperSource` Protocol (PubMed + Europe PMC live; Embase / Cochrane / Scopus / WoS as pluggable additions) | `src/research_assistant/tools/clinical/sources/` |
 | Per-thread quotas, per-turn ceilings, daily token caps | `src/research_assistant/services/quota.py`, `config/settings.py` |
@@ -131,18 +132,16 @@ Items here gate concrete customer segments. Ordered roughly by sequencing logic 
 
 ### Synthesis
 
-#### SR title/abstract + full-text screening UI · 💡 · M
+#### ~~SR title/abstract + full-text screening UI~~ · ✅ shipped 2026-05-29 · M
 
-Search + extraction + meta are best-in-class today, but the **screening loop** in between — 3–8k abstracts, two reviewers, conflict resolution — is missing. Real teams currently bounce out to Rayyan or Covidence and back. This is the single biggest seam in the SR pipeline.
+Was: search + extraction + meta were best-in-class but the **screening loop** in between — 3–8k abstracts, two reviewers, conflict resolution — was missing. Closed.
 
-- **Dependencies:** RBAC (for Reviewer-1 vs Reviewer-2 vs Adjudicator roles).
-- **Unlocks:** PRISMA flow diagram as a free byproduct; team-based SRs; closes the obvious omission for any research office that does ≥3 SRs/year.
+- **What landed:** project model with PICO + inclusion/exclusion criteria; reviewer slots (R1 / R2 / Adjudicator) with parallel `RoleAssignment` grants at `scope_type='sr_review'`; ingest endpoint reuses the multi-source paper search and dedupes against the existing `Publication` cache; dual-review queue is blind to other reviewers' decisions (R1's response shape carries no R2 votes and vice versa); agreement rules in `SrReviewRepository._recompute_status` collapse to terminal include/exclude or raise `pending_adjudication`; adjudicator-only conflicts view; full screening UI in `/sr.html` with keyboard shortcuts (`i` include / `e` exclude / `m` maybe); progress bar; PRISMA SVG diagram + counts.
+- **AI-assist:** new `sr_screening_assist` specialist (pure text-in / structured-out, no tools, cheap-model tier) pre-classifies pending abstracts against the project's PICO + criteria; predictions are persisted to `AiSuggestion` rows so accuracy-vs-human can be measured later. Surfaces inline in the screening card; reviewer accepts or overrides.
 
-#### PRISMA flow diagram generation · 💡 · S
+#### ~~PRISMA flow diagram generation~~ · ✅ shipped 2026-05-29 · S
 
-Every SR submission requires one. We already have every input (per-source search yields, dedupe count, included/excluded counts, screening reasons). A leaf-node feature once screening UI lands.
-
-- **Dependencies:** SR screening UI (for the included/excluded counts at title-abstract and full-text stages).
+Shipped alongside the screening UI as `GET /api/sr/projects/{id}/prisma` (counts JSON) + `GET /api/sr/projects/{id}/prisma/diagram.svg` (hand-rolled SVG, no sandbox needed). Counts derive entirely from candidate statuses + reason codes; the SVG composes the standard 4-row flow with side exclusion boxes that include the per-reason breakdown.
 
 ### Design (upstream of protocol)
 
@@ -366,8 +365,8 @@ Best ordering given unlock value × dependencies × effort:
 
 | # | Item | Why now |
 |---|---|---|
-| 1 | **RBAC implementation** | Unblocks SR screening UI, randomisation, source-doc extraction, and every multi-user workflow. Highest dependency-fan-out item in this document. |
-| 2 | **SR screening UI + PRISMA flow diagram** | Single biggest seam in the existing SR pipeline. PRISMA diagram is a free byproduct. RBAC must land first or be stubbed. |
+| ~~1~~ | ~~**RBAC implementation**~~ — ✅ shipped 2026-05-29 | (Done — RBAC-1+2+3 + Student tier landed.) |
+| ~~2~~ | ~~**SR screening UI + PRISMA flow diagram**~~ — ✅ shipped 2026-05-29 | (Done — dual review + AI-assist + PRISMA SVG, 457 tests pass.) |
 | 3 | **Sample-size + SAP drafter (paired)** | Cheapest P0 in this doc (sample-size is S effort). Unlocks the prospective-trial design loop end-to-end with the existing `sr_protocol` specialist. |
 | 4 | **AE/SAE workflow + protocol-deviation tracking (paired)** | Compliance-critical eCRF v2 features; lifts eCRF subsystem from "research-grade" to "trial-grade". No new architecture; bolts onto existing capture. |
 | 5 | **Manuscript drafter (IMRaD) + reviewer-response loop** | Composes existing per-workflow reports into journal-shaped artefacts. 80% of the primitives carry forward into CSR. Reviewer-response is a high-delight feature with low marginal cost. |

@@ -89,13 +89,28 @@ research DB already has the additive-migration mechanism; this is an additive ch
 **System / research (global scope):**
 - `admin` — superuser; every permission, global.
 - `researcher` — the evidence-work base role: all `skill.*` evidence skills, library
-  read/write, own watches & threads.
+  read/write, own watches & threads, plus SR-screening project lifecycle
+  (`sr.create` / `sr.manage` / `sr.read` / `sr.ai_assist`). The actual
+  screening permissions (`sr.screen` / `sr.adjudicate`) come from project
+  *membership* (R1 / R2 / Adjudicator), not from being a researcher globally.
 - `student` — basic researcher account for teaching / learning use; restricted to
   the meta-analysis workflow only (plus `skill.general_qa` so the dispatcher's
   default-fallback for free-form chat doesn't 403 them). No library, watches,
-  search-strategy, SR-protocol, RoB, or eCRF access. Quota tier intentionally
-  the lowest once per-user quotas land (RBAC-3).
-- `auditor` — read-only across data + audit trail (no writes).
+  search-strategy, SR-protocol, RoB, eCRF, or SR-screening access. Quota tier
+  intentionally the lowest once per-user quotas land (RBAC-3).
+- `auditor` — read-only across data + audit trail (no writes), plus read-only
+  on SR projects + PRISMA flow.
+
+**SR screening (project-scoped — `scope_type='sr_review'`):**
+- `reviewer_1` / `reviewer_2` — independent abstract + full-text screening on
+  one project; carries `sr.read` + `sr.screen` + `prisma.read`. No project-
+  management or tie-break authority.
+- `adjudicator` — resolves R1 / R2 disagreements on one project; carries
+  `sr.adjudicate` in addition to the reviewer perms.
+
+Memberships are recorded by `SrReviewMembership` (project, user, role) and
+in parallel as a `RoleAssignment(scope_type='sr_review', scope_id=project_id)`
+so the same RBAC seam (`require_permission_scoped`) gates everything.
 
 **eCRF (study- or site-scoped):**
 - `study_designer` — author/publish forms, manage the study, deploy, `skill.ecrf_design`.
@@ -122,6 +137,8 @@ query.raise · query.respond · query.close
 sdv.verify
 form.sign · form.unlock · casebook.signoff · subject.unlock
 audit.read
+sr.create · sr.manage · sr.read · sr.screen · sr.adjudicate · sr.ai_assist
+prisma.read
 user.manage · source.manage
 ```
 
