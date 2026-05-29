@@ -46,8 +46,8 @@ Where the item sits in the research lifecycle:
 | Cross-cutting | RBAC (scoped roles + permission matrix) | **P0** | ✅ shipped (RBAC-1+2+3) | L |
 | Synthesis | SR title/abstract + full-text screening UI | **P0** | ✅ shipped 2026-05-29 | M |
 | Synthesis | PRISMA flow diagram generation | **P0** | ✅ shipped 2026-05-29 | S |
-| Design | Sample-size + power calculator | **P0** | 💡 proposed | S |
-| Design | Statistical Analysis Plan (SAP) drafter | **P0** | 💡 proposed | M |
+| Design | Sample-size + power calculator | **P0** | ✅ shipped 2026-05-29 | S |
+| Design | Statistical Analysis Plan (SAP) drafter | **P0** | ✅ shipped 2026-05-29 | M |
 | Start-up | ClinicalTrials.gov / EU CTR registration drafter | **P0** | 💡 proposed | M |
 | Start-up | IRB / ethics submission packet + ICF drafter | **P0** | 💡 proposed | L |
 | Execution | Randomisation / IRT service | **P0** | 💡 proposed | M |
@@ -96,6 +96,7 @@ The starting state for this roadmap. Anything listed here is in production today
 | OAuth2 / OIDC via Cognito; multi-tenant pool support; role-based admin gating; invite flow | `src/research_assistant/web/auth.py`, `scripts/cognito_setup.py` |
 | RBAC (scoped roles + permission matrix + skill gating + ownership) — RBAC-1/2/3 all shipped 2026-05-29, including Student tier | `src/research_assistant/auth/rbac.py`, `web/authz.py`, `agent/dispatcher.authorize_workflow`, role-admin UI in `admin.html` |
 | SR screening — title/abstract + full-text dual review (R1/R2/Adjudicator) + AI-assist + PRISMA flow diagram (SVG); 14 routes under `/api/sr/*`, `sr.html` UI | `src/research_assistant/persistence/sr_repository.py`, `web/sr.py`, `agent/specialists/sr_screening_assist.py`, `web/static/sr.html` |
+| Sample-size calculator + SAP drafter — four formulas (two-proportions / two-means / time-to-event / paired) + ICH-E9-shaped Statistical Analysis Plan with PDF/DOCX export; multi-step PICOT → sample_size → analysis_plan → sap_document workflow | `src/research_assistant/tools/data_science/sample_size.py`, `agent/specialists/sap_drafter.py`, `reports/sap.py`, `domain/sap.py` |
 | Sandboxed Python execution (Docker, network-disabled, capped CPU/RAM, RW output dir) | `src/research_assistant/tools/data_science/sandbox_exec.py` |
 | Multi-source paper search behind `PaperSource` Protocol (PubMed + Europe PMC live; Embase / Cochrane / Scopus / WoS as pluggable additions) | `src/research_assistant/tools/clinical/sources/` |
 | Per-thread quotas, per-turn ceilings, daily token caps | `src/research_assistant/services/quota.py`, `config/settings.py` |
@@ -145,19 +146,13 @@ Shipped alongside the screening UI as `GET /api/sr/projects/{id}/prisma` (counts
 
 ### Design (upstream of protocol)
 
-#### Sample-size + power calculator · 💡 · S
+#### ~~Sample-size + power calculator~~ · ✅ shipped 2026-05-29 · S
 
-Without this there is no grant submission and no ethics package for prospective work. **Lowest-effort P0 in this document** — `sandbox_exec` already has `pwr`, `statsmodels`, and `scipy` pinned. Worth pairing with the SAP drafter (below).
+Was the lowest-effort P0 in this document — closed. New `sample_size` tool under `tools/data_science/` exposes four closed-form helpers (two-proportions, two-means, time-to-event/Schoenfeld, paired) implemented directly on scipy.stats so it runs in the agent process (no sandbox round-trip). Returns a dict shaped to match `domain.sap.SampleSizeResult` so the SAP workflow's STEP 2 ingests it without translation.
 
-- **Dependencies:** none.
-- **Unlocks:** end-to-end design loop for prospective trials.
+#### ~~Statistical Analysis Plan (SAP) drafter~~ · ✅ shipped 2026-05-29 · M
 
-#### Statistical Analysis Plan (SAP) drafter · 💡 · M
-
-Distinct artefact from PRISMA-P. For prospective trials this is its own ICH-E9-shaped document: analysis populations (ITT / mITT / PP / Safety), handling of missing data, multiplicity adjustments, interim-analysis stopping rules, sensitivity analyses. Natural fit as a new specialist or as an extension of `sr_protocol`.
-
-- **Dependencies:** sample-size calculator (the SAP references the powering assumptions).
-- **Unlocks:** prospective trial design loop; statistician-grade output.
+Shipped as a NEW specialist (`sap_drafter`), separate from `sr_protocol` because prospective-trial methodology (ICH E9) is structurally different from literature-review methodology (PRISMA-P). Four-stage workflow: PICOT intake → sample-size derivation (calls the `sample_size` tool) → ICH-E9 analysis plan → assembled SAP document. PDF + DOCX downloads via the existing `reports/` machinery. New `skill.sap_drafter` permission granted to researcher + admin; student blocked. Dispatcher catches `/sap`, `/samplesize`, "sample size", "SAP", "ICH E9", "prospective trial", "powered to detect", "PICOT".
 
 ### Start-up
 
@@ -366,8 +361,8 @@ Best ordering given unlock value × dependencies × effort:
 | # | Item | Why now |
 |---|---|---|
 | ~~1~~ | ~~**RBAC implementation**~~ — ✅ shipped 2026-05-29 | (Done — RBAC-1+2+3 + Student tier landed.) |
-| ~~2~~ | ~~**SR screening UI + PRISMA flow diagram**~~ — ✅ shipped 2026-05-29 | (Done — dual review + AI-assist + PRISMA SVG, 457 tests pass.) |
-| 3 | **Sample-size + SAP drafter (paired)** | Cheapest P0 in this doc (sample-size is S effort). Unlocks the prospective-trial design loop end-to-end with the existing `sr_protocol` specialist. |
+| ~~2~~ | ~~**SR screening UI + PRISMA flow diagram**~~ — ✅ shipped 2026-05-29 | (Done — dual review + AI-assist + PRISMA SVG.) |
+| ~~3~~ | ~~**Sample-size + SAP drafter (paired)**~~ — ✅ shipped 2026-05-29 | (Done — four formulas + ICH-E9 SAP workflow + PDF/DOCX export, 498 tests pass.) |
 | 4 | **AE/SAE workflow + protocol-deviation tracking (paired)** | Compliance-critical eCRF v2 features; lifts eCRF subsystem from "research-grade" to "trial-grade". No new architecture; bolts onto existing capture. |
 | 5 | **Manuscript drafter (IMRaD) + reviewer-response loop** | Composes existing per-workflow reports into journal-shaped artefacts. 80% of the primitives carry forward into CSR. Reviewer-response is a high-delight feature with low marginal cost. |
 | 6 | **CDISC SDTM mapping (start the multi-quarter build)** | Largest effort item; needs to start now so it lands when CSR begins to demand it. Choose OSS library vs build during the design pass. |
