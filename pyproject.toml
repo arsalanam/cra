@@ -22,6 +22,7 @@ dependencies = [
     "pymupdf>=1.24",
     "python-docx>=1.1",
     "python-pptx>=1.0",
+    "reportlab>=4.0",        # PDF generation for downloadable meta-analysis reports
     "docker>=7.0",
     "apscheduler>=3.11",
     "pgvector>=0.3",         # pgvector SQLAlchemy type + asyncpg codec (RAG embeddings)
@@ -70,7 +71,7 @@ python_version = "3.13"
 exclude = ["tests/"]
 
 [[tool.mypy.overrides]]
-module = ["wikipediaapi", "tavily", "fitz", "docx", "pptx", "docker", "docker.*", "jose", "jose.*", "itsdangerous", "boto3", "botocore", "botocore.*", "pgvector", "pgvector.*", "apscheduler", "apscheduler.*"]
+module = ["wikipediaapi", "tavily", "fitz", "docx", "docx.*", "pptx", "docker", "docker.*", "jose", "jose.*", "itsdangerous", "boto3", "botocore", "botocore.*", "pgvector", "pgvector.*", "apscheduler", "apscheduler.*", "reportlab", "reportlab.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

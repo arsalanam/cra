@@ -9,15 +9,20 @@ import json
 import logging
 from collections import Counter
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict
 
 from ..config import get_settings
 from ..persistence.database import get_db_session
 from ..persistence.models import Thread
 from ..persistence.repository import ThreadRepository
+from ..reports import meta_analysis as _ma_report
+from ..reports import risk_of_bias as _rob_report
+from ..reports import sr_protocol as _proto_report
 from ..services.quota import build_quota_payload, get_today_token_totals
 
 logger = logging.getLogger(__name__)
@@ -180,6 +185,95 @@ def create_thread_router() -> APIRouter:
                 raise HTTPException(404, "Thread not found")
             messages = await repo.get_messages(thread_id)
             return [MessageOut.model_validate(m) for m in messages]
+
+    # ── Downloadable workflow reports ─────────────────────────────────
+    _REPORT_FORMATS: dict[str, tuple[str, str]] = {
+        # format → (media_type, file extension)
+        "pdf": ("application/pdf", "pdf"),
+        "docx": (
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "docx",
+        ),
+    }
+    # kind → (assembler, pdf builder, docx builder, filename slug, friendly name)
+    _REPORT_BUILDERS: dict[str, tuple[Any, Any, Any, str, str]] = {
+        "meta_analysis": (
+            _ma_report.assemble_report_data,
+            _ma_report.build_pdf,
+            _ma_report.build_docx,
+            "meta-analysis",
+            "meta-analysis",
+        ),
+        "sr_protocol": (
+            _proto_report.assemble_report_data,
+            _proto_report.build_pdf,
+            _proto_report.build_docx,
+            "sr-protocol",
+            "SR/MA protocol",
+        ),
+        "rob": (
+            _rob_report.assemble_report_data,
+            _rob_report.build_pdf,
+            _rob_report.build_docx,
+            "rob",
+            "risk-of-bias",
+        ),
+    }
+
+    @router.get("/{thread_id}/report/{kind}/{fmt}")
+    async def download_workflow_report(
+        thread_id: str, kind: str, fmt: str
+    ) -> Response:
+        """Generate a downloadable PDF or DOCX report for one of the
+        report-producing workflows on this thread.
+
+        kind ∈ {meta_analysis, sr_protocol, rob}. Returns 404 if no
+        terminal card of that workflow exists yet on the thread.
+        """
+        if kind not in _REPORT_BUILDERS:
+            raise HTTPException(
+                400,
+                f"Unsupported report kind {kind!r}. "
+                f"Choose one of: {sorted(_REPORT_BUILDERS)}.",
+            )
+        if fmt not in _REPORT_FORMATS:
+            raise HTTPException(
+                400,
+                f"Unsupported report format {fmt!r}. "
+                f"Choose one of: {sorted(_REPORT_FORMATS)}.",
+            )
+        assembler, build_pdf_fn, build_docx_fn, slug, friendly = _REPORT_BUILDERS[kind]
+        media_type, ext = _REPORT_FORMATS[fmt]
+
+        async with get_db_session() as session:
+            repo = ThreadRepository(session)
+            if await repo.get_thread(thread_id) is None:
+                raise HTTPException(404, "Thread not found")
+            messages = await repo.get_messages(thread_id)
+
+        data = assembler(thread_id, messages)
+        if data is None:
+            raise HTTPException(
+                404,
+                f"No {friendly} result in this thread yet. "
+                f"Run the {friendly} workflow to completion first.",
+            )
+
+        images_dir = Path(get_settings().images_dir)
+        builder = build_pdf_fn if fmt == "pdf" else build_docx_fn
+        payload = builder(data, images_dir)
+
+        # Prefix with a short thread tag so the user can tell downloads apart
+        # if they grab reports from multiple threads in one session.
+        filename = f"{slug}-{thread_id[:8]}.{ext}"
+        return Response(
+            content=payload,
+            media_type=media_type,
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "Cache-Control": "no-store",
+            },
+        )
 
     # ── Stream Event Replay ───────────────────────────────────────────
 

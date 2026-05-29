@@ -20,7 +20,7 @@ import logging
 from collections.abc import Sequence
 from typing import Any
 
-from pydantic_ai import Agent, RunContext
+from pydantic_ai import Agent, ModelRetry, RunContext
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.tools import ToolDefinition
 from pydantic_ai.usage import UsageLimits
@@ -332,6 +332,49 @@ _OUTPUT_TYPES: list[type] = [
 _agent: Agent[AgentDeps, MetaAnalysisTurn] | None = None
 
 
+def _require_sandbox_for_results(
+    ctx: RunContext[AgentDeps],
+    output: Any,
+) -> Any:
+    """Hard guard: STEP 5 MetaAnalysisResults must be backed by a sandbox_exec run.
+
+    `deps.artifacts` is empty at the start of every turn and only populated when
+    `sandbox_exec` produces output files. If the model emits MetaAnalysisResults
+    without any artifacts, it computed the pooled estimates inline from
+    conversation history instead of running them through the sandbox — which
+    violates the STEP 5 contract and leaves `forest_plot_image=None` on every
+    outcome (the user sees "No forest plot generated for this outcome" in the
+    UI).
+
+    The most common cause is the user typing a free-form confirmation like
+    "approved" or "go ahead" instead of clicking the **Run meta-analysis**
+    button on the Data Extraction card, so the assistant never receives the
+    "Confirmed extracted data" + JSON payload that STEP 5 expects. Force a
+    retry with explicit instructions to reconstruct the JSON from history.
+    """
+    if isinstance(output, MetaAnalysisResults) and not ctx.deps.artifacts:
+        logger.warning(
+            "MetaAnalysisResults emitted without any sandbox_exec artifacts "
+            "(outcomes=%d) — forcing retry",
+            len(output.outcome_results),
+        )
+        raise ModelRetry(
+            "You produced a MetaAnalysisResults output without calling "
+            "sandbox_exec this turn. STEP 5 REQUIRES sandbox_exec for BOTH "
+            "the pooled-effect computation AND the forest-plot rendering — "
+            "never compute pooled estimates inline from conversation history. "
+            "If the user's confirmation message did not embed an extraction "
+            "JSON payload (e.g. they typed a free-form 'approved' instead of "
+            "clicking the Data Extraction card's button), reconstruct the "
+            "studies JSON from the most recent data_extraction card in this "
+            "thread's history and pass it as `input_data` to sandbox_exec, "
+            "following the STEP 5d template. Emit MetaAnalysisResults only "
+            "after sandbox_exec has produced forest_plot_outcome_<index>.png "
+            "files for each outcome with >=2 studies."
+        )
+    return output
+
+
 def build_agent() -> Agent[AgentDeps, MetaAnalysisTurn]:
     agent: Agent[AgentDeps, MetaAnalysisTurn] = Agent(
         model=build_bedrock_model(),
@@ -349,6 +392,10 @@ def build_agent() -> Agent[AgentDeps, MetaAnalysisTurn]:
     tools = [*CLINICAL_TOOLS, *DATA_SCIENCE_TOOLS, *GENERAL_TOOLS, rag_search]
     for tool_module in tools:
         tool_module.register(agent)
+
+    # Hard guard: never accept a MetaAnalysisResults that wasn't backed by a
+    # sandbox_exec run. See `_require_sandbox_for_results` docstring.
+    agent.output_validator(_require_sandbox_for_results)
 
     logger.info(
         "Meta-analysis specialist built — %d tools registered",

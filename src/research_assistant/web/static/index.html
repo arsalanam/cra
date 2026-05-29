@@ -1168,14 +1168,14 @@ function Turn({ message, onSend, onHandoff, onHandoffProtocolToSearch, onHandoff
         {turn.kind === "pico"             && <PicoCard turn={turn} onSend={onSend} disabled={running} />}
         {turn.kind === "search_results"   && <SearchResultsCard turn={turn} onSend={onSend} disabled={running} />}
         {turn.kind === "data_extraction"  && <DataExtractionCard turn={turn} onSend={onSend} onHandoffToRob={onHandoffToRob} disabled={running} />}
-        {turn.kind === "meta_analysis"    && <MetaAnalysisCard turn={turn} />}
+        {turn.kind === "meta_analysis"    && <MetaAnalysisCard turn={turn} threadId={message.thread_id} />}
         {turn.kind === "answer"           && <AnswerCard turn={turn} />}
         {turn.kind === "query_blocks"     && <QueryBlocksCard turn={turn} onSend={onSend} disabled={running} />}
         {turn.kind === "strategy_result"  && <StrategyResultCard turn={turn} onSend={onSend} onHandoff={onHandoff} onWatch={onWatch} disabled={running} />}
         {turn.kind === "protocol_methods" && <ProtocolMethodsCard turn={turn} onSend={onSend} disabled={running} />}
-        {turn.kind === "protocol_document" && <ProtocolDocumentCard turn={turn} onSend={onSend} onHandoffSearch={onHandoffProtocolToSearch} onHandoffMeta={onHandoffProtocolToMeta} disabled={running} />}
+        {turn.kind === "protocol_document" && <ProtocolDocumentCard turn={turn} threadId={message.thread_id} onSend={onSend} onHandoffSearch={onHandoffProtocolToSearch} onHandoffMeta={onHandoffProtocolToMeta} disabled={running} />}
         {turn.kind === "rob_assessments"  && <RobAssessmentsCard turn={turn} onSend={onSend} disabled={running} />}
-        {turn.kind === "rob_summary"      && <RobSummaryCard turn={turn} onSend={onSend} onHandoffRobToMeta={onHandoffRobToMeta} disabled={running} />}
+        {turn.kind === "rob_summary"      && <RobSummaryCard turn={turn} threadId={message.thread_id} onSend={onSend} onHandoffRobToMeta={onHandoffRobToMeta} disabled={running} />}
         {!KNOWN_KINDS.has(turn.kind)      && <UnknownTurnCard turn={turn} />}
       </TurnErrorBoundary>
     </div>
@@ -1609,7 +1609,15 @@ function NumField({ label, value, onChange }) {
 
 /* ── Meta-analysis ────────────────────────────────────────────────────── */
 
-function MetaAnalysisCard({ turn }) {
+function MetaAnalysisCard({ turn, threadId }) {
+  // Browser-driven download: cookie-based auth travels with the GET, the
+  // backend sets Content-Disposition: attachment, so the browser writes the
+  // file to disk instead of rendering it inline.
+  function downloadReport(fmt) {
+    if (!threadId) return;
+    window.location.href = `/api/threads/${threadId}/report/meta_analysis/${fmt}`;
+  }
+  const hasResults = turn.outcome_results && turn.outcome_results.length > 0;
   return (
     <div className="card">
       <div className="card-header">
@@ -1633,6 +1641,25 @@ function MetaAnalysisCard({ turn }) {
           <ul>{turn.caveats.map((c, i) => <li key={i}>{c}</li>)}</ul>
         </div>
       )}
+
+      {hasResults && threadId && (
+        <div className="handoff-cta">
+          <div className="text">
+            <strong>Take it away.</strong> Download a manuscript-style report
+            with the PICO, included studies table, pooled estimates, embedded
+            forest plot(s), interpretation, and caveats — ready to edit into a
+            paper, IRB form, or grant application.
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="btn-primary" onClick={() => downloadReport("pdf")}>
+              Download PDF
+            </button>
+            <button className="btn-secondary" onClick={() => downloadReport("docx")}>
+              Download DOCX
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1646,7 +1673,14 @@ function OutcomeResult({ result }) {
   const i2 = result.i_squared;
   const i2Class = i2 == null ? "" : i2 < 25 ? "low" : i2 < 75 ? "mod" : "high";
 
-  const isImage = (result.forest_plot_image || "").startsWith("data:image/");
+  // Accept every delivery shape `_resolve_plot_artifacts` (in
+  // meta_analysis.py) may emit: served URL path (/images/<uuid>_*), absolute
+  // http(s) URL, or legacy inline data: URI. Anything else is treated as an
+  // unresolved bare filename and falls through to the "referenced but not
+  // produced" fallback.
+  const isImage = /^(\/images\/|https?:\/\/|data:image\/)/.test(
+    result.forest_plot_image || ""
+  );
 
   return (
     <div className="outcome-result">
@@ -2087,7 +2121,11 @@ function ProtocolMethodsCard({ turn, onSend, disabled }) {
 
 /* ── sr_protocol: full document card ──────────────────────────────────── */
 
-function ProtocolDocumentCard({ turn, onSend, onHandoffSearch, onHandoffMeta, disabled }) {
+function ProtocolDocumentCard({ turn, threadId, onSend, onHandoffSearch, onHandoffMeta, disabled }) {
+  function downloadReport(fmt) {
+    if (!threadId) return;
+    window.location.href = `/api/threads/${threadId}/report/sr_protocol/${fmt}`;
+  }
   const [showMarkdown, setShowMarkdown] = useState(false);
   const refs = turn.references || [];
   const fields = turn.prospero_field_map || [];
@@ -2183,6 +2221,24 @@ function ProtocolDocumentCard({ turn, onSend, onHandoffSearch, onHandoffMeta, di
             </button>
             <button className="btn-secondary" onClick={() => onHandoffMeta(turn.methods)} disabled={disabled}>
               Skip to meta-analysis
+            </button>
+          </div>
+        </div>
+      )}
+
+      {turn.is_final && threadId && (
+        <div className="handoff-cta">
+          <div className="text">
+            <strong>Take it away.</strong> Download the full PRISMA-P-shaped
+            protocol with PICO, eligibility, RoB tool, synthesis plan, grounded
+            background, references with provenance, and a PROSPERO field map.
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="btn-primary" onClick={() => downloadReport("pdf")}>
+              Download PDF
+            </button>
+            <button className="btn-secondary" onClick={() => downloadReport("docx")}>
+              Download DOCX
             </button>
           </div>
         </div>
@@ -2455,7 +2511,11 @@ function RobAssessmentsCard({ turn, onSend, disabled }) {
 
 /* ── risk_of_bias: summary card + meta-analysis sensitivity handoff ───── */
 
-function RobSummaryCard({ turn, onSend, onHandoffRobToMeta, disabled }) {
+function RobSummaryCard({ turn, threadId, onSend, onHandoffRobToMeta, disabled }) {
+  function downloadReport(fmt) {
+    if (!threadId) return;
+    window.location.href = `/api/threads/${threadId}/report/rob/${fmt}`;
+  }
   const distribution = turn.domain_distribution || [];
   const highPmids = turn.high_rob_pmids || [];
   const recs = turn.sensitivity_recommendations || [];
@@ -2548,6 +2608,24 @@ function RobSummaryCard({ turn, onSend, onHandoffRobToMeta, disabled }) {
           >
             Re-run meta-analysis excluding high-RoB studies
           </button>
+        </div>
+      )}
+
+      {turn.is_final && threadId && (
+        <div className="handoff-cta">
+          <div className="text">
+            <strong>Take it away.</strong> Download the RoB report with embedded
+            summary plot, per-domain distribution, per-study judgments + verbatim
+            quotes, narrative interpretation, and sensitivity recommendations.
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="btn-primary" onClick={() => downloadReport("pdf")}>
+              Download PDF
+            </button>
+            <button className="btn-secondary" onClick={() => downloadReport("docx")}>
+              Download DOCX
+            </button>
+          </div>
         </div>
       )}
     </div>
