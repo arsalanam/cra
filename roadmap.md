@@ -59,7 +59,7 @@ Where the item sits in the research lifecycle:
 | Execution | Recruitment / screening logs | **P1** | 💡 proposed | S |
 | Execution | Visit scheduling + participant reminders | **P1** | 💡 proposed | M |
 | Execution | Source-document extraction (EHR → eCRF / extraction table) | **P1** | 📝 planned (feature-guide) | L |
-| Analysis | Manuscript drafter (IMRaD) + reviewer-response loop | **P1** | 💡 proposed | L |
+| Analysis | Manuscript drafter (IMRaD) + reviewer-response loop | **P1** | ✅ shipped 2026-05-29 | L |
 | Analysis | GRADE summary-of-findings + PRISMA reporting checklist | **P1** | 💡 proposed | M |
 | Analysis | Trial-specific statistical analysis specialist (KM, MMRM, Cox) | **P1** | 💡 proposed | M |
 | Analysis | Beyond-forest-plot visualisations (funnel, KM, waterfall, swimmer) | **P1** | 💡 proposed | M |
@@ -98,6 +98,7 @@ The starting state for this roadmap. Anything listed here is in production today
 | SR screening — title/abstract + full-text dual review (R1/R2/Adjudicator) + AI-assist + PRISMA flow diagram (SVG); 14 routes under `/api/sr/*`, `sr.html` UI | `src/research_assistant/persistence/sr_repository.py`, `web/sr.py`, `agent/specialists/sr_screening_assist.py`, `web/static/sr.html` |
 | Sample-size calculator + SAP drafter — four formulas (two-proportions / two-means / time-to-event / paired) + ICH-E9-shaped Statistical Analysis Plan with PDF/DOCX export; multi-step PICOT → sample_size → analysis_plan → sap_document workflow | `src/research_assistant/tools/data_science/sample_size.py`, `agent/specialists/sap_drafter.py`, `reports/sap.py`, `domain/sap.py` |
 | eCRF safety subsystem — AE/SAE auto-classification (ICH E2A criteria) + 24h reporting timer + overdue SAE dashboard + MedDRA-PT field (free-text MVP; deploy with license for validation) + FDA 3500A draft PDF/DOCX; protocol-deviation log with major/minor/critical classification + CAPA lifecycle; subject-level safety panel in collector.html | `src/research_assistant/persistence/clinical/safety_rules.py`, `persistence/clinical/repository.py` (AE/deviation/CAPA methods), `reports/sae_3500a.py`, `web/edc.py` (16 safety endpoints), `web/static/collector.html` safety panel |
+| Manuscript drafter (IMRaD) + reviewer-response loop — 3-stage workflow (intake → draft → reviewer-response) targeting NEJM/Lancet/BMJ/JAMA/Annals/PLOS ONE/generic; PDF + DOCX export bundles cover letter + point-by-point; meta_analysis card gains a "→ Draft as manuscript" handoff button that seeds the new thread with the full meta-analysis JSON | `src/research_assistant/agent/specialists/manuscript_drafter.py`, `reports/manuscript.py`, `domain/manuscript.py`, three index.html card components |
 | Sandboxed Python execution (Docker, network-disabled, capped CPU/RAM, RW output dir) | `src/research_assistant/tools/data_science/sandbox_exec.py` |
 | Multi-source paper search behind `PaperSource` Protocol (PubMed + Europe PMC live; Embase / Cochrane / Scopus / WoS as pluggable additions) | `src/research_assistant/tools/clinical/sources/` |
 | Per-thread quotas, per-turn ceilings, daily token caps | `src/research_assistant/services/quota.py`, `config/settings.py` |
@@ -240,13 +241,15 @@ Already on the feature-guide roadmap. Point the assistant at structured exports 
 
 ### Analysis / Reporting
 
-#### Manuscript drafter (IMRaD) + reviewer-response loop · 💡 · L
+#### ~~Manuscript drafter (IMRaD) + reviewer-response loop~~ · ✅ shipped 2026-05-29 · L
 
-Full Introduction / Methods / Results / Discussion composition with reference management. You already have building blocks (background paragraphs from `sr_protocol`, results from `meta_analysis`); a manuscript specialist that composes them into a journal-shaped artefact is the missing seam.
+Shipped as a new `manuscript_drafter` specialist + a 3-stage workflow: intake (target journal + section seeds + source artefact paste) → IMRaD draft (title + structured abstract + Introduction + Methods + Results + Discussion + References with `origin` field) → reviewer-response loop (cover letter + per-item responses with optional suggested manuscript edits + `is_addressed` flag for pushed-back items).
 
-The **reviewer-response generator** is a high-value follow-on — peer review is the most iterative, LLM-natural part of the cycle and nobody else does it well today.
-
-- **Sequencing:** lands well before CSR; shares 80% of the composition primitives.
+- **Composition source:** the meta_analysis card gains a "→ Draft as manuscript" handoff button that seeds the new thread with the full meta-analysis JSON pasted into `intake.source_artefact_paste`; the manuscript-drafter system prompt forbids inventing Results numbers and requires every effect size to trace back to the paste verbatim.
+- **Journal targets:** NEJM / Lancet / BMJ / JAMA / Annals / PLOS ONE / generic, driving abstract / body word budgets via the system prompt.
+- **Reference posture:** every citation carries `origin` (`search_papers` / `web_search` / `wikipedia` / `pasted_source`) so a reader can verify each reference came from a real tool call this turn.
+- **Reports:** PDF + DOCX via the existing `reports/` machinery; reviewer-response document is appended to the same download when a response round exists.
+- **Sequencing benefit:** the composition primitives (per-section assembly, structured-abstract table, reference list with origin tagging) carry forward into the future CSR drafter (#6).
 
 #### GRADE summary-of-findings + PRISMA reporting checklist · 💡 · M
 
@@ -353,8 +356,8 @@ Best ordering given unlock value × dependencies × effort:
 | ~~1~~ | ~~**RBAC implementation**~~ — ✅ shipped 2026-05-29 | (Done — RBAC-1+2+3 + Student tier landed.) |
 | ~~2~~ | ~~**SR screening UI + PRISMA flow diagram**~~ — ✅ shipped 2026-05-29 | (Done — dual review + AI-assist + PRISMA SVG.) |
 | ~~3~~ | ~~**Sample-size + SAP drafter (paired)**~~ — ✅ shipped 2026-05-29 | (Done — four formulas + ICH-E9 SAP workflow + PDF/DOCX export.) |
-| ~~4~~ | ~~**AE/SAE workflow + protocol-deviation tracking (paired)**~~ — ✅ shipped 2026-05-29 | (Done — ICH E2A auto-classification, 24h timer, FDA 3500A draft, CAPA lifecycle, 544 tests pass.) |
-| 5 | **Manuscript drafter (IMRaD) + reviewer-response loop** | Composes existing per-workflow reports into journal-shaped artefacts. 80% of the primitives carry forward into CSR. Reviewer-response is a high-delight feature with low marginal cost. |
+| ~~4~~ | ~~**AE/SAE workflow + protocol-deviation tracking (paired)**~~ — ✅ shipped 2026-05-29 | (Done — ICH E2A auto-classification, 24h timer, FDA 3500A draft, CAPA lifecycle.) |
+| ~~5~~ | ~~**Manuscript drafter (IMRaD) + reviewer-response loop**~~ — ✅ shipped 2026-05-29 | (Done — 3-stage workflow with journal-target enum + handoff from meta_analysis + reviewer-response document; 575 tests pass.) |
 | 6 | **CDISC SDTM mapping (start the multi-quarter build)** | Largest effort item; needs to start now so it lands when CSR begins to demand it. Choose OSS library vs build during the design pass. |
 
 Beyond these six, sequencing flexes with customer pull.
