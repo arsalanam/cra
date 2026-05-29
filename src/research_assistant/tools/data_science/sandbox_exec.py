@@ -111,7 +111,18 @@ async def _impl(
     try:
         tmppath = Path(tmpdir)
         (tmppath / "input").mkdir()
-        (tmppath / "output").mkdir()
+        output_dir = tmppath / "output"
+        output_dir.mkdir()
+        # The sandbox container runs as the non-root `sandbox` user (UID
+        # 1000, per sandbox/Dockerfile) while the agent runs as root in the
+        # compose image. tempfile.mkdtemp() produces 0o700 root-owned dirs;
+        # `mkdir()` on the subdirs honours the umask (typically 0o755 root-
+        # owned), leaving the sandbox user without write permission on the
+        # bind-mounted /home/sandbox/output. Explicitly widen JUST the output
+        # subdir so the sandbox can write its artefacts (forest plots, etc.).
+        # The parent tmpdir keeps its 0o700 mode — only the docker daemon
+        # (as root) traverses it.
+        output_dir.chmod(0o777)
 
         (tmppath / "script.py").write_text(code, encoding="utf-8")
 

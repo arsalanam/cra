@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import stat
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -167,3 +168,41 @@ async def test_image_outputs_are_saved_to_images_dir_as_url(
     stored_name = url.removeprefix("/images/")
     assert (images_dir / stored_name).exists()
     assert (images_dir / stored_name).read_bytes().startswith(b"\x89PNG")
+
+
+async def test_output_dir_is_world_writable_for_non_root_sandbox_user() -> None:
+    """Regression: the agent container runs as root, the sandbox container runs as
+    UID 1000. tempfile.mkdtemp() + plain mkdir() produces a 0o755 root-owned
+    directory, leaving the sandbox user unable to write to /home/sandbox/output.
+    The output subdir MUST be widened to 0o777 before the sandbox is spawned.
+
+    `_impl` deletes its tmpdir on return via finally, so the mode is captured
+    INSIDE the mocked docker.run callback (while the dir still exists) — the
+    same moment a real sandbox container would be reading those perms.
+    """
+    captured_mode: dict[str, int] = {}
+
+    def _capture_perms(**kwargs: object) -> bytes:
+        volumes = kwargs["volumes"]
+        assert isinstance(volumes, dict)
+        for host_path, bind_spec in volumes.items():
+            if isinstance(bind_spec, dict) and bind_spec.get("bind") == "/home/sandbox/output":
+                captured_mode["output"] = stat.S_IMODE(Path(str(host_path)).stat().st_mode)
+                break
+        return b"ok\n"
+
+    mock_client = MagicMock()
+    mock_client.containers.run.side_effect = _capture_perms
+
+    with patch("docker.from_env", return_value=mock_client):
+        await _impl("print('hi')")
+
+    mode = captured_mode.get("output")
+    assert mode is not None, "no /home/sandbox/output bind mount was set up"
+    # The world-write bit is the critical one — without it a non-root sandbox
+    # user can't open files for writing under the bind-mounted output dir.
+    assert mode & stat.S_IWOTH, (
+        f"output dir mode is 0o{mode:o}; needs the world-write bit (0o002) so "
+        f"the non-root sandbox user can write artefacts. See sandbox_exec.py "
+        f"chmod call."
+    )
