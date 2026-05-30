@@ -47,6 +47,9 @@ from ..persistence.clinical.models import (
     SdtmVs,
     TlfArtefact,
 )
+from ._metadata import DOMAIN_METADATA
+from .define_xml import build_define_xml
+from .xpt_writer import write_xpt
 
 # SDTM variable order per the standard implementation guide. The ORM
 # columns are intentionally named identically so we can dump them by
@@ -158,6 +161,45 @@ def adtte_to_csv(records: Iterable[AdamAdtte]) -> bytes:
     return _records_to_csv(_ADTTE_COLUMNS, records)
 
 
+# ── XPT writers (one per dataset; all delegate to write_xpt) ────────────
+
+
+def dm_to_xpt(records: Iterable[SdtmDm]) -> bytes:
+    return write_xpt(DOMAIN_METADATA["DM"], records)
+
+
+def ae_to_xpt(records: Iterable[SdtmAe]) -> bytes:
+    return write_xpt(DOMAIN_METADATA["AE"], records)
+
+
+def vs_to_xpt(records: Iterable[SdtmVs]) -> bytes:
+    return write_xpt(DOMAIN_METADATA["VS"], records)
+
+
+def lb_to_xpt(records: Iterable[SdtmLb]) -> bytes:
+    return write_xpt(DOMAIN_METADATA["LB"], records)
+
+
+def ex_to_xpt(records: Iterable[SdtmEx]) -> bytes:
+    return write_xpt(DOMAIN_METADATA["EX"], records)
+
+
+def cm_to_xpt(records: Iterable[SdtmCm]) -> bytes:
+    return write_xpt(DOMAIN_METADATA["CM"], records)
+
+
+def mh_to_xpt(records: Iterable[SdtmMh]) -> bytes:
+    return write_xpt(DOMAIN_METADATA["MH"], records)
+
+
+def adsl_to_xpt(records: Iterable[AdamAdsl]) -> bytes:
+    return write_xpt(DOMAIN_METADATA["ADSL"], records)
+
+
+def adtte_to_xpt(records: Iterable[AdamAdtte]) -> bytes:
+    return write_xpt(DOMAIN_METADATA["ADTTE"], records)
+
+
 def tlf_table_to_csv(tlf: TlfArtefact) -> bytes:
     """Serialise a TlfArtefact (kind='table' or 'listing') as CSV."""
     if tlf.kind not in ("table", "listing"):
@@ -219,8 +261,17 @@ def build_submission_bundle(
         f"  ADaM ADTTE: {len(adtte_records)}",
         f"  TLF artefacts: {len(tlfs)}",
         "",
+        "Files in this bundle:",
+        "  - define.xml      — CDISC Define-XML v2.1 (regulator-grade metadata)",
+        "  - sdtm/*.csv      — character-encoded SDTM datasets (preflight-friendly)",
+        "  - sdtm/*.xpt      — SAS Transport v5 SDTM datasets (CDISC IG default)",
+        "  - adam/{adsl,adtte}.{csv,xpt} — analysis datasets in both formats",
+        "  - tlf/*.{csv,svg} — tables / figures (figures = embedded SVG or PNG data URI)",
+        "",
         "Notes:",
-        "  - CSV format. SAS XPT conversion is left to the deploy-side preflight tooling.",
+        "  - XPT v5 is hand-rolled (ASCII-only CHAR + IBM-360 NUM). Column names",
+        "    are capped at 8 chars per the v5 limit; CSV carries the same data",
+        "    without the truncation risk.",
         "  - MedDRA Preferred Terms (AE.AEDECOD / MH.MHDECOD) and WHODrug names",
         "    (CM.CMDECOD) are captured as free text; deploy with the dictionary",
         "    licenses to validate.",
@@ -230,7 +281,13 @@ def build_submission_bundle(
 
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        # Human-readable manifest + machine-readable Define-XML side by
+        # side. The regulator's preflight reads define.xml; the
+        # `.txt` is a quick sanity check for the deploy team.
         z.writestr("define-overview.txt", manifest)
+        z.writestr("define.xml", build_define_xml(study_id=study_id))
+
+        # CSV (preferred by FDA's transitional preflight tooling).
         z.writestr("sdtm/dm.csv", dm_to_csv(dm))
         z.writestr("sdtm/ae.csv", ae_to_csv(ae))
         z.writestr("sdtm/vs.csv", vs_to_csv(vs))
@@ -240,6 +297,18 @@ def build_submission_bundle(
         z.writestr("sdtm/mh.csv", mh_to_csv(mh_records))
         z.writestr("adam/adsl.csv", adsl_to_csv(adsl))
         z.writestr("adam/adtte.csv", adtte_to_csv(adtte_records))
+
+        # SAS Transport (XPT v5) — the CDISC IG submission default.
+        z.writestr("sdtm/dm.xpt", dm_to_xpt(dm))
+        z.writestr("sdtm/ae.xpt", ae_to_xpt(ae))
+        z.writestr("sdtm/vs.xpt", vs_to_xpt(vs))
+        z.writestr("sdtm/lb.xpt", lb_to_xpt(lb_records))
+        z.writestr("sdtm/ex.xpt", ex_to_xpt(ex_records))
+        z.writestr("sdtm/cm.xpt", cm_to_xpt(cm_records))
+        z.writestr("sdtm/mh.xpt", mh_to_xpt(mh_records))
+        z.writestr("adam/adsl.xpt", adsl_to_xpt(adsl))
+        z.writestr("adam/adtte.xpt", adtte_to_xpt(adtte_records))
+
         for tlf in tlfs:
             ext = "svg" if tlf.kind == "figure" else "csv"
             content: bytes
@@ -253,14 +322,23 @@ def build_submission_bundle(
 
 __all__ = [
     "adsl_to_csv",
+    "adsl_to_xpt",
     "adtte_to_csv",
+    "adtte_to_xpt",
     "ae_to_csv",
+    "ae_to_xpt",
     "build_submission_bundle",
     "cm_to_csv",
+    "cm_to_xpt",
     "dm_to_csv",
+    "dm_to_xpt",
     "ex_to_csv",
+    "ex_to_xpt",
     "lb_to_csv",
+    "lb_to_xpt",
     "mh_to_csv",
+    "mh_to_xpt",
     "tlf_table_to_csv",
     "vs_to_csv",
+    "vs_to_xpt",
 ]
