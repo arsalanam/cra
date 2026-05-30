@@ -1,0 +1,16 @@
+{
+  "description": "Free-text race value → SDTM DM.RACE controlled term.",
+  "source": "SDTM IG v3.4 §6.2 RACE / OMB 1997 race categories.",
+  "mapping": {
+    "white": "WHITE",
+    "caucasian": "WHITE",
+    "black": "BLACK OR AFRICAN AMERICAN",
+    "african american": "BLACK OR AFRICAN AMERICAN",
+    "asian": "ASIAN",
+    "native hawaiian or other pacific islander": "NATIVE HAWAIIAN OR OTHER PACIFIC ISLANDER",
+    "american indian or alaska native": "AMERICAN INDIAN OR ALASKA NATIVE",
+    "other": "OTHER",
+    "unknown": "UNKNOWN",
+    "not reported": "NOT REPORTED"
+  }
+}

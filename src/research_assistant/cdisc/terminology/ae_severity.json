@@ -1,0 +1,11 @@
+{
+  "description": "NCI CTCAE 1-5 grade → SDTM AESEV controlled term.",
+  "source": "SDTM IG v3.4 §6.3 AESEV controlled terminology.",
+  "mapping": {
+    "1": "MILD",
+    "2": "MODERATE",
+    "3": "SEVERE",
+    "4": "LIFE THREATENING",
+    "5": "FATAL"
+  }
+}

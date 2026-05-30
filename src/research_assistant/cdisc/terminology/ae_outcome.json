@@ -1,0 +1,11 @@
+{
+  "description": "Platform AE outcome value → SDTM AEOUT controlled term.",
+  "source": "SDTM IG v3.4 §6.3 AEOUT.",
+  "mapping": {
+    "recovered": "RECOVERED/RESOLVED",
+    "recovering": "RECOVERING/RESOLVING",
+    "not_recovered": "NOT RECOVERED/NOT RESOLVED",
+    "death": "FATAL",
+    "unknown": "UNKNOWN"
+  }
+}

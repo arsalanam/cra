@@ -551,6 +551,234 @@ class CapaAction(ClinicalBase):
     deviation: Mapped[ProtocolDeviation] = relationship(back_populates="capas")
 
 
+# ── CDISC submission pipeline (SDTM → ADaM → TLF) — top-6 #6 ────────────
+
+
+class SdtmDm(ClinicalBase):
+    """SDTM Demographics domain row — one per subject (top-6 #6).
+
+    The clinical-data store keeps a denormalised copy of the SDTM-shaped
+    record after derivation so the submission bundle can ship without
+    re-running the mapping pipeline. `STUDYID` + `USUBJID` form the
+    natural key; the derivation refreshes records in place rather than
+    appending versions (versioning lives on the CdiscDerivation row).
+
+    Variable naming follows CDISC SDTMIG v3.4 conventions verbatim
+    (uppercase) so the export step ships a regulator-shaped CSV without
+    a translation layer.
+    """
+
+    __tablename__ = "sdtm_dm"
+    __table_args__ = (UniqueConstraint("deployment_id", "USUBJID", name="uq_sdtm_dm_usubjid"),)
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    deployment_id: Mapped[str] = mapped_column(Text, index=True)
+    STUDYID: Mapped[str] = mapped_column(Text)
+    DOMAIN: Mapped[str] = mapped_column(Text, default="DM")
+    USUBJID: Mapped[str] = mapped_column(Text, index=True)
+    SUBJID: Mapped[str] = mapped_column(Text)
+    SITEID: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    AGE: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
+    AGEU: Mapped[str] = mapped_column(Text, default="YEARS")
+    SEX: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    RACE: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    ETHNIC: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    RFSTDTC: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        default=None,
+        doc="Reference start date — ISO 8601 (CDISC --DTC).",
+    )
+    RFENDTC: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    ARM: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    ARMCD: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    COUNTRY: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+
+    derived_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class SdtmAe(ClinicalBase):
+    """SDTM Adverse Events domain row — one per AdverseEvent.
+
+    `AESEQ` is per-subject and assigned at derivation time so re-running
+    yields stable sequence numbers (we order by AdverseEvent.reported_at).
+    """
+
+    __tablename__ = "sdtm_ae"
+    __table_args__ = (
+        UniqueConstraint("deployment_id", "USUBJID", "AESEQ", name="uq_sdtm_ae_aeseq"),
+    )
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    deployment_id: Mapped[str] = mapped_column(Text, index=True)
+    STUDYID: Mapped[str] = mapped_column(Text)
+    DOMAIN: Mapped[str] = mapped_column(Text, default="AE")
+    USUBJID: Mapped[str] = mapped_column(Text, index=True)
+    AESEQ: Mapped[int] = mapped_column(Integer, doc="Sequence number within subject.")
+    AETERM: Mapped[str] = mapped_column(Text, doc="Verbatim reporter term.")
+    AEDECOD: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        default=None,
+        doc="MedDRA Preferred Term (deploy with license for validation).",
+    )
+    AEBODSYS: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    AESTDTC: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    AEENDTC: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    AESEV: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        default=None,
+        doc="MILD / MODERATE / SEVERE / LIFE THREATENING / FATAL (SDTM CT).",
+    )
+    AESER: Mapped[str | None] = mapped_column(Text, nullable=True, default=None, doc="Y / N.")
+    AEREL: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    AEOUT: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+
+    derived_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class SdtmVs(ClinicalBase):
+    """SDTM Vital Signs domain row — one per vital-sign measurement."""
+
+    __tablename__ = "sdtm_vs"
+    __table_args__ = (
+        UniqueConstraint("deployment_id", "USUBJID", "VSSEQ", name="uq_sdtm_vs_vsseq"),
+    )
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    deployment_id: Mapped[str] = mapped_column(Text, index=True)
+    STUDYID: Mapped[str] = mapped_column(Text)
+    DOMAIN: Mapped[str] = mapped_column(Text, default="VS")
+    USUBJID: Mapped[str] = mapped_column(Text, index=True)
+    VSSEQ: Mapped[int] = mapped_column(Integer)
+    VSTESTCD: Mapped[str] = mapped_column(
+        Text,
+        doc=(
+            "VS test code from SDTM CT (e.g. HEIGHT, WEIGHT, SYSBP, DIABP, "
+            "PULSE, TEMP)."
+        ),
+    )
+    VSTEST: Mapped[str] = mapped_column(Text, doc="Human-readable test name.")
+    VSORRES: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    VSORRESU: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    VSDTC: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+
+    derived_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class AdamAdsl(ClinicalBase):
+    """ADaM Subject-Level Analysis Dataset — one row per subject.
+
+    Built from SdtmDm + SdtmAe. Carries the population flags
+    (SAFFL / ITTFL / DTHFL) regulators expect on every ADaM analysis.
+    Treatment fields are placeholder ("TBD") when randomisation isn't
+    captured — randomisation/IRT integration is on the roadmap separately.
+    """
+
+    __tablename__ = "adam_adsl"
+    __table_args__ = (UniqueConstraint("deployment_id", "USUBJID", name="uq_adam_adsl_usubjid"),)
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    deployment_id: Mapped[str] = mapped_column(Text, index=True)
+    STUDYID: Mapped[str] = mapped_column(Text)
+    USUBJID: Mapped[str] = mapped_column(Text, index=True)
+    SUBJID: Mapped[str] = mapped_column(Text)
+    SITEID: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    AGE: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
+    AGEU: Mapped[str] = mapped_column(Text, default="YEARS")
+    AGEGR1: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        default=None,
+        doc="Age group bin — <18 / 18-64 / 65-74 / >=75 (typical ICH E1).",
+    )
+    SEX: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    RACE: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    ETHNIC: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    SAFFL: Mapped[str] = mapped_column(
+        Text,
+        default="N",
+        doc="Safety analysis flag — Y when subject had any post-baseline data.",
+    )
+    ITTFL: Mapped[str] = mapped_column(Text, default="Y", doc="Intent-to-treat flag.")
+    DTHFL: Mapped[str] = mapped_column(
+        Text,
+        default="N",
+        doc="Death flag — Y when any AE has outcome=death.",
+    )
+    RFSTDTC: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    RFENDTC: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    TRT01P: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        default=None,
+        doc="Planned treatment for period 1 — TBD until randomisation lands.",
+    )
+    TRT01A: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    COUNTRY: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+
+    derived_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class TlfArtefact(ClinicalBase):
+    """A generated Table / Listing / Figure for the submission bundle.
+
+    Tables + listings render as tabular JSON (rows: list[dict]); figures
+    ship as hand-rolled SVG (same posture as the PRISMA + AE-frequency
+    pattern elsewhere). PDF bundling happens at export time; in-store we
+    keep the raw content so a re-run re-materialises without reaching
+    back into the source data.
+    """
+
+    __tablename__ = "tlf_artefacts"
+    __table_args__ = (
+        UniqueConstraint("deployment_id", "kind", "tlf_id", name="uq_tlf_artefact_id"),
+    )
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    deployment_id: Mapped[str] = mapped_column(Text, index=True)
+    kind: Mapped[str] = mapped_column(Text, doc="'table' | 'listing' | 'figure'")
+    tlf_id: Mapped[str] = mapped_column(
+        Text, doc="Stable id — e.g. 't-disposition', 't-demographics', 'f-ae-frequency'."
+    )
+    title: Mapped[str] = mapped_column(Text)
+    content_json: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        default=None,
+        doc="JSON shape for tables/listings: {columns: [...], rows: [[...]]}.",
+    )
+    svg_content: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        default=None,
+        doc="Hand-rolled SVG for figures.",
+    )
+    derived_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class CdiscDerivation(ClinicalBase):
+    """An audit-style row tracking each derivation run for a deployment.
+
+    A single row per (deployment, run) carrying the trigger sub + counts.
+    The derivation pipeline upserts SDTM/ADaM/TLF rows in place; this
+    table is the only place where "when did we re-derive" is recoverable.
+    """
+
+    __tablename__ = "cdisc_derivations"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    deployment_id: Mapped[str] = mapped_column(Text, index=True)
+    triggered_by: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    triggered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    counts_json: Mapped[str] = mapped_column(
+        Text,
+        default="{}",
+        doc="JSON {dm: n, ae: n, vs: n, adsl: n, tlf: n} — quick summary.",
+    )
+
+
 class AuditEntry(ClinicalBase):
     """Append-only audit trail (ALCOA+ / 21 CFR Part 11 §11.10(e)).
 

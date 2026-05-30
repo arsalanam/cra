@@ -1134,4 +1134,211 @@ def create_edc_router() -> APIRouter:
                 raise HTTPException(409, str(e)) from e
             return DeviationOut.model_validate(dev)
 
+    # ── CDISC submission pipeline (top-6 #6) ─────────────────────────────
+
+    @router.post("/deployments/{deployment_id}/cdisc/derive")
+    async def cdisc_derive(
+        deployment_id: str,
+        user: SessionPayload = require_permission_scoped(
+            Permission.CDISC_DERIVE, resource_param="deployment_id"
+        ),
+    ) -> dict[str, Any]:
+        from ..cdisc.pipeline import run_derivation
+
+        async with get_clinical_session() as s:
+            try:
+                result = await run_derivation(
+                    s, deployment_id=deployment_id, triggered_by=user.sub
+                )
+            except ValueError as e:
+                raise HTTPException(404, str(e)) from e
+            return {
+                "deployment_id": result.deployment_id,
+                "triggered_at": result.triggered_at.isoformat(),
+                "counts": result.counts,
+            }
+
+    @router.get("/deployments/{deployment_id}/cdisc/datasets")
+    async def cdisc_list_datasets(
+        deployment_id: str,
+        user: SessionPayload = require_permission_scoped(
+            Permission.CDISC_READ, resource_param="deployment_id"
+        ),
+    ) -> dict[str, Any]:
+        from ..cdisc.pipeline import list_datasets
+
+        async with get_clinical_session() as s:
+            return await list_datasets(s, deployment_id)
+
+    @router.get("/deployments/{deployment_id}/cdisc/datasets/{domain}")
+    async def cdisc_get_dataset(
+        deployment_id: str,
+        domain: str,
+        user: SessionPayload = require_permission_scoped(
+            Permission.CDISC_READ, resource_param="deployment_id"
+        ),
+    ) -> dict[str, Any]:
+        from ..cdisc.pipeline import (
+            fetch_adsl,
+            fetch_ae,
+            fetch_dm,
+            fetch_vs,
+        )
+
+        # Use json round-trips so the response shape is uniform across
+        # the SDTM/ADaM dataset variants without per-domain DTOs.
+        rows: list[Any]
+        async with get_clinical_session() as s:
+            domain_upper = domain.upper()
+            if domain_upper == "DM":
+                rows = list(await fetch_dm(s, deployment_id))
+            elif domain_upper == "AE":
+                rows = list(await fetch_ae(s, deployment_id))
+            elif domain_upper == "VS":
+                rows = list(await fetch_vs(s, deployment_id))
+            elif domain_upper == "ADSL":
+                rows = list(await fetch_adsl(s, deployment_id))
+            else:
+                raise HTTPException(
+                    400,
+                    f"Unknown domain {domain!r}. Choose one of: DM, AE, VS, ADSL.",
+                )
+        return {
+            "domain": domain_upper,
+            "n": len(rows),
+            "records": [
+                {
+                    c: getattr(r, c)
+                    for c in r.__table__.columns
+                    if c not in {"id", "deployment_id", "derived_at"}
+                }
+                for r in rows
+            ],
+        }
+
+    @router.get("/deployments/{deployment_id}/cdisc/datasets/{domain}/export.csv")
+    async def cdisc_export_dataset(
+        deployment_id: str,
+        domain: str,
+        user: SessionPayload = require_permission_scoped(
+            Permission.CDISC_READ, resource_param="deployment_id"
+        ),
+    ) -> Response:
+        from ..cdisc.exporter import (
+            adsl_to_csv,
+            ae_to_csv,
+            dm_to_csv,
+            vs_to_csv,
+        )
+        from ..cdisc.pipeline import (
+            fetch_adsl,
+            fetch_ae,
+            fetch_dm,
+            fetch_vs,
+        )
+
+        async with get_clinical_session() as s:
+            domain_upper = domain.upper()
+            if domain_upper == "DM":
+                payload = dm_to_csv(await fetch_dm(s, deployment_id))
+            elif domain_upper == "AE":
+                payload = ae_to_csv(await fetch_ae(s, deployment_id))
+            elif domain_upper == "VS":
+                payload = vs_to_csv(await fetch_vs(s, deployment_id))
+            elif domain_upper == "ADSL":
+                payload = adsl_to_csv(await fetch_adsl(s, deployment_id))
+            else:
+                raise HTTPException(
+                    400,
+                    f"Unknown domain {domain!r}. Choose one of: DM, AE, VS, ADSL.",
+                )
+        return Response(
+            content=payload,
+            media_type="text/csv",
+            headers={
+                "Content-Disposition": (
+                    f'attachment; filename="{domain_upper.lower()}.csv"'
+                ),
+            },
+        )
+
+    @router.get("/deployments/{deployment_id}/cdisc/tlf")
+    async def cdisc_list_tlfs(
+        deployment_id: str,
+        user: SessionPayload = require_permission_scoped(
+            Permission.CDISC_READ, resource_param="deployment_id"
+        ),
+    ) -> list[dict[str, Any]]:
+        from ..cdisc.pipeline import fetch_tlfs
+
+        async with get_clinical_session() as s:
+            tlfs = await fetch_tlfs(s, deployment_id)
+        return [
+            {
+                "id": t.id,
+                "tlf_id": t.tlf_id,
+                "kind": t.kind,
+                "title": t.title,
+                "content": json.loads(t.content_json) if t.content_json else None,
+                "svg": t.svg_content,
+            }
+            for t in tlfs
+        ]
+
+    @router.get("/deployments/{deployment_id}/cdisc/submission-bundle.zip")
+    async def cdisc_export_bundle(
+        deployment_id: str,
+        user: SessionPayload = require_permission_scoped(
+            Permission.CDISC_EXPORT, resource_param="deployment_id"
+        ),
+    ) -> Response:
+        from ..cdisc.exporter import build_submission_bundle
+        from ..cdisc.pipeline import (
+            fetch_adsl,
+            fetch_ae,
+            fetch_dm,
+            fetch_tlfs,
+            fetch_vs,
+            list_datasets,
+        )
+
+        async with get_clinical_session() as s:
+            summary = await list_datasets(s, deployment_id)
+            if not summary.get("last_derived_at"):
+                raise HTTPException(
+                    409,
+                    "No derivation has been run for this deployment. "
+                    "POST /api/edc/deployments/{id}/cdisc/derive first.",
+                )
+            dm = await fetch_dm(s, deployment_id)
+            ae = await fetch_ae(s, deployment_id)
+            vs = await fetch_vs(s, deployment_id)
+            adsl = await fetch_adsl(s, deployment_id)
+            tlfs = await fetch_tlfs(s, deployment_id)
+            # Use the deployment's underlying research study id for the
+            # manifest's STUDYID — that's what regulators expect.
+            from ..persistence.clinical.models import StudyDeployment
+
+            deployment = await s.get(StudyDeployment, deployment_id)
+            study_id = deployment.research_study_id if deployment else deployment_id
+
+        payload = build_submission_bundle(
+            study_id=study_id,
+            triggered_at=summary["last_derived_at"],
+            dm=dm,
+            ae=ae,
+            vs=vs,
+            adsl=adsl,
+            tlfs=tlfs,
+        )
+        return Response(
+            content=payload,
+            media_type="application/zip",
+            headers={
+                "Content-Disposition": (
+                    f'attachment; filename="submission-{deployment_id[:8]}.zip"'
+                ),
+            },
+        )
+
     return router

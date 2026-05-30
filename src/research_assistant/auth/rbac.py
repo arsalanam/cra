@@ -75,6 +75,11 @@ class Permission(StrEnum):
     CAPA_AUTHOR = "capa.author"
     CAPA_CLOSE = "capa.close"
 
+    # ── CDISC submission pipeline (SDTM → ADaM → TLF) ────────────────────
+    CDISC_DERIVE = "cdisc.derive"
+    CDISC_READ = "cdisc.read"
+    CDISC_EXPORT = "cdisc.export"
+
     # ── Audit trail ──────────────────────────────────────────────────────
     AUDIT_READ = "audit.read"
 
@@ -193,6 +198,7 @@ ROLE_PERMISSIONS: Final[dict[Role, frozenset[Permission]]] = {
             Permission.LIBRARY_READ,
             Permission.SR_READ,
             Permission.PRISMA_READ,
+            Permission.CDISC_READ,
         }
     ),
     Role.STUDY_DESIGNER: frozenset(
@@ -221,6 +227,10 @@ ROLE_PERMISSIONS: Final[dict[Role, frozenset[Permission]]] = {
             Permission.AE_CLASSIFY,
             Permission.SAE_REPORT,
             Permission.CAPA_CLOSE,
+            # CDISC: PI reads derived datasets + signs off the submission
+            # bundle. Derivation itself is data-manager territory.
+            Permission.CDISC_READ,
+            Permission.CDISC_EXPORT,
         }
     ),
     Role.COORDINATOR: frozenset(
@@ -252,6 +262,12 @@ ROLE_PERMISSIONS: Final[dict[Role, frozenset[Permission]]] = {
             Permission.DEVIATION_CLASSIFY,
             Permission.CAPA_AUTHOR,
             Permission.SAE_REPORT,
+            # CDISC: DM runs the derivation pipeline + reads results +
+            # exports the submission bundle (paired with PI for the final
+            # sign-off; either can produce the download).
+            Permission.CDISC_DERIVE,
+            Permission.CDISC_READ,
+            Permission.CDISC_EXPORT,
         }
     ),
     Role.MONITOR: frozenset(
@@ -264,6 +280,9 @@ ROLE_PERMISSIONS: Final[dict[Role, frozenset[Permission]]] = {
             # Monitors discover deviations during site visits — they log
             # but don't classify or close.
             Permission.DEVIATION_RECORD,
+            # CDISC: monitors verify derived data against source — read
+            # only.
+            Permission.CDISC_READ,
         }
     ),
     # SR screening roles — always granted at sr_review scope, never global.

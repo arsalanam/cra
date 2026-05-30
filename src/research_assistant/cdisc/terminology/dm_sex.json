@@ -1,0 +1,13 @@
+{
+  "description": "Free-text sex value → SDTM DM.SEX controlled term.",
+  "source": "SDTM IG v3.4 §6.2 SEX.",
+  "mapping": {
+    "m": "M",
+    "male": "M",
+    "f": "F",
+    "female": "F",
+    "u": "U",
+    "unknown": "U",
+    "other": "U"
+  }
+}

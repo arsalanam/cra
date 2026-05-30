@@ -235,6 +235,57 @@ def test_student_has_no_safety_perms() -> None:
         assert safety_perm not in perms, f"student must not have {safety_perm.value}"
 
 
+# ── CDISC submission pipeline (SDTM → ADaM → TLF) ────────────────────────
+
+
+def test_data_manager_runs_cdisc_derivation_and_exports() -> None:
+    """The DM owns the derivation pipeline; PI signs off + exports."""
+    perms = ROLE_PERMISSIONS[Role.DATA_MANAGER]
+    assert Permission.CDISC_DERIVE in perms
+    assert Permission.CDISC_READ in perms
+    assert Permission.CDISC_EXPORT in perms
+
+
+def test_pi_can_export_but_does_not_derive() -> None:
+    """PI signs off the submission bundle but doesn't run the pipeline.
+    Separation-of-duties — derivation + sign-off are different actions."""
+    perms = ROLE_PERMISSIONS[Role.PRINCIPAL_INVESTIGATOR]
+    assert Permission.CDISC_READ in perms
+    assert Permission.CDISC_EXPORT in perms
+    assert Permission.CDISC_DERIVE not in perms
+
+
+def test_monitor_and_auditor_can_read_cdisc_but_not_derive_or_export() -> None:
+    """Monitors verify derived data against source; auditors inspect.
+    Neither runs the pipeline nor produces the regulator-facing export."""
+    for r in (Role.MONITOR, Role.AUDITOR):
+        perms = ROLE_PERMISSIONS[r]
+        assert Permission.CDISC_READ in perms, f"{r.value} needs cdisc.read"
+        assert Permission.CDISC_DERIVE not in perms
+        assert Permission.CDISC_EXPORT not in perms
+
+
+def test_coordinator_blocked_from_cdisc() -> None:
+    """Coordinators capture data; they don't touch the derivation pipeline."""
+    perms = ROLE_PERMISSIONS[Role.COORDINATOR]
+    for p in (
+        Permission.CDISC_DERIVE,
+        Permission.CDISC_READ,
+        Permission.CDISC_EXPORT,
+    ):
+        assert p not in perms, f"coordinator must not have {p.value}"
+
+
+def test_student_blocked_from_all_cdisc() -> None:
+    perms = ROLE_PERMISSIONS[Role.STUDENT]
+    for p in (
+        Permission.CDISC_DERIVE,
+        Permission.CDISC_READ,
+        Permission.CDISC_EXPORT,
+    ):
+        assert p not in perms, f"student must not have {p.value}"
+
+
 def test_skill_permission_covers_every_specialist() -> None:
     """Every workflow registered in `agent/specialists/` must map to a
     skill permission, or the dispatcher will fail-closed on it."""

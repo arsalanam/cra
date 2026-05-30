@@ -1,0 +1,12 @@
+{
+  "description": "Platform AE relationship-to-intervention → SDTM AEREL controlled term.",
+  "source": "SDTM IG v3.4 §6.3 AEREL.",
+  "mapping": {
+    "unrelated": "NOT RELATED",
+    "unlikely": "UNLIKELY RELATED",
+    "possible": "POSSIBLY RELATED",
+    "probable": "PROBABLY RELATED",
+    "definite": "DEFINITELY RELATED",
+    "unknown": "UNKNOWN"
+  }
+}

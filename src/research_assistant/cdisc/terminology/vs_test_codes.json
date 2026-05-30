@@ -1,0 +1,17 @@
+{
+  "description": "Vital-sign item id → (VSTESTCD, VSTEST, default VSORRESU).",
+  "source": "SDTM IG v3.4 §6.3 VSTESTCD controlled terminology.",
+  "mapping": {
+    "height": {"VSTESTCD": "HEIGHT", "VSTEST": "Height", "default_unit": "cm"},
+    "weight": {"VSTESTCD": "WEIGHT", "VSTEST": "Weight", "default_unit": "kg"},
+    "sbp":    {"VSTESTCD": "SYSBP",  "VSTEST": "Systolic Blood Pressure", "default_unit": "mmHg"},
+    "sysbp":  {"VSTESTCD": "SYSBP",  "VSTEST": "Systolic Blood Pressure", "default_unit": "mmHg"},
+    "dbp":    {"VSTESTCD": "DIABP",  "VSTEST": "Diastolic Blood Pressure", "default_unit": "mmHg"},
+    "diabp":  {"VSTESTCD": "DIABP",  "VSTEST": "Diastolic Blood Pressure", "default_unit": "mmHg"},
+    "hr":     {"VSTESTCD": "PULSE",  "VSTEST": "Pulse Rate", "default_unit": "beats/min"},
+    "pulse":  {"VSTESTCD": "PULSE",  "VSTEST": "Pulse Rate", "default_unit": "beats/min"},
+    "temp":   {"VSTESTCD": "TEMP",   "VSTEST": "Temperature", "default_unit": "C"},
+    "rr":     {"VSTESTCD": "RESP",   "VSTEST": "Respiratory Rate", "default_unit": "breaths/min"},
+    "spo2":   {"VSTESTCD": "OXYSAT", "VSTEST": "Oxygen Saturation", "default_unit": "%"}
+  }
+}
