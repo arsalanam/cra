@@ -357,10 +357,26 @@
   textarea.composer-input { flex: 1; background: #1f232c; color: #e6e6e6; border: 1px solid #2a2f3a; border-radius: 6px; padding: 10px; font: inherit; font-size: 14px; resize: vertical; min-height: 80px; }
 
   /* ── Welcome ────────────────────────────────────────────── */
-  .welcome { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #5a6070; padding: 20px; }
-  .welcome h2 { color: #8b93a7; font-size: 18px; margin: 0 0 8px; }
-  .welcome p { font-size: 14px; margin: 4px 0; max-width: 520px; text-align: center; line-height: 1.5; }
-  .welcome ul { font-size: 13px; color: #8b93a7; max-width: 520px; line-height: 1.7; padding-left: 20px; }
+  .welcome { flex: 1; overflow-y: auto; display: flex; flex-direction: column; align-items: stretch; padding: 36px 40px 60px; }
+  .welcome-header { max-width: 1100px; margin: 0 auto 28px; width: 100%; }
+  .welcome-header h2 { color: #e6e6e6; font-size: 22px; margin: 0 0 6px; font-weight: 600; }
+  .welcome-header p { font-size: 13px; margin: 0; color: #8b93a7; line-height: 1.6; }
+  .welcome-tiles { max-width: 1100px; margin: 0 auto; width: 100%; display: flex; flex-direction: column; gap: 26px; }
+  .lifecycle-section { display: flex; flex-direction: column; gap: 10px; }
+  .lifecycle-header { display: flex; align-items: baseline; gap: 12px; padding: 0 2px; }
+  .lifecycle-header .step { font-size: 10px; font-weight: 700; color: #5a6070; letter-spacing: .8px; text-transform: uppercase; padding: 2px 8px; background: #171a21; border-radius: 3px; border: 1px solid #262a33; }
+  .lifecycle-header h3 { font-size: 14px; color: #e6e6e6; margin: 0; font-weight: 600; }
+  .lifecycle-header .sub { font-size: 12px; color: #5a6070; }
+  .tile-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; }
+  .tile { display: flex; flex-direction: column; gap: 8px; background: #171a21; border: 1px solid #262a33; border-radius: 8px; padding: 14px 14px 12px; cursor: pointer; transition: border-color 0.12s, transform 0.12s, background 0.12s; text-align: left; font: inherit; color: inherit; }
+  .tile:hover { border-color: #3d4452; background: #1a1d25; }
+  .tile:active { transform: translateY(1px); }
+  .tile-head { display: flex; align-items: center; gap: 8px; }
+  .tile-icon { font-size: 18px; line-height: 1; flex-shrink: 0; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; background: #1f232c; border-radius: 5px; }
+  .tile-title { font-size: 13.5px; font-weight: 600; color: #e6e6e6; }
+  .tile-starter { font-family: SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace; font-size: 11px; color: #a3b3df; background: #0f1115; padding: 5px 8px; border-radius: 4px; border: 1px solid #1f2530; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tile-desc { font-size: 12px; color: #8b93a7; line-height: 1.5; }
+  .tile-foot { font-size: 10px; color: #5a6070; margin-top: auto; padding-top: 4px; text-transform: uppercase; letter-spacing: .5px; }
 
   /* ── Loading ────────────────────────────────────────────── */
   .loading { display: flex; align-items: center; gap: 10px; padding: 12px 16px; color: #8b93a7; font-size: 13px; background: #171a21; border-radius: 8px; }
@@ -692,6 +708,222 @@ function formatExtractionConfirmation(studies) {
 
 const SELECTION_MIN = 3;
 const SELECTION_MAX = 20;
+
+/* ── Welcome tiles (clinical lifecycle) ──────────────────── */
+
+const LIFECYCLE_SECTIONS = [
+  {
+    step: "01",
+    title: "Evidence synthesis",
+    sub: "Pre-design literature review",
+    tiles: [
+      {
+        perm: "skill.search_strategy",
+        icon: "🔎",
+        title: "Search strategy",
+        starter: "/search adults with treatment-resistant depression CBT vs SSRI",
+        desc: "Build a MeSH-expanded Boolean query, tested live on PubMed + Europe PMC. Copy-paste plans for Cochrane CENTRAL and Embase included.",
+        foot: "/search · /strategy",
+      },
+      {
+        perm: "skill.sr_protocol",
+        icon: "📝",
+        title: "Draft a SR protocol",
+        starter: "/protocol SGLT2 inhibitors for HF prevention in T2DM",
+        desc: "Research question → PRISMA-P methods (PICO + eligibility + RoB tool + synthesis plan) → full document with grounded background + PROSPERO field map. PDF + DOCX export.",
+        foot: "/protocol · /sr · /prisma",
+      },
+      {
+        perm: "sr.create",
+        icon: "🗂️",
+        href: "/sr.html",
+        title: "SR title/abstract screening",
+        starter: "Open SR Reviews",
+        desc: "Title/abstract + full-text dual review with conflict adjudication, AI-assist on every abstract, PRISMA flow diagram on tap.",
+        foot: "Dual review · PRISMA",
+      },
+      {
+        perm: "skill.meta_analysis",
+        icon: "📊",
+        title: "Run a meta-analysis",
+        starter: "/meta SGLT2 inhibitors mortality in heart failure",
+        desc: "Clinical question → PICO → search → extraction → pooled effects + forest plot. Anti-hallucination: every PMID + effect size traces to a real tool call.",
+        foot: "/meta · /ma",
+      },
+      {
+        perm: "skill.risk_of_bias",
+        icon: "⚖️",
+        title: "Risk of bias",
+        starter: "/rob assess RoB 2.0 for the studies in my last meta-analysis",
+        desc: "RoB 2.0 / ROBINS-I / Newcastle-Ottawa / QUADAS-2 per-study judgements + traffic-light summary plot + sensitivity hand-off.",
+        foot: "/rob · /bias",
+      },
+    ],
+  },
+  {
+    step: "02",
+    title: "Trial design",
+    sub: "Methodology, sample size, analysis plan",
+    tiles: [
+      {
+        perm: "skill.sap_drafter",
+        icon: "🎯",
+        title: "Sample size + SAP",
+        starter: "/sap two-arm RCT of CBT vs SSRI for depression, primary outcome HAM-D at 12 weeks",
+        desc: "PICOT intake → sample-size derivation (four formulas, scipy) → ICH-E9 analysis plan → downloadable Statistical Analysis Plan (PDF + DOCX).",
+        foot: "/sap · /samplesize · /power",
+      },
+    ],
+  },
+  {
+    step: "03",
+    title: "Start-up",
+    sub: "Regulatory + ethics submission",
+    tiles: [
+      {
+        perm: "skill.registration_drafter",
+        icon: "📋",
+        title: "Trial registration",
+        starter: "/register Phase 2 SGLT2i in HFpEF, double-blind randomised parallel",
+        desc: "CT.gov PRS + EU CTR / CTIS field shapes side-by-side. NCT IDs and CTIS numbers are NEVER fabricated — assigned by the registries on submission.",
+        foot: "/register · /ctgov · /ctis",
+      },
+      {
+        perm: "skill.irb_drafter",
+        icon: "🛡️",
+        title: "IRB packet + ICF",
+        starter: "/irb Phase 2 trial of Drug X in disease Y, US IRB, language English, reading grade 8",
+        desc: "Protocol synopsis (ICH E6) + Informed Consent Form schema-enforced against 21 CFR §50.25(a). Multilingual en/es/fr/de. Flesch-Kincaid grade reported.",
+        foot: "/irb · /icf · /consent",
+      },
+    ],
+  },
+  {
+    step: "04",
+    title: "Execution",
+    sub: "Data capture, randomisation, safety",
+    tiles: [
+      {
+        perm: "skill.ecrf_design",
+        icon: "🧾",
+        title: "Design eCRFs",
+        starter: "/ecrf design CRFs for a Phase 2 cardiometabolic outcomes trial",
+        desc: "Form authoring + visit schedule + edit-check engine. ODM-XML / Define-XML export. Part 11 / ALCOA+ aligned audit trail.",
+        foot: "/ecrf",
+      },
+      {
+        perm: "data.read",
+        icon: "🏥",
+        href: "/collector.html",
+        title: "EDC collector",
+        starter: "Open Data Collector",
+        desc: "Live data entry against deployed forms + safety panel (AE/SAE), study lock, IRT randomisation, CDISC submission bundle download.",
+        foot: "Capture · Randomise · Submit",
+      },
+      {
+        perm: "watch.read",
+        icon: "🔔",
+        href: "/watches.html",
+        title: "Living-review watches",
+        starter: "Open watches",
+        desc: "Subscribe to a PICO + query band. Get notified when new evidence lands; one-click hand-off into meta-analysis when a quorum threshold trips.",
+        foot: "Quorum · Notifications",
+      },
+    ],
+  },
+  {
+    step: "05",
+    title: "Analysis & reporting",
+    sub: "Post-lock writing surface",
+    tiles: [
+      {
+        perm: "skill.csr_drafter",
+        icon: "📄",
+        title: "Clinical Study Report",
+        starter: "/csr Phase 2 study of Drug X in disease Y, lock date 2026-05-30, double-blind, FDA submission",
+        desc: "ICH E3 synopsis + four data-driven sections (Disposition / Demographics / Efficacy / Safety) populated from ADSL + ADTTE + TLF. Every count carries its source-artefact id.",
+        foot: "/csr · /e3 · /study-report",
+      },
+      {
+        perm: "skill.manuscript_drafter",
+        icon: "✍️",
+        title: "Manuscript drafter (IMRaD)",
+        starter: "/manuscript compose an IMRaD manuscript from my last meta-analysis, target NEJM",
+        desc: "Compose a finished analysis into a journal-ready paper (NEJM / Lancet / BMJ / JAMA / generic). Iterates point-by-point reviewer responses with cover letter.",
+        foot: "/manuscript · /imrad",
+      },
+    ],
+  },
+  {
+    step: "06",
+    title: "Quick Q&A",
+    sub: "Anything that doesn't fit a workflow",
+    tiles: [
+      {
+        perm: "skill.general_qa",
+        icon: "💬",
+        title: "Ask anything",
+        starter: "What does a forest plot show in a meta-analysis?",
+        desc: "Definitions, methodology questions, paper lookups, glossary. Anti-hallucination guarded — refuses to invent effect sizes / PMIDs / guideline citations.",
+        foot: "/ask · /general",
+      },
+    ],
+  },
+];
+
+function WelcomeTiles({ hasPerm, onStart }) {
+  const visible = LIFECYCLE_SECTIONS
+    .map(sec => ({ ...sec, tiles: sec.tiles.filter(t => !t.perm || hasPerm(t.perm)) }))
+    .filter(sec => sec.tiles.length > 0);
+  return (
+    <div className="welcome">
+      <div className="welcome-header">
+        <h2>Where in the lifecycle are you?</h2>
+        <p>Pick a tile to start. Each tile pre-fills a slash-command starter — edit it before sending if you want a different topic. Tiles you don't see are gated by your role.</p>
+      </div>
+      <div className="welcome-tiles">
+        {visible.map(sec => (
+          <div className="lifecycle-section" key={sec.step}>
+            <div className="lifecycle-header">
+              <span className="step">{sec.step}</span>
+              <h3>{sec.title}</h3>
+              <span className="sub">{sec.sub}</span>
+            </div>
+            <div className="tile-grid">
+              {sec.tiles.map((t, i) => (
+                <button
+                  className="tile"
+                  key={`${sec.step}-${i}`}
+                  onClick={() => {
+                    if (t.href) {
+                      window.location.href = t.href;
+                    } else {
+                      onStart(t.starter);
+                    }
+                  }}
+                  title={t.href ? `Open ${t.href}` : `Start: ${t.starter}`}
+                >
+                  <div className="tile-head">
+                    <span className="tile-icon" aria-hidden="true">{t.icon}</span>
+                    <span className="tile-title">{t.title}</span>
+                  </div>
+                  <div className="tile-starter">{t.starter}</div>
+                  <div className="tile-desc">{t.desc}</div>
+                  {t.foot && <div className="tile-foot">{t.foot}</div>}
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+        {visible.length === 0 && (
+          <div className="welcome-header" style={{ textAlign: "center" }}>
+            <p>No workflows are enabled for your role. Contact your administrator if this looks wrong.</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 /* ── App ─────────────────────────────────────────────────── */
 
@@ -1131,35 +1363,7 @@ function App() {
         {view === "usage" ? (
           <UsagePage data={usageData} />
         ) : !activeThreadId ? (
-          <div className="welcome">
-            <h2>Welcome</h2>
-            <p>Start a new thread to draft a review protocol, build a database search strategy, or run a meta-analysis end-to-end.</p>
-            <p style={{ marginTop: 16, color: "#5a6070" }}>The assistant supports:</p>
-            <ul>
-              {hasPerm("skill.sr_protocol") && (
-                <li><strong>Protocol draft</strong> — research question → PRISMA-P methods (PICO + eligibility + RoB tool + synthesis plan) → full document with grounded background + PROSPERO field map. Try <code>/protocol</code>.</li>
-              )}
-              {hasPerm("skill.search_strategy") && (
-                <li><strong>Search strategy</strong> — research question → MeSH-expanded Boolean query, tested on PubMed + Europe PMC, with copy-paste plans for Cochrane CENTRAL and Embase. Try <code>/search</code>.</li>
-              )}
-              {hasPerm("skill.meta_analysis") && (
-                <li><strong>Meta-analysis</strong> — clinical question → PICO → search → extraction → pooled effects + forest plots. Try <code>/meta</code>.</li>
-              )}
-              {hasPerm("skill.risk_of_bias") && (
-                <li><strong>Risk of bias</strong> — RoB 2.0 / ROBINS-I per-study judgements + summary plot + sensitivity hand-off. Try <code>/rob</code>.</li>
-              )}
-              {hasPerm("sr.create") && (
-                <li><strong>SR screening + PRISMA</strong> — title/abstract + full-text dual review with conflict adjudication, AI-assist on every abstract, PRISMA flow diagram on tap. Visit <a href="/sr.html">SR Reviews</a>.</li>
-              )}
-              {hasPerm("skill.sap_drafter") && (
-                <li><strong>Sample size + SAP</strong> — PICOT intake → sample-size derivation (four formulas) → ICH-E9 analysis plan → downloadable Statistical Analysis Plan. Try <code>/sap</code> or <code>/samplesize</code>.</li>
-              )}
-              {hasPerm("skill.manuscript_drafter") && (
-                <li><strong>Manuscript drafter (IMRaD)</strong> — compose a finished analysis into a journal-ready paper (NEJM / Lancet / BMJ / JAMA / generic), then iterate point-by-point reviewer responses. Try <code>/manuscript</code> or hand off from a finalised meta-analysis.</li>
-              )}
-              <li><strong>Anti-hallucination</strong> — every PMID, MeSH term, and citation is grounded in a real tool call</li>
-            </ul>
-          </div>
+          <WelcomeTiles hasPerm={hasPerm} onStart={sendMessage} />
         ) : (
           <>
             <div className="conversation" ref={conversationRef}>
