@@ -296,6 +296,10 @@ Zotero / EndNote / Mendeley import + export. Today references are inline in the 
 
 "Show me every active SR, who owns it, what stage it's in." Today the assistant is per-thread; institutional rollup is absent. Becomes essential once an institution exceeds ~20 active reviews.
 
+#### Dev ergonomics: bind-mount frontend assets in compose · 💡 · S
+
+`deploy/compose/docker-compose.yml`'s `agent` service builds from a Dockerfile that `COPY`s `src/` at image-build time — frontend edits (`index.html`, `collector.html`, etc.) only surface after `docker compose build agent && up -d agent`. Adding a bind-mount for `./src/research_assistant/web/static → /app/src/research_assistant/web/static` would let HTML/JSX edits hot-load on the next browser refresh without a rebuild. Pure dev-ergonomics — does not affect production deploy posture.
+
 ---
 
 ## P2 — Polish on existing workflows
