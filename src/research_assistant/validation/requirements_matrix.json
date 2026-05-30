@@ -62,6 +62,20 @@
       ]
     },
     {
+      "code": "LOCK-004",
+      "title": "Study lock also blocks AE / deviation / CAPA / query writes (E7b)",
+      "regulatory_anchor": "ICH E6(R2) §5.5.3(c); ALCOA+ — Original (post-lock changes invalidate analysis)",
+      "system_anchor": "_require_deployment_unlocked_for_{ae,deviation,capa,query} gates in web/edc.py + matching repository resolvers.",
+      "tests": [
+        "tests/integration/test_study_lock_endpoint.py::test_locked_study_refuses_ae_record",
+        "tests/integration/test_study_lock_endpoint.py::test_locked_study_refuses_ae_classify",
+        "tests/integration/test_study_lock_endpoint.py::test_locked_study_refuses_query_raise",
+        "tests/integration/test_study_lock_endpoint.py::test_locked_study_refuses_query_respond_and_close",
+        "tests/integration/test_study_lock_endpoint.py::test_locked_study_refuses_deviation_record_and_classify",
+        "tests/integration/test_study_lock_endpoint.py::test_locked_study_refuses_capa_add_and_complete"
+      ]
+    },
+    {
       "code": "LOCK-002",
       "title": "Lock is refused while non-closed queries exist (unless explicitly forced)",
       "regulatory_anchor": "ICH E6(R2) §5.5.3(c)",

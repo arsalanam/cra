@@ -922,6 +922,29 @@ class ClinicalRepository:
         subj = await self._s.get(Subject, subject_id)
         return subj.deployment_id if subj is not None else None
 
+    async def deployment_id_for_adverse_event(self, ae_id: str) -> str | None:
+        ae = await self._s.get(AdverseEvent, ae_id)
+        return ae.deployment_id if ae is not None else None
+
+    async def deployment_id_for_deviation(self, deviation_id: str) -> str | None:
+        dev = await self._s.get(ProtocolDeviation, deviation_id)
+        return dev.deployment_id if dev is not None else None
+
+    async def deployment_id_for_capa(self, capa_id: str) -> str | None:
+        capa = await self._s.get(CapaAction, capa_id)
+        if capa is None:
+            return None
+        return await self.deployment_id_for_deviation(capa.deviation_id)
+
+    async def deployment_id_for_query(self, query_id: str) -> str | None:
+        query = await self._s.get(Query, query_id)
+        if query is None:
+            return None
+        # `Query.subject_id` is stored at write time so we can resolve
+        # the deployment without re-traversing the form-instance.
+        subj = await self._s.get(Subject, query.subject_id)
+        return subj.deployment_id if subj is not None else None
+
     async def assert_study_unlocked(self, deployment_id: str) -> None:
         if await self.is_study_locked(deployment_id):
             raise StudyLockedError(

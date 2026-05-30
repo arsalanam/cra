@@ -58,11 +58,19 @@ async def client() -> AsyncIterator[AsyncClient]:
 
 
 async def _seed_user(sub: str, email: str, *, role: str) -> None:
+    """Idempotent on cognito_sub — re-seeding the same sub is a no-op."""
+    from sqlalchemy import select
+
     from research_assistant.persistence.database import get_db_session
     from research_assistant.persistence.models import User
     from research_assistant.persistence.user_repository import UserRepository
 
     async with get_db_session() as session:
+        existing = (
+            await session.scalars(select(User).where(User.cognito_sub == sub))
+        ).first()
+        if existing is not None:
+            return
         user = User(cognito_sub=sub, email=email)
         session.add(user)
         await session.flush()
@@ -250,3 +258,217 @@ async def test_locked_study_refuses_sdv_verify(client: AsyncClient) -> None:
         json={"item_ids": ["age"]},
     )
     assert verify.status_code == 409
+
+
+# ── E7b — AE / deviation / CAPA / query writes also gated ─────────────
+
+
+async def _lock_as_dm(client: AsyncClient, dep_id: str) -> None:
+    """Force-lock (ignores open queries) so tests that exercise the
+    post-lock gates can also exercise pre-lock setup that raises queries."""
+    await _seed_user("sub-dm", "dm@example.com", role="data_manager")
+    _login(client, "sub-dm", "dm@example.com")
+    r = await client.post(
+        f"/api/edc/deployments/{dep_id}/lock",
+        json={"reason": "lock", "force_open_queries": True},
+    )
+    assert r.status_code == 201, r.text
+
+
+def _ae_body() -> dict[str, Any]:
+    return {
+        "term_text": "headache",
+        "severity_grade": 2,
+        "outcome": "recovering",
+        "relationship_to_intervention": "possible",
+        "start_date": "2026-03-01T00:00:00Z",
+    }
+
+
+async def test_locked_study_refuses_ae_record(client: AsyncClient) -> None:
+    ids = await _setup_deployment(client)
+    # Coordinator records an AE before lock to populate one for the
+    # patch/mark-reported path tests later. Then lock as DM. Then a
+    # NEW AE record must be refused.
+    await _seed_user("sub-c", "c@example.com", role="coordinator")
+    _login(client, "sub-c", "c@example.com")
+    pre_ae = await client.post(
+        f"/api/edc/subjects/{ids['subj']}/adverse-events", json=_ae_body()
+    )
+    assert pre_ae.status_code == 201, pre_ae.text
+
+    await _lock_as_dm(client, ids["dep"])
+
+    _login(client, "sub-c", "c@example.com")
+    post_lock = await client.post(
+        f"/api/edc/subjects/{ids['subj']}/adverse-events", json=_ae_body()
+    )
+    assert post_lock.status_code == 409
+    assert "locked" in post_lock.text.lower()
+
+
+async def test_locked_study_refuses_ae_classify(client: AsyncClient) -> None:
+    ids = await _setup_deployment(client)
+    await _seed_user("sub-c", "c@example.com", role="coordinator")
+    _login(client, "sub-c", "c@example.com")
+    ae = (
+        await client.post(
+            f"/api/edc/subjects/{ids['subj']}/adverse-events", json=_ae_body()
+        )
+    ).json()
+
+    await _lock_as_dm(client, ids["dep"])
+
+    # PI tries to reclassify after the lock.
+    await _seed_user("sub-pi", "pi@example.com", role="principal_investigator")
+    _login(client, "sub-pi", "pi@example.com")
+    resp = await client.patch(
+        f"/api/edc/ae/{ae['id']}", json={"is_serious": True}
+    )
+    assert resp.status_code == 409
+
+
+async def test_locked_study_refuses_query_raise(client: AsyncClient) -> None:
+    ids = await _setup_deployment(client)
+    await client.put(
+        f"/api/edc/form-instances/{ids['fi']}/data",
+        json={"values": {"age": "30"}},
+    )
+    await _lock_as_dm(client, ids["dep"])
+
+    # DM tries to raise a query after the lock.
+    _login(client, "sub-dm", "dm@example.com")
+    resp = await client.post(
+        f"/api/edc/form-instances/{ids['fi']}/queries",
+        json={"item_id": "age", "text": "Please confirm"},
+    )
+    assert resp.status_code == 409
+
+
+async def test_locked_study_refuses_query_respond_and_close(
+    client: AsyncClient,
+) -> None:
+    ids = await _setup_deployment(client)
+    await client.put(
+        f"/api/edc/form-instances/{ids['fi']}/data",
+        json={"values": {"age": "30"}},
+    )
+
+    # Pre-lock: DM raises a query.
+    await _seed_user("sub-dm", "dm@example.com", role="data_manager")
+    _login(client, "sub-dm", "dm@example.com")
+    q = (
+        await client.post(
+            f"/api/edc/form-instances/{ids['fi']}/queries",
+            json={"item_id": "age", "text": "Please confirm"},
+        )
+    ).json()
+
+    await _lock_as_dm(client, ids["dep"])
+
+    # PI tries to respond after the lock.
+    await _seed_user("sub-pi", "pi@example.com", role="principal_investigator")
+    _login(client, "sub-pi", "pi@example.com")
+    respond = await client.post(
+        f"/api/edc/queries/{q['id']}/respond", json={"text": "Confirmed"}
+    )
+    assert respond.status_code == 409
+
+    # DM tries to close after the lock.
+    _login(client, "sub-dm", "dm@example.com")
+    close = await client.post(f"/api/edc/queries/{q['id']}/close")
+    assert close.status_code == 409
+
+
+async def test_locked_study_refuses_deviation_record_and_classify(
+    client: AsyncClient,
+) -> None:
+    ids = await _setup_deployment(client)
+    # Pre-lock: coordinator logs a deviation.
+    await _seed_user("sub-c", "c@example.com", role="coordinator")
+    _login(client, "sub-c", "c@example.com")
+    dev = (
+        await client.post(
+            f"/api/edc/subjects/{ids['subj']}/deviations",
+            json={
+                "classification": "minor",
+                "category": "OTHER",
+                "description": "Visit window exceeded.",
+            },
+        )
+    ).json()
+
+    await _lock_as_dm(client, ids["dep"])
+
+    # Subject-scoped record blocked.
+    _login(client, "sub-c", "c@example.com")
+    record = await client.post(
+        f"/api/edc/subjects/{ids['subj']}/deviations",
+        json={
+            "classification": "minor",
+            "category": "OTHER",
+            "description": "Another deviation.",
+        },
+    )
+    assert record.status_code == 409
+
+    # Deployment-scoped record blocked. Coordinator carries
+    # deviation.record (DM doesn't, but DM IS allowed to classify —
+    # exercised below).
+    _login(client, "sub-c", "c@example.com")
+    central = await client.post(
+        f"/api/edc/deployments/{ids['dep']}/deviations",
+        json={
+            "classification": "minor",
+            "category": "OTHER",
+            "description": "Central deviation.",
+        },
+    )
+    assert central.status_code == 409
+
+    # Classify blocked (DM has deviation.classify).
+    _login(client, "sub-dm", "dm@example.com")
+    classify = await client.patch(
+        f"/api/edc/deviations/{dev['id']}", json={"classification": "MAJOR"}
+    )
+    assert classify.status_code == 409
+
+
+async def test_locked_study_refuses_capa_add_and_complete(
+    client: AsyncClient,
+) -> None:
+    ids = await _setup_deployment(client)
+    # Pre-lock: log a deviation as coordinator, add a CAPA as DM.
+    await _seed_user("sub-c", "c@example.com", role="coordinator")
+    _login(client, "sub-c", "c@example.com")
+    dev = (
+        await client.post(
+            f"/api/edc/subjects/{ids['subj']}/deviations",
+            json={
+                "classification": "minor",
+                "category": "OTHER",
+                "description": "x",
+            },
+        )
+    ).json()
+    await _seed_user("sub-dm", "dm@example.com", role="data_manager")
+    _login(client, "sub-dm", "dm@example.com")
+    capa = (
+        await client.post(
+            f"/api/edc/deviations/{dev['id']}/capa",
+            json={"action_text": "Retrain coordinator on visit windows."},
+        )
+    ).json()
+
+    await _lock_as_dm(client, ids["dep"])
+
+    # Adding a NEW CAPA refused.
+    new_capa = await client.post(
+        f"/api/edc/deviations/{dev['id']}/capa",
+        json={"action_text": "Second action."},
+    )
+    assert new_capa.status_code == 409
+
+    # Completing the existing CAPA refused.
+    complete = await client.post(f"/api/edc/capa/{capa['id']}/complete")
+    assert complete.status_code == 409

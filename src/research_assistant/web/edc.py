@@ -442,6 +442,34 @@ async def _require_deployment_unlocked_for_subject(s: Any, subject_id: str) -> N
     await _require_deployment_unlocked(s, dep_id)
 
 
+async def _require_deployment_unlocked_for_ae(s: Any, ae_id: str) -> None:
+    dep_id = await ClinicalRepository(s).deployment_id_for_adverse_event(ae_id)
+    if dep_id is None:
+        return
+    await _require_deployment_unlocked(s, dep_id)
+
+
+async def _require_deployment_unlocked_for_deviation(s: Any, deviation_id: str) -> None:
+    dep_id = await ClinicalRepository(s).deployment_id_for_deviation(deviation_id)
+    if dep_id is None:
+        return
+    await _require_deployment_unlocked(s, dep_id)
+
+
+async def _require_deployment_unlocked_for_capa(s: Any, capa_id: str) -> None:
+    dep_id = await ClinicalRepository(s).deployment_id_for_capa(capa_id)
+    if dep_id is None:
+        return
+    await _require_deployment_unlocked(s, dep_id)
+
+
+async def _require_deployment_unlocked_for_query(s: Any, query_id: str) -> None:
+    dep_id = await ClinicalRepository(s).deployment_id_for_query(query_id)
+    if dep_id is None:
+        return
+    await _require_deployment_unlocked(s, dep_id)
+
+
 async def _require_signing_reauth(user_sub: str, password: str) -> None:
     """Enforce Part 11 §11.200 two-component re-auth at signing time.
 
@@ -723,6 +751,7 @@ def create_edc_router() -> APIRouter:
         ),
     ) -> QueryOut:
         async with get_clinical_session() as s:
+            await _require_deployment_unlocked_for_form(s, form_instance_id)
             try:
                 q = await ClinicalRepository(s).create_manual_query(
                     form_instance_id, item_id=body.item_id, text=body.text, actor_sub=user.sub
@@ -740,6 +769,7 @@ def create_edc_router() -> APIRouter:
         ),
     ) -> QueryOut:
         async with get_clinical_session() as s:
+            await _require_deployment_unlocked_for_query(s, query_id)
             try:
                 q = await ClinicalRepository(s).respond_query(
                     query_id, text=body.text, author_sub=user.sub
@@ -756,6 +786,7 @@ def create_edc_router() -> APIRouter:
         ),
     ) -> QueryOut:
         async with get_clinical_session() as s:
+            await _require_deployment_unlocked_for_query(s, query_id)
             try:
                 q = await ClinicalRepository(s).close_query(query_id, actor_sub=user.sub)
             except ClinicalError as e:
@@ -900,6 +931,7 @@ def create_edc_router() -> APIRouter:
         ),
     ) -> AdverseEventOut:
         async with get_clinical_session() as s:
+            await _require_deployment_unlocked_for_subject(s, subject_id)
             try:
                 ae = await ClinicalRepository(s).record_adverse_event(
                     subject_id,
@@ -953,6 +985,7 @@ def create_edc_router() -> APIRouter:
         # (the rbac module only inspects the strings) but the repo
         # accepts list[str] for the reasons override.
         async with get_clinical_session() as s:
+            await _require_deployment_unlocked_for_ae(s, ae_id)
             try:
                 ae = await ClinicalRepository(s).reclassify_adverse_event(
                     ae_id,
@@ -983,6 +1016,7 @@ def create_edc_router() -> APIRouter:
         license as a deploy-time concern.
         """
         async with get_clinical_session() as s:
+            await _require_deployment_unlocked_for_ae(s, ae_id)
             try:
                 ae = await ClinicalRepository(s).reclassify_adverse_event(
                     ae_id, meddra_pt=body.meddra_pt, actor_sub=user.sub
@@ -1013,6 +1047,7 @@ def create_edc_router() -> APIRouter:
         ),
     ) -> AdverseEventOut:
         async with get_clinical_session() as s:
+            await _require_deployment_unlocked_for_ae(s, ae_id)
             try:
                 ae = await ClinicalRepository(s).mark_ae_reported_to_authority(
                     ae_id, actor_sub=user.sub
@@ -1100,6 +1135,7 @@ def create_edc_router() -> APIRouter:
             subject = await s.get(Subject, subject_id)
             if subject is None:
                 raise HTTPException(404, "Subject not found")
+            await _require_deployment_unlocked(s, subject.deployment_id)
             try:
                 dev = await ClinicalRepository(s).record_deviation(
                     deployment_id=subject.deployment_id,
@@ -1129,6 +1165,7 @@ def create_edc_router() -> APIRouter:
         """Deployment-wide deviation (no specific subject) — e.g. a
         central drug-supply temperature excursion."""
         async with get_clinical_session() as s:
+            await _require_deployment_unlocked(s, deployment_id)
             try:
                 dev = await ClinicalRepository(s).record_deviation(
                     deployment_id=deployment_id,
@@ -1176,6 +1213,7 @@ def create_edc_router() -> APIRouter:
         ),
     ) -> DeviationOut:
         async with get_clinical_session() as s:
+            await _require_deployment_unlocked_for_deviation(s, deviation_id)
             try:
                 dev = await ClinicalRepository(s).reclassify_deviation(
                     deviation_id,
@@ -1201,6 +1239,7 @@ def create_edc_router() -> APIRouter:
         ),
     ) -> CapaOut:
         async with get_clinical_session() as s:
+            await _require_deployment_unlocked_for_deviation(s, deviation_id)
             try:
                 capa = await ClinicalRepository(s).add_capa(
                     deviation_id,
@@ -1227,6 +1266,7 @@ def create_edc_router() -> APIRouter:
         ),
     ) -> CapaOut:
         async with get_clinical_session() as s:
+            await _require_deployment_unlocked_for_capa(s, capa_id)
             try:
                 capa = await ClinicalRepository(s).complete_capa(capa_id, actor_sub=user.sub)
             except ClinicalError as e:
@@ -1241,6 +1281,7 @@ def create_edc_router() -> APIRouter:
         ),
     ) -> DeviationOut:
         async with get_clinical_session() as s:
+            await _require_deployment_unlocked_for_deviation(s, deviation_id)
             try:
                 dev = await ClinicalRepository(s).close_deviation(deviation_id, actor_sub=user.sub)
             except ClinicalError as e:
