@@ -21,17 +21,26 @@ from ..persistence.clinical.models import (
     AdamAdsl,
     AdverseEvent,
     CdiscDerivation,
+    DeployedForm,
     FormInstance,
     ItemData,
     SdtmAe,
+    SdtmCm,
     SdtmDm,
+    SdtmEx,
+    SdtmLb,
+    SdtmMh,
     SdtmVs,
     StudyDeployment,
     Subject,
     TlfArtefact,
 )
 from .adam_deriver import derive_adsl
-from .sdtm_mapper import BuiltinPythonMapper, ItemMappingConfig
+from .sdtm_mapper import (
+    BuiltinPythonMapper,
+    FormInstanceWithItems,
+    ItemMappingConfig,
+)
 from .tlf_generator import generate_tlfs
 
 logger = logging.getLogger(__name__)
@@ -88,6 +97,81 @@ async def _gather_item_data(
     return out
 
 
+async def _gather_form_instances_by_domain(
+    session: AsyncSession,
+    deployment_id: str,
+    form_to_domain_map: dict[str, str],
+) -> dict[str, list[FormInstanceWithItems]]:
+    """For each (form_name → SDTM domain) mapping, return the list of
+    form-instances of that form within the deployment, paired with
+    their item data. Used by the repeating-form derivers (LB / EX /
+    CM / MH) — each form-instance becomes one SDTM row."""
+    by_domain: dict[str, list[FormInstanceWithItems]] = {
+        domain: [] for domain in set(form_to_domain_map.values())
+    }
+    if not form_to_domain_map:
+        return by_domain
+
+    # Match by case-insensitive form_name so the customer's casing
+    # doesn't trip the lookup.
+    name_to_domain = {k.lower(): v for k, v in form_to_domain_map.items()}
+
+    deployed_forms = list(
+        (
+            await session.execute(
+                select(DeployedForm).where(
+                    DeployedForm.deployment_id == deployment_id,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    df_id_to_domain: dict[str, str] = {}
+    for df in deployed_forms:
+        domain = name_to_domain.get(df.form_name.lower())
+        if domain:
+            df_id_to_domain[df.id] = domain
+    if not df_id_to_domain:
+        return by_domain
+
+    # Pull form_instances whose deployed_form is in the matched set.
+    # Sort by created_at so per-subject sequencing is stable.
+    instances = list(
+        (
+            await session.execute(
+                select(FormInstance)
+                .join(Subject, FormInstance.subject_id == Subject.id)
+                .where(Subject.deployment_id == deployment_id)
+                .where(FormInstance.deployed_form_id.in_(list(df_id_to_domain.keys())))
+                .order_by(FormInstance.subject_id, FormInstance.created_at)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if not instances:
+        return by_domain
+    fi_ids = [fi.id for fi in instances]
+    items = list(
+        (
+            await session.execute(
+                select(ItemData).where(ItemData.form_instance_id.in_(fi_ids))
+            )
+        )
+        .scalars()
+        .all()
+    )
+    items_by_fi: dict[str, list[ItemData]] = {}
+    for it in items:
+        items_by_fi.setdefault(it.form_instance_id, []).append(it)
+    for fi in instances:
+        domain = df_id_to_domain.get(fi.deployed_form_id)
+        if domain:
+            by_domain[domain].append((fi, items_by_fi.get(fi.id, [])))
+    return by_domain
+
+
 async def run_derivation(
     session: AsyncSession,
     *,
@@ -127,16 +211,35 @@ async def run_derivation(
     )
     item_data_by_subject = await _gather_item_data(session, subjects)
 
+    mapper = BuiltinPythonMapper()
+    cfg = config or ItemMappingConfig()
+
+    # Repeating-form domains (LB / EX / CM / MH) are gathered per the
+    # customer's form_to_domain_map and emit one SDTM row per
+    # form-instance.
+    form_instances_by_domain = await _gather_form_instances_by_domain(
+        session, deployment_id, cfg.form_to_domain_map
+    )
+
     # Wipe prior outputs for this deployment so the new run is the
     # current truth. Audit history of WHO ran derivations is preserved
     # in `cdisc_derivations`.
-    for model in (SdtmDm, SdtmAe, SdtmVs, AdamAdsl, TlfArtefact):
+    for model in (
+        SdtmDm,
+        SdtmAe,
+        SdtmVs,
+        SdtmLb,
+        SdtmEx,
+        SdtmCm,
+        SdtmMh,
+        AdamAdsl,
+        TlfArtefact,
+    ):
         await session.execute(
             delete(model).where(model.deployment_id == deployment_id)
         )
 
-    mapper = BuiltinPythonMapper()
-    cfg = config or ItemMappingConfig()
+    subjects_by_id = {s.id: s for s in subjects}
 
     dm = mapper.derive_dm(
         deployment_id=deployment_id,
@@ -149,13 +252,41 @@ async def run_derivation(
         deployment_id=deployment_id,
         study_id=study_id,
         adverse_events=aes,
-        subjects_by_id={s.id: s for s in subjects},
+        subjects_by_id=subjects_by_id,
     )
     vs = mapper.derive_vs(
         deployment_id=deployment_id,
         study_id=study_id,
         subjects=subjects,
         item_data_by_subject=item_data_by_subject,
+        config=cfg,
+    )
+    lb = mapper.derive_lb(
+        deployment_id=deployment_id,
+        study_id=study_id,
+        subjects_by_id=subjects_by_id,
+        form_instances=form_instances_by_domain.get("LB", []),
+        config=cfg,
+    )
+    ex = mapper.derive_ex(
+        deployment_id=deployment_id,
+        study_id=study_id,
+        subjects_by_id=subjects_by_id,
+        form_instances=form_instances_by_domain.get("EX", []),
+        config=cfg,
+    )
+    cm = mapper.derive_cm(
+        deployment_id=deployment_id,
+        study_id=study_id,
+        subjects_by_id=subjects_by_id,
+        form_instances=form_instances_by_domain.get("CM", []),
+        config=cfg,
+    )
+    mh = mapper.derive_mh(
+        deployment_id=deployment_id,
+        study_id=study_id,
+        subjects_by_id=subjects_by_id,
+        form_instances=form_instances_by_domain.get("MH", []),
         config=cfg,
     )
     adsl = derive_adsl(
@@ -170,6 +301,10 @@ async def run_derivation(
     session.add_all(dm)
     session.add_all(ae)
     session.add_all(vs)
+    session.add_all(lb)
+    session.add_all(ex)
+    session.add_all(cm)
+    session.add_all(mh)
     session.add_all(adsl)
     session.add_all(tlfs)
 
@@ -177,6 +312,10 @@ async def run_derivation(
         "dm": len(dm),
         "ae": len(ae),
         "vs": len(vs),
+        "lb": len(lb),
+        "ex": len(ex),
+        "cm": len(cm),
+        "mh": len(mh),
         "adsl": len(adsl),
         "tlf": len(tlfs),
     }
@@ -310,11 +449,79 @@ async def fetch_tlfs(
     )
 
 
+async def fetch_lb(
+    session: AsyncSession, deployment_id: str
+) -> list[SdtmLb]:
+    return list(
+        (
+            await session.execute(
+                select(SdtmLb)
+                .where(SdtmLb.deployment_id == deployment_id)
+                .order_by(SdtmLb.USUBJID, SdtmLb.LBSEQ)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
+async def fetch_ex(
+    session: AsyncSession, deployment_id: str
+) -> list[SdtmEx]:
+    return list(
+        (
+            await session.execute(
+                select(SdtmEx)
+                .where(SdtmEx.deployment_id == deployment_id)
+                .order_by(SdtmEx.USUBJID, SdtmEx.EXSEQ)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
+async def fetch_cm(
+    session: AsyncSession, deployment_id: str
+) -> list[SdtmCm]:
+    return list(
+        (
+            await session.execute(
+                select(SdtmCm)
+                .where(SdtmCm.deployment_id == deployment_id)
+                .order_by(SdtmCm.USUBJID, SdtmCm.CMSEQ)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
+async def fetch_mh(
+    session: AsyncSession, deployment_id: str
+) -> list[SdtmMh]:
+    return list(
+        (
+            await session.execute(
+                select(SdtmMh)
+                .where(SdtmMh.deployment_id == deployment_id)
+                .order_by(SdtmMh.USUBJID, SdtmMh.MHSEQ)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
 __all__ = [
     "DerivationResult",
     "fetch_adsl",
     "fetch_ae",
+    "fetch_cm",
     "fetch_dm",
+    "fetch_ex",
+    "fetch_lb",
+    "fetch_mh",
     "fetch_tlfs",
     "fetch_vs",
     "list_datasets",

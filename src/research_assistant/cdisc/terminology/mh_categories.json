@@ -1,0 +1,30 @@
+{
+  "description": "Free-text MH category → SDTM MHCAT high-level category.",
+  "source": "SDTM IG v3.4 MH / MedDRA SOC analogue (MVP — replace with MedDRA SOC at deploy).",
+  "mapping": {
+    "cardiac": "CARDIOVASCULAR",
+    "cardiovascular": "CARDIOVASCULAR",
+    "cardio": "CARDIOVASCULAR",
+    "respiratory": "RESPIRATORY",
+    "pulmonary": "RESPIRATORY",
+    "gi": "GASTROINTESTINAL",
+    "gastrointestinal": "GASTROINTESTINAL",
+    "endocrine": "ENDOCRINE",
+    "neurological": "NERVOUS SYSTEM",
+    "neuro": "NERVOUS SYSTEM",
+    "psychiatric": "PSYCHIATRIC",
+    "musculoskeletal": "MUSCULOSKELETAL",
+    "skin": "SKIN",
+    "dermatologic": "SKIN",
+    "renal": "RENAL",
+    "urinary": "RENAL AND URINARY",
+    "hepatic": "HEPATOBILIARY",
+    "blood": "BLOOD AND LYMPHATIC",
+    "haematologic": "BLOOD AND LYMPHATIC",
+    "infections": "INFECTIONS",
+    "infection": "INFECTIONS",
+    "metabolism": "METABOLISM AND NUTRITION",
+    "neoplasms": "NEOPLASMS",
+    "cancer": "NEOPLASMS"
+  }
+}

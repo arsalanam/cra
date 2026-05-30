@@ -1294,7 +1294,11 @@ def create_edc_router() -> APIRouter:
         from ..cdisc.pipeline import (
             fetch_adsl,
             fetch_ae,
+            fetch_cm,
             fetch_dm,
+            fetch_ex,
+            fetch_lb,
+            fetch_mh,
             fetch_vs,
         )
 
@@ -1309,12 +1313,21 @@ def create_edc_router() -> APIRouter:
                 rows = list(await fetch_ae(s, deployment_id))
             elif domain_upper == "VS":
                 rows = list(await fetch_vs(s, deployment_id))
+            elif domain_upper == "LB":
+                rows = list(await fetch_lb(s, deployment_id))
+            elif domain_upper == "EX":
+                rows = list(await fetch_ex(s, deployment_id))
+            elif domain_upper == "CM":
+                rows = list(await fetch_cm(s, deployment_id))
+            elif domain_upper == "MH":
+                rows = list(await fetch_mh(s, deployment_id))
             elif domain_upper == "ADSL":
                 rows = list(await fetch_adsl(s, deployment_id))
             else:
                 raise HTTPException(
                     400,
-                    f"Unknown domain {domain!r}. Choose one of: DM, AE, VS, ADSL.",
+                    f"Unknown domain {domain!r}. Choose one of: "
+                    "DM, AE, VS, LB, EX, CM, MH, ADSL.",
                 )
         return {
             "domain": domain_upper,
@@ -1340,13 +1353,21 @@ def create_edc_router() -> APIRouter:
         from ..cdisc.exporter import (
             adsl_to_csv,
             ae_to_csv,
+            cm_to_csv,
             dm_to_csv,
+            ex_to_csv,
+            lb_to_csv,
+            mh_to_csv,
             vs_to_csv,
         )
         from ..cdisc.pipeline import (
             fetch_adsl,
             fetch_ae,
+            fetch_cm,
             fetch_dm,
+            fetch_ex,
+            fetch_lb,
+            fetch_mh,
             fetch_vs,
         )
 
@@ -1358,12 +1379,21 @@ def create_edc_router() -> APIRouter:
                 payload = ae_to_csv(await fetch_ae(s, deployment_id))
             elif domain_upper == "VS":
                 payload = vs_to_csv(await fetch_vs(s, deployment_id))
+            elif domain_upper == "LB":
+                payload = lb_to_csv(await fetch_lb(s, deployment_id))
+            elif domain_upper == "EX":
+                payload = ex_to_csv(await fetch_ex(s, deployment_id))
+            elif domain_upper == "CM":
+                payload = cm_to_csv(await fetch_cm(s, deployment_id))
+            elif domain_upper == "MH":
+                payload = mh_to_csv(await fetch_mh(s, deployment_id))
             elif domain_upper == "ADSL":
                 payload = adsl_to_csv(await fetch_adsl(s, deployment_id))
             else:
                 raise HTTPException(
                     400,
-                    f"Unknown domain {domain!r}. Choose one of: DM, AE, VS, ADSL.",
+                    f"Unknown domain {domain!r}. Choose one of: "
+                    "DM, AE, VS, LB, EX, CM, MH, ADSL.",
                 )
         return Response(
             content=payload,
@@ -1409,7 +1439,11 @@ def create_edc_router() -> APIRouter:
         from ..cdisc.pipeline import (
             fetch_adsl,
             fetch_ae,
+            fetch_cm,
             fetch_dm,
+            fetch_ex,
+            fetch_lb,
+            fetch_mh,
             fetch_tlfs,
             fetch_vs,
             list_datasets,
@@ -1426,6 +1460,10 @@ def create_edc_router() -> APIRouter:
             dm = await fetch_dm(s, deployment_id)
             ae = await fetch_ae(s, deployment_id)
             vs = await fetch_vs(s, deployment_id)
+            lb = await fetch_lb(s, deployment_id)
+            ex = await fetch_ex(s, deployment_id)
+            cm = await fetch_cm(s, deployment_id)
+            mh = await fetch_mh(s, deployment_id)
             adsl = await fetch_adsl(s, deployment_id)
             tlfs = await fetch_tlfs(s, deployment_id)
             # Use the deployment's underlying research study id for the
@@ -1441,6 +1479,10 @@ def create_edc_router() -> APIRouter:
             dm=dm,
             ae=ae,
             vs=vs,
+            lb=lb,
+            ex=ex,
+            cm=cm,
+            mh=mh,
             adsl=adsl,
             tlfs=tlfs,
         )

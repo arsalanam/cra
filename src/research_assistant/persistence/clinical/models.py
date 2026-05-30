@@ -18,7 +18,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -693,6 +693,155 @@ class SdtmVs(ClinicalBase):
     VSORRES: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     VSORRESU: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     VSDTC: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+
+    derived_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class SdtmLb(ClinicalBase):
+    """SDTM Laboratory Tests row — one per lab measurement.
+
+    LBORRES / LBORRESU is the value-as-collected; LBSTRESN /
+    LBSTRESC / LBSTRESU is the standardised numeric + character form
+    after unit conversion (we currently emit STRES* = ORRES* until a
+    deploy-time unit-conversion table is wired in). LBNRIND derives
+    from LBSTRESN vs LBSTNRLO/HI: NORMAL / LOW / HIGH / (blank when
+    not computable).
+    """
+
+    __tablename__ = "sdtm_lb"
+    __table_args__ = (
+        UniqueConstraint("deployment_id", "USUBJID", "LBSEQ", name="uq_sdtm_lb_lbseq"),
+    )
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    deployment_id: Mapped[str] = mapped_column(Text, index=True)
+    STUDYID: Mapped[str] = mapped_column(Text)
+    DOMAIN: Mapped[str] = mapped_column(Text, default="LB")
+    USUBJID: Mapped[str] = mapped_column(Text, index=True)
+    LBSEQ: Mapped[int] = mapped_column(Integer)
+    LBTESTCD: Mapped[str] = mapped_column(
+        Text, doc="LB test code from SDTM CT (e.g. HGB, GLUC, ALT, CREAT)."
+    )
+    LBTEST: Mapped[str] = mapped_column(Text, doc="Human-readable test name.")
+    LBORRES: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    LBORRESU: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    LBSTRESC: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    LBSTRESN: Mapped[float | None] = mapped_column(Float, nullable=True, default=None)
+    LBSTRESU: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    LBORNRLO: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    LBORNRHI: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    LBSTNRLO: Mapped[float | None] = mapped_column(Float, nullable=True, default=None)
+    LBSTNRHI: Mapped[float | None] = mapped_column(Float, nullable=True, default=None)
+    LBNRIND: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        default=None,
+        doc="Reference range indicator: NORMAL / LOW / HIGH (blank if N/A).",
+    )
+    LBDTC: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+
+    derived_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class SdtmEx(ClinicalBase):
+    """SDTM Exposure row — one per dose administration."""
+
+    __tablename__ = "sdtm_ex"
+    __table_args__ = (
+        UniqueConstraint("deployment_id", "USUBJID", "EXSEQ", name="uq_sdtm_ex_exseq"),
+    )
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    deployment_id: Mapped[str] = mapped_column(Text, index=True)
+    STUDYID: Mapped[str] = mapped_column(Text)
+    DOMAIN: Mapped[str] = mapped_column(Text, default="EX")
+    USUBJID: Mapped[str] = mapped_column(Text, index=True)
+    EXSEQ: Mapped[int] = mapped_column(Integer)
+    EXTRT: Mapped[str] = mapped_column(Text, doc="Treatment name (free text).")
+    EXDOSE: Mapped[float | None] = mapped_column(Float, nullable=True, default=None)
+    EXDOSU: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    EXROUTE: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        default=None,
+        doc="ORAL / IV / IM / SC / TOPICAL / INHALATION / NASAL / RECTAL — controlled-term.",
+    )
+    EXSTDTC: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    EXENDTC: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+
+    derived_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class SdtmCm(ClinicalBase):
+    """SDTM Concomitant Medications row — one per concomitant medication."""
+
+    __tablename__ = "sdtm_cm"
+    __table_args__ = (
+        UniqueConstraint("deployment_id", "USUBJID", "CMSEQ", name="uq_sdtm_cm_cmseq"),
+    )
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    deployment_id: Mapped[str] = mapped_column(Text, index=True)
+    STUDYID: Mapped[str] = mapped_column(Text)
+    DOMAIN: Mapped[str] = mapped_column(Text, default="CM")
+    USUBJID: Mapped[str] = mapped_column(Text, index=True)
+    CMSEQ: Mapped[int] = mapped_column(Integer)
+    CMTRT: Mapped[str] = mapped_column(Text, doc="Reported medication name (verbatim).")
+    CMDECOD: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        default=None,
+        doc=(
+            "WHODrug / ATC standardised name (free text until a dictionary "
+            "is wired in at deploy time — analogous to MedDRA PT on AE)."
+        ),
+    )
+    CMINDC: Mapped[str | None] = mapped_column(
+        Text, nullable=True, default=None, doc="Indication."
+    )
+    CMDOSE: Mapped[float | None] = mapped_column(Float, nullable=True, default=None)
+    CMDOSU: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    CMSTDTC: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    CMENDTC: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+
+    derived_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class SdtmMh(ClinicalBase):
+    """SDTM Medical History row — one per pre-existing condition."""
+
+    __tablename__ = "sdtm_mh"
+    __table_args__ = (
+        UniqueConstraint("deployment_id", "USUBJID", "MHSEQ", name="uq_sdtm_mh_mhseq"),
+    )
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    deployment_id: Mapped[str] = mapped_column(Text, index=True)
+    STUDYID: Mapped[str] = mapped_column(Text)
+    DOMAIN: Mapped[str] = mapped_column(Text, default="MH")
+    USUBJID: Mapped[str] = mapped_column(Text, index=True)
+    MHSEQ: Mapped[int] = mapped_column(Integer)
+    MHTERM: Mapped[str] = mapped_column(Text, doc="Reported condition (verbatim).")
+    MHDECOD: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        default=None,
+        doc="MedDRA Preferred Term — free text until MedDRA license at deploy.",
+    )
+    MHCAT: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        default=None,
+        doc="High-level category (e.g. CARDIOVASCULAR, RESPIRATORY).",
+    )
+    MHSTDTC: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    MHENDTC: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    MHONGO: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        default=None,
+        doc="Y/N — derived: Y when MHENDTC is missing (ongoing condition).",
+    )
 
     derived_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 

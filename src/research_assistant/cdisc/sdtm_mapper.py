@@ -21,9 +21,14 @@ from typing import Any, Protocol
 
 from ..persistence.clinical.models import (
     AdverseEvent,
+    FormInstance,
     ItemData,
     SdtmAe,
+    SdtmCm,
     SdtmDm,
+    SdtmEx,
+    SdtmLb,
+    SdtmMh,
     SdtmVs,
     Subject,
 )
@@ -36,6 +41,15 @@ _AE_RELATIONSHIP = _load_terminology("ae_relationship.json")["mapping"]
 _VS_TEST_CODES = _load_terminology("vs_test_codes.json")["mapping"]
 _DM_SEX = _load_terminology("dm_sex.json")["mapping"]
 _DM_RACE = _load_terminology("dm_race.json")["mapping"]
+_LB_TEST_CODES = _load_terminology("lb_test_codes.json")["mapping"]
+_EX_ROUTES = _load_terminology("ex_routes.json")["mapping"]
+_MH_CATEGORIES = _load_terminology("mh_categories.json")["mapping"]
+
+# A form_instance feeding a repeating SDTM domain — bundled with its
+# items for convenience. The pipeline gathers these via
+# `_gather_form_instances_by_domain` and passes them to the new
+# derivers (`derive_lb`, `derive_ex`, `derive_cm`, `derive_mh`).
+FormInstanceWithItems = tuple[FormInstance, list[ItemData]]
 
 
 # ── Item-mapping config ─────────────────────────────────────────────────
@@ -50,6 +64,12 @@ class ItemMappingConfig:
     `height`, `temp`). For deployments using different conventions, pass
     `dm_item_map={'patient_age': 'AGE', ...}` or `vs_item_map={'bp_sys':
     'sbp', ...}` and the mapper will respect them.
+
+    For repeating-form SDTM domains (LB / EX / CM / MH), the customer
+    designates which `form_name` feeds which domain via
+    `form_to_domain_map`. Each form-instance of that form becomes one
+    SDTM row; the per-domain `*_item_map` then maps the FORM'S internal
+    item ids onto the SDTM variables used in that domain.
     """
 
     dm_item_map: dict[str, str] = field(
@@ -80,6 +100,78 @@ class ItemMappingConfig:
             "temperature": "temp",
             "rr": "rr",
             "spo2": "spo2",
+        }
+    )
+
+    # ── Repeating-form domain selectors ──────────────────────────────────
+
+    form_to_domain_map: dict[str, str] = field(
+        default_factory=lambda: {
+            # Defaults match the conventional form names a study designer
+            # would pick. Override per-deployment if the customer uses
+            # different form names.
+            "lab_results": "LB",
+            "labs": "LB",
+            "exposure": "EX",
+            "dose_admin": "EX",
+            "concomitant_meds": "CM",
+            "concomitant_medications": "CM",
+            "medical_history": "MH",
+        }
+    )
+
+    # ── LB: maps form item-ids → SDTM LB column or canonical test key. ──
+    #
+    # The form for a lab test typically captures three items per test:
+    # the test result, its unit, and the collection date. Plus an
+    # optional reference-range pair. The mapper looks for the special
+    # keys `__test`, `__result`, `__unit`, `__date`, `__nrlo`, `__nrhi`
+    # in this map to find the source-of-truth fields; or falls back to
+    # the well-known names below.
+    lb_item_map: dict[str, str] = field(
+        default_factory=lambda: {
+            "__test": "test",
+            "__result": "result",
+            "__unit": "unit",
+            "__date": "collected_at",
+            "__nrlo": "ref_low",
+            "__nrhi": "ref_high",
+        }
+    )
+
+    # ── EX: maps form item-ids → SDTM EX columns. ─────────────────────
+    ex_item_map: dict[str, str] = field(
+        default_factory=lambda: {
+            "__trt": "treatment",
+            "__dose": "dose",
+            "__unit": "dose_unit",
+            "__route": "route",
+            "__start": "start_date",
+            "__end": "end_date",
+        }
+    )
+
+    # ── CM: maps form item-ids → SDTM CM columns. ─────────────────────
+    cm_item_map: dict[str, str] = field(
+        default_factory=lambda: {
+            "__trt": "medication",
+            "__decod": "atc_or_who",
+            "__indication": "indication",
+            "__dose": "dose",
+            "__unit": "dose_unit",
+            "__start": "start_date",
+            "__end": "end_date",
+        }
+    )
+
+    # ── MH: maps form item-ids → SDTM MH columns. ─────────────────────
+    mh_item_map: dict[str, str] = field(
+        default_factory=lambda: {
+            "__term": "condition",
+            "__decod": "meddra_pt",
+            "__cat": "category",
+            "__start": "onset_date",
+            "__end": "resolved_date",
         }
     )
 
@@ -122,6 +214,50 @@ class CdiscMapper(Protocol):
     ) -> list[SdtmVs]:
         ...
 
+    def derive_lb(
+        self,
+        *,
+        deployment_id: str,
+        study_id: str,
+        subjects_by_id: dict[str, Subject],
+        form_instances: Iterable[FormInstanceWithItems],
+        config: ItemMappingConfig,
+    ) -> list[SdtmLb]:
+        ...
+
+    def derive_ex(
+        self,
+        *,
+        deployment_id: str,
+        study_id: str,
+        subjects_by_id: dict[str, Subject],
+        form_instances: Iterable[FormInstanceWithItems],
+        config: ItemMappingConfig,
+    ) -> list[SdtmEx]:
+        ...
+
+    def derive_cm(
+        self,
+        *,
+        deployment_id: str,
+        study_id: str,
+        subjects_by_id: dict[str, Subject],
+        form_instances: Iterable[FormInstanceWithItems],
+        config: ItemMappingConfig,
+    ) -> list[SdtmCm]:
+        ...
+
+    def derive_mh(
+        self,
+        *,
+        deployment_id: str,
+        study_id: str,
+        subjects_by_id: dict[str, Subject],
+        form_instances: Iterable[FormInstanceWithItems],
+        config: ItemMappingConfig,
+    ) -> list[SdtmMh]:
+        ...
+
 
 # ── Helpers ─────────────────────────────────────────────────────────────
 
@@ -153,6 +289,15 @@ def _try_int(value: Any) -> int | None:
         return None
     try:
         return int(float(str(value)))
+    except (TypeError, ValueError):
+        return None
+
+
+def _try_float(value: Any) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        return float(str(value))
     except (TypeError, ValueError):
         return None
 
@@ -309,9 +454,207 @@ class BuiltinPythonMapper:
                 )
         return out
 
+    # ── Repeating-form derivers (LB / EX / CM / MH) ────────────────────
+
+    def derive_lb(
+        self,
+        *,
+        deployment_id: str,
+        study_id: str,
+        subjects_by_id: dict[str, Subject],
+        form_instances: Iterable[FormInstanceWithItems],
+        config: ItemMappingConfig,
+    ) -> list[SdtmLb]:
+        """One row per lab measurement. Each form-instance of a form
+        designated as the LB feed becomes a single LB row, identified
+        by its `__test` item value (canonical key in lb_test_codes.json)."""
+        out: list[SdtmLb] = []
+        per_subject_seq: dict[str, int] = {}
+        m = config.lb_item_map
+        for fi, items in form_instances:
+            subj = subjects_by_id.get(fi.subject_id)
+            if subj is None:
+                continue
+            values: dict[str, str] = {it.item_id: it.value for it in items if it.value is not None}
+            test_raw = values.get(m["__test"])
+            if not test_raw:
+                continue
+            canonical = test_raw.strip().lower()
+            spec = _LB_TEST_CODES.get(canonical) or _LB_TEST_CODES.get(test_raw.strip())
+            if not spec:
+                continue
+            result_str = values.get(m["__result"])
+            if result_str is None:
+                continue
+            result_num = _try_float(result_str)
+            unit = values.get(m["__unit"]) or spec.get("default_unit")
+            # Reference range — explicit values from the form win;
+            # fall back to the CT default range so out-of-range flags
+            # can be computed even when the form didn't capture one.
+            nrlo = _try_float(values.get(m["__nrlo"]))
+            nrhi = _try_float(values.get(m["__nrhi"]))
+            if nrlo is None:
+                nrlo = _try_float(spec.get("default_low"))
+            if nrhi is None:
+                nrhi = _try_float(spec.get("default_high"))
+            nrind: str | None = None
+            if result_num is not None and nrlo is not None and nrhi is not None:
+                if result_num < nrlo:
+                    nrind = "LOW"
+                elif result_num > nrhi:
+                    nrind = "HIGH"
+                else:
+                    nrind = "NORMAL"
+            date_value = values.get(m["__date"])
+            per_subject_seq[fi.subject_id] = per_subject_seq.get(fi.subject_id, 0) + 1
+            out.append(
+                SdtmLb(
+                    deployment_id=deployment_id,
+                    STUDYID=study_id,
+                    DOMAIN="LB",
+                    USUBJID=_usubjid(study_id, subj.subject_code),
+                    LBSEQ=per_subject_seq[fi.subject_id],
+                    LBTESTCD=spec["LBTESTCD"],
+                    LBTEST=spec["LBTEST"],
+                    LBORRES=result_str,
+                    LBORRESU=unit,
+                    LBSTRESC=result_str,
+                    LBSTRESN=result_num,
+                    LBSTRESU=unit,
+                    LBORNRLO=str(nrlo) if nrlo is not None else None,
+                    LBORNRHI=str(nrhi) if nrhi is not None else None,
+                    LBSTNRLO=nrlo,
+                    LBSTNRHI=nrhi,
+                    LBNRIND=nrind,
+                    LBDTC=_to_iso8601(date_value) if date_value else _to_iso8601(fi.created_at),
+                )
+            )
+        return out
+
+    def derive_ex(
+        self,
+        *,
+        deployment_id: str,
+        study_id: str,
+        subjects_by_id: dict[str, Subject],
+        form_instances: Iterable[FormInstanceWithItems],
+        config: ItemMappingConfig,
+    ) -> list[SdtmEx]:
+        out: list[SdtmEx] = []
+        per_subject_seq: dict[str, int] = {}
+        m = config.ex_item_map
+        for fi, items in form_instances:
+            subj = subjects_by_id.get(fi.subject_id)
+            if subj is None:
+                continue
+            values: dict[str, str] = {it.item_id: it.value for it in items if it.value is not None}
+            trt = values.get(m["__trt"])
+            if not trt:
+                continue
+            per_subject_seq[fi.subject_id] = per_subject_seq.get(fi.subject_id, 0) + 1
+            route_raw = values.get(m["__route"])
+            route = _ct_lookup(_EX_ROUTES, route_raw) if route_raw else None
+            out.append(
+                SdtmEx(
+                    deployment_id=deployment_id,
+                    STUDYID=study_id,
+                    DOMAIN="EX",
+                    USUBJID=_usubjid(study_id, subj.subject_code),
+                    EXSEQ=per_subject_seq[fi.subject_id],
+                    EXTRT=trt,
+                    EXDOSE=_try_float(values.get(m["__dose"])),
+                    EXDOSU=values.get(m["__unit"]),
+                    EXROUTE=route or route_raw,
+                    EXSTDTC=_to_iso8601(values.get(m["__start"]) or fi.created_at),
+                    EXENDTC=_to_iso8601(values.get(m["__end"])),
+                )
+            )
+        return out
+
+    def derive_cm(
+        self,
+        *,
+        deployment_id: str,
+        study_id: str,
+        subjects_by_id: dict[str, Subject],
+        form_instances: Iterable[FormInstanceWithItems],
+        config: ItemMappingConfig,
+    ) -> list[SdtmCm]:
+        out: list[SdtmCm] = []
+        per_subject_seq: dict[str, int] = {}
+        m = config.cm_item_map
+        for fi, items in form_instances:
+            subj = subjects_by_id.get(fi.subject_id)
+            if subj is None:
+                continue
+            values: dict[str, str] = {it.item_id: it.value for it in items if it.value is not None}
+            trt = values.get(m["__trt"])
+            if not trt:
+                continue
+            per_subject_seq[fi.subject_id] = per_subject_seq.get(fi.subject_id, 0) + 1
+            out.append(
+                SdtmCm(
+                    deployment_id=deployment_id,
+                    STUDYID=study_id,
+                    DOMAIN="CM",
+                    USUBJID=_usubjid(study_id, subj.subject_code),
+                    CMSEQ=per_subject_seq[fi.subject_id],
+                    CMTRT=trt,
+                    CMDECOD=values.get(m["__decod"]),
+                    CMINDC=values.get(m["__indication"]),
+                    CMDOSE=_try_float(values.get(m["__dose"])),
+                    CMDOSU=values.get(m["__unit"]),
+                    CMSTDTC=_to_iso8601(values.get(m["__start"])),
+                    CMENDTC=_to_iso8601(values.get(m["__end"])),
+                )
+            )
+        return out
+
+    def derive_mh(
+        self,
+        *,
+        deployment_id: str,
+        study_id: str,
+        subjects_by_id: dict[str, Subject],
+        form_instances: Iterable[FormInstanceWithItems],
+        config: ItemMappingConfig,
+    ) -> list[SdtmMh]:
+        out: list[SdtmMh] = []
+        per_subject_seq: dict[str, int] = {}
+        m = config.mh_item_map
+        for fi, items in form_instances:
+            subj = subjects_by_id.get(fi.subject_id)
+            if subj is None:
+                continue
+            values: dict[str, str] = {it.item_id: it.value for it in items if it.value is not None}
+            term = values.get(m["__term"])
+            if not term:
+                continue
+            per_subject_seq[fi.subject_id] = per_subject_seq.get(fi.subject_id, 0) + 1
+            end_dtc = _to_iso8601(values.get(m["__end"]))
+            cat_raw = values.get(m["__cat"])
+            cat = _ct_lookup(_MH_CATEGORIES, cat_raw) if cat_raw else None
+            out.append(
+                SdtmMh(
+                    deployment_id=deployment_id,
+                    STUDYID=study_id,
+                    DOMAIN="MH",
+                    USUBJID=_usubjid(study_id, subj.subject_code),
+                    MHSEQ=per_subject_seq[fi.subject_id],
+                    MHTERM=term,
+                    MHDECOD=values.get(m["__decod"]),
+                    MHCAT=cat or cat_raw,
+                    MHSTDTC=_to_iso8601(values.get(m["__start"])),
+                    MHENDTC=end_dtc,
+                    MHONGO="Y" if not end_dtc else "N",
+                )
+            )
+        return out
+
 
 __all__ = [
     "BuiltinPythonMapper",
     "CdiscMapper",
+    "FormInstanceWithItems",
     "ItemMappingConfig",
 ]

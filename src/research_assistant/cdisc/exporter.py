@@ -1,4 +1,4 @@
-"""CDISC submission export — per-dataset CSV + submission-bundle ZIP (top-6 #6).
+"""CDISC submission export — per-dataset CSV + submission-bundle ZIP.
 
 CSV is what every modern submission preflight pipeline accepts (and what
 the FDA's SDTM-Validator-2.0 reads upstream of XPT conversion). SAS XPT
@@ -14,6 +14,10 @@ The submission bundle is a flat ZIP:
     sdtm/dm.csv
     sdtm/ae.csv
     sdtm/vs.csv
+    sdtm/lb.csv
+    sdtm/ex.csv
+    sdtm/cm.csv
+    sdtm/mh.csv
     adam/adsl.csv
     tlf/t-disposition.csv
     tlf/t-demographics.csv
@@ -31,7 +35,17 @@ from collections.abc import Iterable
 from datetime import UTC, datetime
 from typing import Any
 
-from ..persistence.clinical.models import AdamAdsl, SdtmAe, SdtmDm, SdtmVs, TlfArtefact
+from ..persistence.clinical.models import (
+    AdamAdsl,
+    SdtmAe,
+    SdtmCm,
+    SdtmDm,
+    SdtmEx,
+    SdtmLb,
+    SdtmMh,
+    SdtmVs,
+    TlfArtefact,
+)
 
 # SDTM variable order per the standard implementation guide. The ORM
 # columns are intentionally named identically so we can dump them by
@@ -59,6 +73,29 @@ _ADSL_COLUMNS = [
     "SAFFL", "ITTFL", "DTHFL",
     "RFSTDTC", "RFENDTC",
     "TRT01P", "TRT01A", "COUNTRY",
+]
+_LB_COLUMNS = [
+    "STUDYID", "DOMAIN", "USUBJID", "LBSEQ",
+    "LBTESTCD", "LBTEST",
+    "LBORRES", "LBORRESU", "LBSTRESC", "LBSTRESN", "LBSTRESU",
+    "LBORNRLO", "LBORNRHI", "LBSTNRLO", "LBSTNRHI", "LBNRIND",
+    "LBDTC",
+]
+_EX_COLUMNS = [
+    "STUDYID", "DOMAIN", "USUBJID", "EXSEQ",
+    "EXTRT", "EXDOSE", "EXDOSU", "EXROUTE",
+    "EXSTDTC", "EXENDTC",
+]
+_CM_COLUMNS = [
+    "STUDYID", "DOMAIN", "USUBJID", "CMSEQ",
+    "CMTRT", "CMDECOD", "CMINDC",
+    "CMDOSE", "CMDOSU",
+    "CMSTDTC", "CMENDTC",
+]
+_MH_COLUMNS = [
+    "STUDYID", "DOMAIN", "USUBJID", "MHSEQ",
+    "MHTERM", "MHDECOD", "MHCAT",
+    "MHSTDTC", "MHENDTC", "MHONGO",
 ]
 
 
@@ -93,6 +130,22 @@ def adsl_to_csv(records: Iterable[AdamAdsl]) -> bytes:
     return _records_to_csv(_ADSL_COLUMNS, records)
 
 
+def lb_to_csv(records: Iterable[SdtmLb]) -> bytes:
+    return _records_to_csv(_LB_COLUMNS, records)
+
+
+def ex_to_csv(records: Iterable[SdtmEx]) -> bytes:
+    return _records_to_csv(_EX_COLUMNS, records)
+
+
+def cm_to_csv(records: Iterable[SdtmCm]) -> bytes:
+    return _records_to_csv(_CM_COLUMNS, records)
+
+
+def mh_to_csv(records: Iterable[SdtmMh]) -> bytes:
+    return _records_to_csv(_MH_COLUMNS, records)
+
+
 def tlf_table_to_csv(tlf: TlfArtefact) -> bytes:
     """Serialise a TlfArtefact (kind='table' or 'listing') as CSV."""
     if tlf.kind not in ("table", "listing"):
@@ -119,8 +172,21 @@ def build_submission_bundle(
     vs: list[SdtmVs],
     adsl: list[AdamAdsl],
     tlfs: list[TlfArtefact],
+    lb: list[SdtmLb] | None = None,
+    ex: list[SdtmEx] | None = None,
+    cm: list[SdtmCm] | None = None,
+    mh: list[SdtmMh] | None = None,
 ) -> bytes:
-    """Build the deployment's submission bundle as a ZIP bytes payload."""
+    """Build the deployment's submission bundle as a ZIP bytes payload.
+
+    LB / EX / CM / MH are optional so existing callers (and the
+    empty-trial test path) keep working with just the original DM/AE/
+    VS/ADSL/TLF arguments. The pipeline always passes lists today
+    (possibly empty)."""
+    lb_records = lb or []
+    ex_records = ex or []
+    cm_records = cm or []
+    mh_records = mh or []
     ts = (triggered_at or datetime.now(UTC)).strftime("%Y-%m-%dT%H:%M:%SZ")
     manifest_lines = [
         "CRA submission bundle",
@@ -131,13 +197,18 @@ def build_submission_bundle(
         f"  SDTM DM:  {len(dm)}",
         f"  SDTM AE:  {len(ae)}",
         f"  SDTM VS:  {len(vs)}",
+        f"  SDTM LB:  {len(lb_records)}",
+        f"  SDTM EX:  {len(ex_records)}",
+        f"  SDTM CM:  {len(cm_records)}",
+        f"  SDTM MH:  {len(mh_records)}",
         f"  ADaM ADSL: {len(adsl)}",
         f"  TLF artefacts: {len(tlfs)}",
         "",
         "Notes:",
         "  - CSV format. SAS XPT conversion is left to the deploy-side preflight tooling.",
-        "  - MedDRA Preferred Terms are captured as free text; deploy with a MedDRA",
-        "    license to validate against the dictionary.",
+        "  - MedDRA Preferred Terms (AE.AEDECOD / MH.MHDECOD) and WHODrug names",
+        "    (CM.CMDECOD) are captured as free text; deploy with the dictionary",
+        "    licenses to validate.",
         "  - TRT01P/TRT01A may show 'TBD' until the randomisation/IRT service ships.",
     ]
     manifest = "\n".join(manifest_lines).encode("utf-8")
@@ -148,6 +219,10 @@ def build_submission_bundle(
         z.writestr("sdtm/dm.csv", dm_to_csv(dm))
         z.writestr("sdtm/ae.csv", ae_to_csv(ae))
         z.writestr("sdtm/vs.csv", vs_to_csv(vs))
+        z.writestr("sdtm/lb.csv", lb_to_csv(lb_records))
+        z.writestr("sdtm/ex.csv", ex_to_csv(ex_records))
+        z.writestr("sdtm/cm.csv", cm_to_csv(cm_records))
+        z.writestr("sdtm/mh.csv", mh_to_csv(mh_records))
         z.writestr("adam/adsl.csv", adsl_to_csv(adsl))
         for tlf in tlfs:
             ext = "svg" if tlf.kind == "figure" else "csv"
@@ -164,7 +239,11 @@ __all__ = [
     "adsl_to_csv",
     "ae_to_csv",
     "build_submission_bundle",
+    "cm_to_csv",
     "dm_to_csv",
+    "ex_to_csv",
+    "lb_to_csv",
+    "mh_to_csv",
     "tlf_table_to_csv",
     "vs_to_csv",
 ]

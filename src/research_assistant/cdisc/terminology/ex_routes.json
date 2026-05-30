@@ -1,0 +1,26 @@
+{
+  "description": "Free-text route label → SDTM EXROUTE controlled term.",
+  "source": "SDTM IG v3.4 §6.4 EXROUTE / CDISC Route of Administration codelist (common subset).",
+  "mapping": {
+    "oral": "ORAL",
+    "po": "ORAL",
+    "by mouth": "ORAL",
+    "iv": "INTRAVENOUS",
+    "intravenous": "INTRAVENOUS",
+    "im": "INTRAMUSCULAR",
+    "intramuscular": "INTRAMUSCULAR",
+    "sc": "SUBCUTANEOUS",
+    "subcut": "SUBCUTANEOUS",
+    "subcutaneous": "SUBCUTANEOUS",
+    "topical": "TOPICAL",
+    "nasal": "NASAL",
+    "inhalation": "INHALATION",
+    "inhaled": "INHALATION",
+    "rectal": "RECTAL",
+    "buccal": "BUCCAL",
+    "sublingual": "SUBLINGUAL",
+    "ophthalmic": "OPHTHALMIC",
+    "otic": "AURICULAR (OTIC)",
+    "transdermal": "TRANSDERMAL"
+  }
+}
