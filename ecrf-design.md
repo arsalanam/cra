@@ -453,13 +453,16 @@ concrete WBS.
 - **E7 — Formal validation pack (✅ shipped 2026-05-30):** Part 11 §11.200 password
   re-authentication at signing; deployment-wide `StudyLock` (data_manager-gated) that
   blocks all writes / signatures / SDV while active; auto-generated IQ snapshot (versions,
-  pinned deps, Cognito ID, audit-trigger detection); pytest-driven OQ over a 13-requirement
+  pinned deps, Cognito ID, audit-trigger detection); pytest-driven OQ over a 14-requirement
   Requirements Traceability Matrix tied to Part 11 / ICH E6 / ICH E2A / ALCOA+; PQ runbook
   PDF for customer-site execution. Admin downloads `iq.pdf`, `oq.pdf`, `pq.pdf`, and
-  `bundle.zip` from `/api/admin/validation-pack/*`. *Deferred:* AE / deviation / query
-  write-paths aren't yet gated by the study lock (covers ~80% of the write surface today
-  via submit_data + sign + verify + casebook-signoff); follow-up E7b fills the remaining
-  gates.
+  `bundle.zip` from `/api/admin/validation-pack/*`.
+- **E7b — Full-surface lock gates (✅ shipped 2026-05-30):** AE / deviation / CAPA / query
+  write-paths also refuse while the study is locked — 13 new gate calls across record /
+  classify / code / mark-reported AE, raise / respond / close query, record / classify /
+  close deviation (subject- + deployment-scoped), and add / complete CAPA. RTM gains
+  LOCK-004 covering the new gates. CDISC derivation is deliberately allowed post-lock
+  (lock-then-derive is the regulator-default flow).
 
 ---
 
