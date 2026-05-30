@@ -36,6 +36,7 @@ class Permission(StrEnum):
     SKILL_IRB_DRAFTER = "skill.irb_drafter"
     SKILL_CSR_DRAFTER = "skill.csr_drafter"
     SKILL_GRADE_DRAFTER = "skill.grade_drafter"
+    SKILL_TRIAL_STATS = "skill.trial_stats"
 
     # ── Library (cached publications + RAG) ──────────────────────────────
     LIBRARY_READ = "library.read"
@@ -180,6 +181,11 @@ _EVIDENCE_SKILLS: Final[frozenset[Permission]] = frozenset(
         # reporting checklist — journal-mandated alongside the
         # meta-analysis manuscript.
         Permission.SKILL_GRADE_DRAFTER,
+        # Post-lock analysis tier: trial-specific statistical workflow
+        # (K-M / log-rank / Cox PH / MMRM / binary / subgroup forest).
+        # Composes ADaM datasets into the regulator-readable analysis
+        # numbers that feed the CSR Efficacy section.
+        Permission.SKILL_TRIAL_STATS,
     }
 )
 
@@ -468,6 +474,7 @@ SKILL_PERMISSION: Final[dict[str, Permission]] = {
     "irb_drafter": Permission.SKILL_IRB_DRAFTER,
     "csr_drafter": Permission.SKILL_CSR_DRAFTER,
     "grade_drafter": Permission.SKILL_GRADE_DRAFTER,
+    "trial_stats": Permission.SKILL_TRIAL_STATS,
 }
 
 

@@ -41,6 +41,7 @@ from .specialists import (
     sap_drafter,
     search_strategy,
     sr_protocol,
+    trial_stats,
 )
 
 logger = logging.getLogger(__name__)
@@ -97,6 +98,11 @@ _SLASH_COMMANDS: dict[str, str] = {
     "grade": grade_drafter.WORKFLOW_NAME,
     "sof": grade_drafter.WORKFLOW_NAME,
     "prisma-checklist": grade_drafter.WORKFLOW_NAME,
+    "trial-stats": trial_stats.WORKFLOW_NAME,
+    "trialstats": trial_stats.WORKFLOW_NAME,
+    "efficacy": trial_stats.WORKFLOW_NAME,
+    "km": trial_stats.WORKFLOW_NAME,
+    "mmrm": trial_stats.WORKFLOW_NAME,
     "general": general_qa.WORKFLOW_NAME,
     "ask": general_qa.WORKFLOW_NAME,
     # Future: "gap" -> "research_gap", "ecrf" -> "ecrf_design"
@@ -168,6 +174,7 @@ _WORKFLOW_CONTINUATIONS: dict[str, tuple[str, ...]] = {
         "Draft CSR from meta-analysis",  # handoff seed
         "Draft CSR from ADTTE",  # handoff seed
         "Draft CSR from SAP",  # handoff seed
+        "Draft CSR from trial-stats",  # handoff seed (TRIAL-6)
     ),
     grade_drafter.WORKFLOW_NAME: (
         "GRADE intake confirmed",
@@ -177,6 +184,18 @@ _WORKFLOW_CONTINUATIONS: dict[str, tuple[str, ...]] = {
         "Refine SoF:",
         "Finalize GRADE",
         "Draft GRADE from meta-analysis",  # handoff seed
+    ),
+    trial_stats.WORKFLOW_NAME: (
+        "Trial-stats intake confirmed",
+        "Populations confirmed",
+        "Time-to-event confirmed",
+        "Continuous results confirmed",
+        "Binary results confirmed",
+        "Subgroup results confirmed",
+        "Refine trial-stats:",
+        "Finalize trial-stats",
+        "Draft trial-stats from ADTTE",  # handoff seed
+        "Draft trial-stats from CDISC",  # handoff seed
     ),
     # Future: research_gap / ecrf continuations
 }
@@ -296,6 +315,24 @@ _TRIGGER_KEYWORDS: list[tuple[str, list[re.Pattern[str]]]] = [
             re.compile(r"\bcertainty\s+of\s+evidence\b"),
             re.compile(r"\bprisma\s+(checklist|2020|reporting)\b"),
             re.compile(r"\b(draft|generate)\s+(a|the|my)?\s*grade\s+(table|sof)\b"),
+        ],
+    ),
+    # trial_stats: post-lock analyses (K-M / MMRM / Cox / subgroup forest).
+    # Checked before csr_drafter so phrases like "Kaplan-Meier on OS" don't
+    # accidentally route to CSR. Patterns are lowercase to match `msg_lower`.
+    (
+        trial_stats.WORKFLOW_NAME,
+        [
+            re.compile(r"\bkaplan[-\s]?meier\b"),
+            re.compile(r"\bmmrm\b"),
+            re.compile(r"\bcox\s+(ph|proportional[-\s]hazards?|regression)\b"),
+            re.compile(r"\blog[-\s]rank\b"),
+            re.compile(r"\bsubgroup\s+forest\b"),
+            re.compile(r"\bitt\s+(vs|versus)\s+pp\b"),
+            re.compile(r"\b(per[-\s]protocol|intention[-\s]to[-\s]treat)\s+analysis\b"),
+            re.compile(r"\binteraction\s+p[-\s]?value\b"),
+            re.compile(r"\btrial[-\s]?stats?\b"),
+            re.compile(r"\b(efficacy|safety|primary)\s+analysis\b"),
         ],
     ),
     # sr_protocol checked before search_strategy/meta_analysis: phrases like

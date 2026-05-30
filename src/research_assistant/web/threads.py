@@ -31,6 +31,7 @@ from ..reports import registration as _registration_report
 from ..reports import risk_of_bias as _rob_report
 from ..reports import sap as _sap_report
 from ..reports import sr_protocol as _proto_report
+from ..reports import trial_stats as _trial_stats_report
 from ..services.quota import build_quota_payload, get_today_token_totals
 from .auth import CurrentUser
 
@@ -329,6 +330,13 @@ def create_thread_router() -> APIRouter:
             _grade_report.build_docx,
             "grade-prisma",
             "GRADE + PRISMA 2020 checklist",
+        ),
+        "trial_stats": (
+            _trial_stats_report.assemble_report_data,
+            _trial_stats_report.build_pdf,
+            _trial_stats_report.build_docx,
+            "trial-stats",
+            "trial-statistics analysis",
         ),
     }
 

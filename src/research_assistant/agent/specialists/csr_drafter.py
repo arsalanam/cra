@@ -144,9 +144,12 @@ demographics.derived_from = "TLF t-demographics".
 
   • efficacy              — primary_endpoint_text + the TLF reference \
 for the primary endpoint (e.g. "TLF t-tte-summary" or "ADTTE PARAMCD=" \
-followed by the parameter code). secondary_endpoints + their references \
-listed in parallel arrays. populations_analysed names which ADaM flags \
-the analysis used (ITT / PP / Safety).
+followed by the parameter code, or "TrialStats t-km-OS" / "TrialStats \
+mmrm-CHGFBL-WK24" / "TrialStats binary-ORR" / "TrialStats subgroup-OS-by-SEX" \
+when the trial-stats specialist has previously emitted analyses). \
+secondary_endpoints + their references listed in parallel arrays. \
+populations_analysed names which ADaM flags the analysis used \
+(ITT / PP / Safety).
 
   • safety                — total_ae_events / subjects_with_any_ae / \
 total_saes / deaths / discontinuations_due_to_ae taken from the AE \

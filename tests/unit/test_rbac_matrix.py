@@ -309,6 +309,8 @@ def test_skill_permission_covers_every_specialist() -> None:
         "csr_drafter",
         # SR/MA submission-tier: GRADE + PRISMA 2020 checklist
         "grade_drafter",
+        # Post-lock analyses: K-M / log-rank / Cox PH / MMRM / binary / subgroup
+        "trial_stats",
     }
     assert set(SKILL_PERMISSION) == expected_workflows
 
@@ -347,6 +349,28 @@ def test_researcher_can_run_grade_drafter_but_student_cannot() -> None:
     assert Permission.SKILL_GRADE_DRAFTER in ROLE_PERMISSIONS[Role.RESEARCHER]
     assert Permission.SKILL_GRADE_DRAFTER in ROLE_PERMISSIONS[Role.ADMIN]
     assert Permission.SKILL_GRADE_DRAFTER not in ROLE_PERMISSIONS[Role.STUDENT]
+
+
+def test_researcher_can_run_trial_stats_but_student_cannot() -> None:
+    """Post-lock trial-stats specialist (K-M / MMRM / Cox / subgroup) is
+    researcher-tier. Clinical roles and students are explicitly blocked."""
+    assert Permission.SKILL_TRIAL_STATS in ROLE_PERMISSIONS[Role.RESEARCHER]
+    assert Permission.SKILL_TRIAL_STATS in ROLE_PERMISSIONS[Role.ADMIN]
+    assert Permission.SKILL_TRIAL_STATS not in ROLE_PERMISSIONS[Role.STUDENT]
+    for r in (
+        Role.STUDY_DESIGNER,
+        Role.PRINCIPAL_INVESTIGATOR,
+        Role.COORDINATOR,
+        Role.DATA_MANAGER,
+        Role.MONITOR,
+        Role.AUDITOR,
+        Role.REVIEWER_1,
+        Role.REVIEWER_2,
+        Role.ADJUDICATOR,
+    ):
+        assert Permission.SKILL_TRIAL_STATS not in ROLE_PERMISSIONS[r], (
+            f"{r.value} should not have skill.trial_stats"
+        )
 
 
 def test_clinical_roles_do_not_get_csr_drafter_permission() -> None:

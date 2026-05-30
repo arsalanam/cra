@@ -5,6 +5,6 @@ sandbox_exec for forest plots; future research-gap may use it for
 citation-network analysis).
 """
 
-from . import calculator, python_repl, sample_size, sandbox_exec
+from . import calculator, python_repl, sample_size, sandbox_exec, trial_analysis
 
-__all__ = ["calculator", "python_repl", "sample_size", "sandbox_exec"]
+__all__ = ["calculator", "python_repl", "sample_size", "sandbox_exec", "trial_analysis"]

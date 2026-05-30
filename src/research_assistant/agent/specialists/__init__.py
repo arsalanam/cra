@@ -29,6 +29,7 @@ from . import (
     sap_drafter,
     search_strategy,
     sr_protocol,
+    trial_stats,
 )
 
 # Map workflow id → specialist module. The dispatcher uses this.
@@ -43,6 +44,7 @@ SPECIALISTS = {
     irb_drafter.WORKFLOW_NAME: irb_drafter,
     csr_drafter.WORKFLOW_NAME: csr_drafter,
     grade_drafter.WORKFLOW_NAME: grade_drafter,
+    trial_stats.WORKFLOW_NAME: trial_stats,
     general_qa.WORKFLOW_NAME: general_qa,
 }
 
@@ -59,4 +61,5 @@ __all__ = [
     "sap_drafter",
     "search_strategy",
     "sr_protocol",
+    "trial_stats",
 ]
