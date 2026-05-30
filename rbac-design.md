@@ -141,6 +141,8 @@ query.raise · query.respond · query.close
 sdv.verify
 form.sign · form.unlock · casebook.signoff · subject.unlock
 study.lock
+randomization.generate · randomization.allocate · randomization.read ·
+randomization.codebreak
 audit.read
 sr.create · sr.manage · sr.read · sr.screen · sr.adjudicate · sr.ai_assist
 prisma.read
@@ -171,6 +173,10 @@ that role needs; the implementation expands them to the full catalogue.
 | `form.sign` / `casebook.signoff` | ✓ | – | – | – | ✓ | – | – | – | – |
 | `form.unlock` / `subject.unlock` | ✓ | – | – | – | – | – | ✓ | – | – |
 | `study.lock` | ✓ | – | – | – | – | – | ✓ | – | – |
+| `randomization.generate` | ✓ | – | – | – | – | – | ✓ | – | – |
+| `randomization.allocate` | ✓ | – | – | – | ✓ | ✓ | – | – | – |
+| `randomization.codebreak` | ✓ | – | – | – | ✓ | – | – | – | – |
+| `randomization.read` | ✓ | – | – | – | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `audit.read` | ✓ | – | – | – | ✓ | – | ✓ | ✓ | ✓ |
 | `cdisc.derive` | ✓ | – | – | – | – | – | ✓ | – | – |
 | `cdisc.read` | ✓ | – | – | – | ✓ | – | ✓ | ✓ | ✓ |
