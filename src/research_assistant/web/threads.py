@@ -23,6 +23,7 @@ from ..persistence.models import DEFAULT_USER_ID, Thread
 from ..persistence.repository import ThreadRepository
 from ..persistence.user_repository import UserRepository
 from ..reports import csr as _csr_report
+from ..reports import grade as _grade_report
 from ..reports import irb as _irb_report
 from ..reports import manuscript as _manuscript_report
 from ..reports import meta_analysis as _ma_report
@@ -321,6 +322,13 @@ def create_thread_router() -> APIRouter:
             _csr_report.build_docx,
             "csr",
             "Clinical Study Report (ICH E3)",
+        ),
+        "grade": (
+            _grade_report.assemble_report_data,
+            _grade_report.build_pdf,
+            _grade_report.build_docx,
+            "grade-prisma",
+            "GRADE + PRISMA 2020 checklist",
         ),
     }
 

@@ -35,6 +35,7 @@ class Permission(StrEnum):
     SKILL_REGISTRATION_DRAFTER = "skill.registration_drafter"
     SKILL_IRB_DRAFTER = "skill.irb_drafter"
     SKILL_CSR_DRAFTER = "skill.csr_drafter"
+    SKILL_GRADE_DRAFTER = "skill.grade_drafter"
 
     # ── Library (cached publications + RAG) ──────────────────────────────
     LIBRARY_READ = "library.read"
@@ -175,6 +176,10 @@ _EVIDENCE_SKILLS: Final[frozenset[Permission]] = frozenset(
         # other workflows' outputs into the regulator-submission
         # Clinical Study Report.
         Permission.SKILL_CSR_DRAFTER,
+        # SR/MA submission-tier: GRADE certainty grading + PRISMA 2020
+        # reporting checklist — journal-mandated alongside the
+        # meta-analysis manuscript.
+        Permission.SKILL_GRADE_DRAFTER,
     }
 )
 
@@ -462,6 +467,7 @@ SKILL_PERMISSION: Final[dict[str, Permission]] = {
     "registration_drafter": Permission.SKILL_REGISTRATION_DRAFTER,
     "irb_drafter": Permission.SKILL_IRB_DRAFTER,
     "csr_drafter": Permission.SKILL_CSR_DRAFTER,
+    "grade_drafter": Permission.SKILL_GRADE_DRAFTER,
 }
 
 

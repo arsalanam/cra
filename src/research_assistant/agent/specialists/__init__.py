@@ -20,6 +20,7 @@ Adding a new specialist:
 from . import (
     csr_drafter,
     general_qa,
+    grade_drafter,
     irb_drafter,
     manuscript_drafter,
     meta_analysis,
@@ -41,6 +42,7 @@ SPECIALISTS = {
     registration_drafter.WORKFLOW_NAME: registration_drafter,
     irb_drafter.WORKFLOW_NAME: irb_drafter,
     csr_drafter.WORKFLOW_NAME: csr_drafter,
+    grade_drafter.WORKFLOW_NAME: grade_drafter,
     general_qa.WORKFLOW_NAME: general_qa,
 }
 
@@ -48,6 +50,7 @@ __all__ = [
     "SPECIALISTS",
     "csr_drafter",
     "general_qa",
+    "grade_drafter",
     "irb_drafter",
     "manuscript_drafter",
     "meta_analysis",

@@ -76,6 +76,8 @@ extend-immutable-calls = [
 "src/research_assistant/data/sample_questions.py" = ["E501"]
 # Feature-PDF generator: long reportlab string literals the formatter won't split.
 "scripts/generate_feature_pdf.py" = ["E501"]
+# PRISMA 2020 item text is the canonical wording from Page et al. (BMJ 2021).
+"src/research_assistant/domain/grade.py" = ["E501"]
 # FastAPI relies on call-in-default for Form/File dependency injection.
 "src/research_assistant/web/app.py" = ["B008"]
 

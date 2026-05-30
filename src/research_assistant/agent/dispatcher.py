@@ -32,6 +32,7 @@ from .specialists import (
     SPECIALISTS,
     csr_drafter,
     general_qa,
+    grade_drafter,
     irb_drafter,
     manuscript_drafter,
     meta_analysis,
@@ -93,6 +94,9 @@ _SLASH_COMMANDS: dict[str, str] = {
     "csr": csr_drafter.WORKFLOW_NAME,
     "e3": csr_drafter.WORKFLOW_NAME,
     "study-report": csr_drafter.WORKFLOW_NAME,
+    "grade": grade_drafter.WORKFLOW_NAME,
+    "sof": grade_drafter.WORKFLOW_NAME,
+    "prisma-checklist": grade_drafter.WORKFLOW_NAME,
     "general": general_qa.WORKFLOW_NAME,
     "ask": general_qa.WORKFLOW_NAME,
     # Future: "gap" -> "research_gap", "ecrf" -> "ecrf_design"
@@ -164,6 +168,15 @@ _WORKFLOW_CONTINUATIONS: dict[str, tuple[str, ...]] = {
         "Draft CSR from meta-analysis",  # handoff seed
         "Draft CSR from ADTTE",  # handoff seed
         "Draft CSR from SAP",  # handoff seed
+    ),
+    grade_drafter.WORKFLOW_NAME: (
+        "GRADE intake confirmed",
+        "Outcome assessed",
+        "SoF confirmed",
+        "PRISMA confirmed",
+        "Refine SoF:",
+        "Finalize GRADE",
+        "Draft GRADE from meta-analysis",  # handoff seed
     ),
     # Future: research_gap / ecrf continuations
 }
@@ -270,6 +283,19 @@ _TRIGGER_KEYWORDS: list[tuple[str, list[re.Pattern[str]]]] = [
             re.compile(r"\bcsr\s+(draft|drafter|submission|document)\b"),
             re.compile(r"\bich[-\s]?e3\b"),
             re.compile(r"\bdraft\s+(a|the|my)?\s*csr\b"),
+        ],
+    ),
+    # grade_drafter: GRADE Summary of Findings + PRISMA 2020 checklist.
+    # Checked before risk_of_bias so phrases like "GRADE certainty
+    # rating" don't slip into the RoB workflow.
+    (
+        grade_drafter.WORKFLOW_NAME,
+        [
+            re.compile(r"\bgrade\s+(sof|summary|certainty|assessment)\b"),
+            re.compile(r"\bsummary\s+of\s+findings\b"),
+            re.compile(r"\bcertainty\s+of\s+evidence\b"),
+            re.compile(r"\bprisma\s+(checklist|2020|reporting)\b"),
+            re.compile(r"\b(draft|generate)\s+(a|the|my)?\s*grade\s+(table|sof)\b"),
         ],
     ),
     # sr_protocol checked before search_strategy/meta_analysis: phrases like

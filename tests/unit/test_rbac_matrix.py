@@ -307,6 +307,8 @@ def test_skill_permission_covers_every_specialist() -> None:
         "irb_drafter",
         # Analysis-finale tier: CSR (ICH E3) drafter
         "csr_drafter",
+        # SR/MA submission-tier: GRADE + PRISMA 2020 checklist
+        "grade_drafter",
     }
     assert set(SKILL_PERMISSION) == expected_workflows
 
@@ -338,6 +340,13 @@ def test_researcher_can_run_csr_drafter_but_student_cannot() -> None:
     assert Permission.SKILL_CSR_DRAFTER in ROLE_PERMISSIONS[Role.RESEARCHER]
     assert Permission.SKILL_CSR_DRAFTER in ROLE_PERMISSIONS[Role.ADMIN]
     assert Permission.SKILL_CSR_DRAFTER not in ROLE_PERMISSIONS[Role.STUDENT]
+
+
+def test_researcher_can_run_grade_drafter_but_student_cannot() -> None:
+    """SR/MA submission tier: GRADE + PRISMA drafter is researcher-tier."""
+    assert Permission.SKILL_GRADE_DRAFTER in ROLE_PERMISSIONS[Role.RESEARCHER]
+    assert Permission.SKILL_GRADE_DRAFTER in ROLE_PERMISSIONS[Role.ADMIN]
+    assert Permission.SKILL_GRADE_DRAFTER not in ROLE_PERMISSIONS[Role.STUDENT]
 
 
 def test_clinical_roles_do_not_get_csr_drafter_permission() -> None:
