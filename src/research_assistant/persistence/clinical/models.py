@@ -1025,6 +1025,202 @@ class CdiscDerivation(ClinicalBase):
     )
 
 
+# ── IRT / Randomisation (eCRF E8 — RCT enabler) ─────────────────────────
+
+
+class RandomizationSchedule(ClinicalBase):
+    """A deployment-wide randomisation schedule.
+
+    Generated once by the data_manager at study-start; allocations
+    consume entries from the pre-generated `sequence_json` (simple /
+    permuted-block / stratified-permuted-block) or, for `minimisation`,
+    drive the Pocock-Simon update at allocation time.
+
+    Only one *active* schedule per deployment_id (status='active').
+    Closing the schedule (status='closed') is irreversible for audit
+    integrity.
+    """
+
+    __tablename__ = "randomization_schedules"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    deployment_id: Mapped[str] = mapped_column(
+        ForeignKey("study_deployments.id", ondelete="CASCADE"), index=True
+    )
+    algorithm: Mapped[str] = mapped_column(
+        Text,
+        doc="simple | permuted_block | stratified_permuted_block | minimisation",
+    )
+    arms_json: Mapped[str] = mapped_column(
+        Text, doc="JSON array of arm labels in canonical order."
+    )
+    ratio_json: Mapped[str] = mapped_column(
+        Text,
+        default="[1,1]",
+        doc="JSON array of per-arm allocation ratios aligned to arms_json.",
+    )
+    block_sizes_json: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        default=None,
+        doc=(
+            "JSON array of permitted block sizes (e.g. [4,6,8]). NULL for "
+            "simple / minimisation algorithms."
+        ),
+    )
+    strata_factors_json: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        default=None,
+        doc=(
+            "JSON array of stratification factor names (e.g. ['site_id', "
+            "'sex']). NULL for non-stratified schedules."
+        ),
+    )
+    weights_json: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        default=None,
+        doc=(
+            "Per-factor weights for minimisation (default = equal). "
+            "JSON object {factor_name: weight}."
+        ),
+    )
+    seed: Mapped[int] = mapped_column(
+        Integer,
+        doc="Seed for the underlying RNG — regulator-audited for reproducibility.",
+    )
+    blinding: Mapped[str] = mapped_column(
+        Text,
+        default="open_label",
+        doc="open_label | single_blind | double_blind | triple_blind",
+    )
+    status: Mapped[str] = mapped_column(
+        Text, default="active", doc="active | closed"
+    )
+    sequence_json: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        default=None,
+        doc=(
+            "JSON for pre-generated schedules: simple/block emit a flat "
+            "list[arm]; stratified emits a {stratum_label: list[arm]} map. "
+            "NULL for minimisation (state is dynamic in `minimisation_state_json`)."
+        ),
+    )
+    minimisation_state_json: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        default=None,
+        doc=(
+            "Running per-arm-per-factor counts for Pocock-Simon. JSON "
+            "{arm: {factor: {level: count}}}. NULL for non-minimisation."
+        ),
+    )
+    created_by_sub: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    closed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
+
+
+class Allocation(ClinicalBase):
+    """A subject's randomisation outcome — one row per randomised subject.
+
+    Unique on subject_id so the API can return 409 on a double-allocate
+    attempt. `unblinded=True` after a CodeBreakEvent flips it; that
+    state is what lets the report endpoints expose the arm to the site
+    in double-blind trials.
+    """
+
+    __tablename__ = "allocations"
+    __table_args__ = (
+        UniqueConstraint("subject_id", name="uq_allocation_subject"),
+    )
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    deployment_id: Mapped[str] = mapped_column(Text, index=True)
+    schedule_id: Mapped[str] = mapped_column(
+        ForeignKey("randomization_schedules.id", ondelete="RESTRICT"), index=True
+    )
+    subject_id: Mapped[str] = mapped_column(
+        ForeignKey("subjects.id", ondelete="CASCADE"), index=True
+    )
+    arm: Mapped[str] = mapped_column(Text)
+    stratum_label: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        default=None,
+        doc=(
+            "Canonical stratum label assembled as 'factor1=value1|"
+            "factor2=value2|…' for stratified algorithms; NULL for "
+            "non-stratified."
+        ),
+    )
+    factor_values_json: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        default=None,
+        doc=(
+            "JSON {factor_name: factor_value} captured at allocation time "
+            "for the audit trail. NULL when no factors used."
+        ),
+    )
+    sequence_position: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+        default=None,
+        doc=(
+            "Position consumed from sequence_json (per stratum for "
+            "stratified). NULL for minimisation."
+        ),
+    )
+    allocated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    allocated_by_sub: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    unblinded: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        doc=(
+            "True after a CodeBreakEvent. Open-label trials are always "
+            "True at allocation time."
+        ),
+    )
+    unblinded_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
+
+
+class CodeBreakEvent(ClinicalBase):
+    """A PI-initiated emergency unblinding event (Part 11-style audit).
+
+    Records the trigger, the reason captured at break time, and the
+    sponsor-notification flag so the safety reporting workflow can
+    pick it up.
+    """
+
+    __tablename__ = "code_break_events"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    deployment_id: Mapped[str] = mapped_column(Text, index=True)
+    subject_id: Mapped[str] = mapped_column(
+        ForeignKey("subjects.id", ondelete="CASCADE"), index=True
+    )
+    allocation_id: Mapped[str] = mapped_column(
+        ForeignKey("allocations.id", ondelete="RESTRICT"), index=True
+    )
+    reason: Mapped[str] = mapped_column(Text, doc="Free-text clinical reason.")
+    broken_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    broken_by_sub: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    sponsor_notified: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        doc=(
+            "Set True when the platform's safety workflow flags the "
+            "sponsor (placeholder until a real notification surface lands)."
+        ),
+    )
+
+
 class AuditEntry(ClinicalBase):
     """Append-only audit trail (ALCOA+ / 21 CFR Part 11 §11.10(e)).
 

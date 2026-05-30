@@ -331,6 +331,46 @@ def test_researcher_can_run_irb_drafter_but_student_cannot() -> None:
     assert Permission.SKILL_IRB_DRAFTER not in ROLE_PERMISSIONS[Role.STUDENT]
 
 
+def test_data_manager_generates_randomization_schedule() -> None:
+    """E8: DM is the only role that creates schedules. PI does NOT
+    (separation-of-duties: PI breaks codes, DM creates schedules)."""
+    dm_perms = ROLE_PERMISSIONS[Role.DATA_MANAGER]
+    pi_perms = ROLE_PERMISSIONS[Role.PRINCIPAL_INVESTIGATOR]
+    assert Permission.RANDOMIZATION_GENERATE in dm_perms
+    assert Permission.RANDOMIZATION_GENERATE not in pi_perms
+
+
+def test_pi_owns_the_codebreak_authority() -> None:
+    """Only PI + admin can emergency-unblind."""
+    pi_perms = ROLE_PERMISSIONS[Role.PRINCIPAL_INVESTIGATOR]
+    assert Permission.RANDOMIZATION_CODEBREAK in pi_perms
+    for r in (
+        Role.COORDINATOR,
+        Role.DATA_MANAGER,
+        Role.MONITOR,
+        Role.AUDITOR,
+    ):
+        assert Permission.RANDOMIZATION_CODEBREAK not in ROLE_PERMISSIONS[r]
+    assert Permission.RANDOMIZATION_CODEBREAK in ROLE_PERMISSIONS[Role.ADMIN]
+
+
+def test_coordinator_and_pi_can_allocate_subjects() -> None:
+    """The randomisation call happens at enrolment — coordinator + PI."""
+    assert Permission.RANDOMIZATION_ALLOCATE in ROLE_PERMISSIONS[Role.COORDINATOR]
+    assert Permission.RANDOMIZATION_ALLOCATE in ROLE_PERMISSIONS[Role.PRINCIPAL_INVESTIGATOR]
+    # DM does NOT allocate — DM only generates the schedule + reads.
+    assert Permission.RANDOMIZATION_ALLOCATE not in ROLE_PERMISSIONS[Role.DATA_MANAGER]
+
+
+def test_monitor_and_auditor_can_read_allocations_but_not_break() -> None:
+    for r in (Role.MONITOR, Role.AUDITOR):
+        perms = ROLE_PERMISSIONS[r]
+        assert Permission.RANDOMIZATION_READ in perms
+        assert Permission.RANDOMIZATION_CODEBREAK not in perms
+        assert Permission.RANDOMIZATION_GENERATE not in perms
+        assert Permission.RANDOMIZATION_ALLOCATE not in perms
+
+
 def test_clinical_roles_do_not_get_start_up_drafter_permissions() -> None:
     """Coordinator / data_manager / monitor / PI / auditor don't draft
     registrations or IRB packets — those are researcher-side artefacts."""

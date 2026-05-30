@@ -65,6 +65,10 @@
           <h2>Study lock <span id="lock-badge" class="muted" style="font-size:11px"></span></h2>
           <div id="lock-summary" class="muted">Select a deployment to view its lock state.</div>
         </div>
+        <div class="card">
+          <h2>Randomisation <span id="rand-badge" class="muted" style="font-size:11px"></span></h2>
+          <div id="rand-summary" class="muted">Select a deployment to view the randomisation schedule.</div>
+        </div>
       </div>
       <div>
         <div class="card">
@@ -553,12 +557,63 @@
     } catch (e) { setStatus("Unlock failed: "+e.message,"err"); }
   }
 
-  /* Reload the CDISC + lock panels when the user picks a different deployment. */
+  /* ── Randomisation / IRT (eCRF E8) ──────────────────────────────────── */
+
+  async function loadRandomisation(){
+    const root=document.getElementById("rand-summary");
+    const badge=document.getElementById("rand-badge");
+    if(!depId){ root.className="muted"; root.textContent="Select a deployment to view the randomisation schedule."; badge.textContent=""; return; }
+    try {
+      const sresp = await api(`/api/edc/deployments/${depId}/randomization/schedule`);
+      if(!sresp.ok){ root.className="muted"; root.textContent="Schedule unavailable."; badge.textContent=""; return; }
+      const schedule = await sresp.json();
+      if(!schedule){
+        badge.textContent="✕ no schedule"; badge.style.color="#5a6070";
+        root.className="muted";
+        root.innerHTML = `<div>No active randomisation schedule. <i>(Generate via POST /api/edc/deployments/${esc(depId)}/randomization/schedule — data_manager only.)</i></div>`;
+        return;
+      }
+      badge.textContent = `${schedule.algorithm} · ${schedule.blinding}`;
+      badge.style.color = schedule.blinding === "open_label" ? "#3a7d44" : "#1f3a66";
+      const aresp = await api(`/api/edc/deployments/${depId}/allocations`);
+      const allocations = aresp.ok ? await aresp.json() : [];
+      const arms = JSON.parse(schedule.arms_json);
+      const counts = {};
+      arms.forEach(a => counts[a] = 0);
+      let masked = 0;
+      allocations.forEach(a => { if(a.arm){ counts[a.arm] = (counts[a.arm]||0)+1; } else { masked += 1; } });
+      const grid = arms.map(a => `
+        <div style="background:#0f1115;padding:6px 8px;border-radius:4px;border-left:2px solid #1f3a66">
+          <div style="font-size:10px;color:#5a6070;text-transform:uppercase">${esc(a)}</div>
+          <div style="font-size:16px;font-weight:700">${counts[a]||0}</div>
+        </div>`).join("");
+      const maskedCell = masked > 0 ? `
+        <div style="background:#0f1115;padding:6px 8px;border-radius:4px;border-left:2px solid #5a6070">
+          <div style="font-size:10px;color:#5a6070;text-transform:uppercase">blinded</div>
+          <div style="font-size:16px;font-weight:700">${masked}</div>
+        </div>` : "";
+      root.className="";
+      root.innerHTML = `
+        <div class="muted" style="font-size:12px;margin-bottom:8px">
+          Algorithm <b>${esc(schedule.algorithm)}</b> · Arms ${arms.map(esc).join(", ")} · Seed ${schedule.seed} · Blinding <b>${esc(schedule.blinding)}</b>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:6px;margin-bottom:8px">
+          ${grid}${maskedCell}
+        </div>
+        <div class="muted" style="font-size:12px">
+          ${allocations.length} subject(s) randomised. Allocate a subject via POST /api/edc/subjects/{id}/randomize (coordinator + PI). Emergency code-break via POST /api/edc/subjects/{id}/code-break (PI only).
+        </div>
+      `;
+    } catch (e) { root.className="muted"; root.textContent="Randomisation status unavailable."; badge.textContent=""; }
+  }
+
+  /* Reload the CDISC + lock + randomisation panels when the user picks a different deployment. */
   const originalSelectDeployment = selectDeployment;
   selectDeployment = async function(id){
     await originalSelectDeployment(id);
     await loadCdiscSummary();
     await loadLockStatus();
+    await loadRandomisation();
   };
 
   loadDeployments();

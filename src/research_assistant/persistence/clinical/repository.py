@@ -23,8 +23,10 @@ from ...domain.ecrf import FormDefinition
 from ...ecrf.edit_checks import CheckResult, evaluate_form, required_blank_items
 from .models import (
     AdverseEvent,
+    Allocation,
     AuditEntry,
     CapaAction,
+    CodeBreakEvent,
     DeployedForm,
     EventInstance,
     FormInstance,
@@ -33,6 +35,7 @@ from .models import (
     ProtocolDeviation,
     Query,
     QueryResponse,
+    RandomizationSchedule,
     Signature,
     Site,
     StudyDeployment,
@@ -951,6 +954,211 @@ class ClinicalRepository:
                 f"Deployment {deployment_id!r} is locked. "
                 "Unlock the study before further writes / signatures / SDV."
             )
+
+    # ── IRT / Randomisation (E8) ────────────────────────────────────────
+
+    async def get_active_schedule(
+        self, deployment_id: str
+    ) -> RandomizationSchedule | None:
+        rows = await self._s.scalars(
+            select(RandomizationSchedule)
+            .where(RandomizationSchedule.deployment_id == deployment_id)
+            .where(RandomizationSchedule.status == "active")
+            .order_by(RandomizationSchedule.created_at.desc())
+        )
+        return rows.first()
+
+    async def create_randomization_schedule(
+        self,
+        deployment_id: str,
+        *,
+        algorithm: str,
+        arms: list[str],
+        ratio: list[int] | None = None,
+        block_sizes: list[int] | None = None,
+        strata_factors: list[str] | None = None,
+        weights: dict[str, float] | None = None,
+        seed: int,
+        blinding: str = "open_label",
+        sequence_json: str | None = None,
+        minimisation_state_json: str | None = None,
+        actor_sub: str | None = None,
+    ) -> RandomizationSchedule:
+        if await self._s.get(StudyDeployment, deployment_id) is None:
+            raise ClinicalError(f"Deployment {deployment_id!r} not found")
+        if await self.get_active_schedule(deployment_id) is not None:
+            raise ClinicalError(
+                f"Deployment {deployment_id!r} already has an active "
+                "randomisation schedule. Close it before generating a new one."
+            )
+        schedule = RandomizationSchedule(
+            deployment_id=deployment_id,
+            algorithm=algorithm,
+            arms_json=json.dumps(arms),
+            ratio_json=json.dumps(ratio or [1] * len(arms)),
+            block_sizes_json=json.dumps(block_sizes) if block_sizes else None,
+            strata_factors_json=json.dumps(strata_factors) if strata_factors else None,
+            weights_json=json.dumps(weights) if weights else None,
+            seed=seed,
+            blinding=blinding,
+            sequence_json=sequence_json,
+            minimisation_state_json=minimisation_state_json,
+            created_by_sub=actor_sub,
+        )
+        self._s.add(schedule)
+        await self._s.flush()
+        self._audit(
+            entity_type="randomization_schedule",
+            entity_id=schedule.id,
+            action="create",
+            new_value=algorithm,
+            actor_sub=actor_sub,
+            reason=f"arms={arms!r} seed={seed} blinding={blinding}",
+        )
+        return schedule
+
+    async def close_randomization_schedule(
+        self,
+        schedule_id: str,
+        *,
+        actor_sub: str | None = None,
+    ) -> RandomizationSchedule:
+        schedule = await self._s.get(RandomizationSchedule, schedule_id)
+        if schedule is None:
+            raise ClinicalError(f"Schedule {schedule_id!r} not found")
+        if schedule.status == "closed":
+            raise ClinicalError(f"Schedule {schedule_id!r} is already closed")
+        schedule.status = "closed"
+        schedule.closed_at = datetime.now(UTC)
+        await self._s.flush()
+        self._audit(
+            entity_type="randomization_schedule",
+            entity_id=schedule.id,
+            action="close",
+            old_value="active",
+            new_value="closed",
+            actor_sub=actor_sub,
+        )
+        return schedule
+
+    async def get_allocation_for_subject(
+        self, subject_id: str
+    ) -> Allocation | None:
+        rows = await self._s.scalars(
+            select(Allocation).where(Allocation.subject_id == subject_id)
+        )
+        return rows.first()
+
+    async def persist_allocation(
+        self,
+        *,
+        schedule: RandomizationSchedule,
+        subject: Subject,
+        arm: str,
+        stratum_label: str | None,
+        factor_values: dict[str, str] | None,
+        sequence_position: int | None,
+        actor_sub: str | None,
+        updated_minimisation_state_json: str | None = None,
+    ) -> Allocation:
+        """Persist an allocation row + update the schedule's minimisation
+        state when present. Refuses 409 on a double-allocation attempt."""
+        if await self.get_allocation_for_subject(subject.id) is not None:
+            raise ClinicalError(
+                f"Subject {subject.subject_code!r} is already randomised."
+            )
+        unblinded = schedule.blinding == "open_label"
+        allocation = Allocation(
+            deployment_id=schedule.deployment_id,
+            schedule_id=schedule.id,
+            subject_id=subject.id,
+            arm=arm,
+            stratum_label=stratum_label,
+            factor_values_json=json.dumps(factor_values) if factor_values else None,
+            sequence_position=sequence_position,
+            allocated_by_sub=actor_sub,
+            unblinded=unblinded,
+            unblinded_at=datetime.now(UTC) if unblinded else None,
+        )
+        self._s.add(allocation)
+        if updated_minimisation_state_json is not None:
+            schedule.minimisation_state_json = updated_minimisation_state_json
+        await self._s.flush()
+        self._audit(
+            entity_type="allocation",
+            entity_id=allocation.id,
+            action="allocate",
+            new_value=arm,
+            reason=(
+                f"subject={subject.subject_code!r} stratum={stratum_label!r} "
+                f"blinding={schedule.blinding}"
+            ),
+            actor_sub=actor_sub,
+        )
+        return allocation
+
+    async def list_allocations(self, deployment_id: str) -> list[Allocation]:
+        rows = await self._s.scalars(
+            select(Allocation)
+            .where(Allocation.deployment_id == deployment_id)
+            .order_by(Allocation.allocated_at)
+        )
+        return list(rows.all())
+
+    async def code_break(
+        self,
+        subject_id: str,
+        *,
+        reason: str,
+        actor_sub: str | None,
+    ) -> CodeBreakEvent:
+        """PI-triggered emergency unblinding. Flips Allocation.unblinded
+        + creates a CodeBreakEvent row + audits."""
+        allocation = await self.get_allocation_for_subject(subject_id)
+        if allocation is None:
+            raise ClinicalError(
+                f"Subject {subject_id!r} has no allocation to break."
+            )
+        if allocation.unblinded:
+            raise ClinicalError(
+                f"Subject {subject_id!r} is already unblinded."
+            )
+        now = datetime.now(UTC)
+        event = CodeBreakEvent(
+            deployment_id=allocation.deployment_id,
+            subject_id=subject_id,
+            allocation_id=allocation.id,
+            reason=reason,
+            broken_at=now,
+            broken_by_sub=actor_sub,
+        )
+        allocation.unblinded = True
+        allocation.unblinded_at = now
+        self._s.add(event)
+        await self._s.flush()
+        self._audit(
+            entity_type="code_break_event",
+            entity_id=event.id,
+            action="code_break",
+            new_value="unblinded",
+            reason=reason,
+            actor_sub=actor_sub,
+        )
+        return event
+
+    async def list_code_break_events(
+        self, deployment_id: str
+    ) -> list[CodeBreakEvent]:
+        rows = await self._s.scalars(
+            select(CodeBreakEvent)
+            .where(CodeBreakEvent.deployment_id == deployment_id)
+            .order_by(CodeBreakEvent.broken_at)
+        )
+        return list(rows.all())
+
+    async def deployment_id_for_schedule(self, schedule_id: str) -> str | None:
+        schedule = await self._s.get(RandomizationSchedule, schedule_id)
+        return schedule.deployment_id if schedule is not None else None
 
     async def list_form_instances(self, subject_id: str) -> list[FormInstance]:
         rows = await self._s.scalars(

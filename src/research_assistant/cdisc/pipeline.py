@@ -21,6 +21,7 @@ from ..persistence.clinical.models import (
     AdamAdsl,
     AdamAdtte,
     AdverseEvent,
+    Allocation,
     CdiscDerivation,
     DeployedForm,
     FormInstance,
@@ -213,6 +214,30 @@ async def run_derivation(
     )
     item_data_by_subject = await _gather_item_data(session, subjects)
 
+    # IRT (E8): pull Allocation rows so ADSL/ADTTE can populate
+    # TRT01P / TRT01A from the audited randomisation assignment rather
+    # than the "TBD" placeholder. Map subject_id → Allocation.
+    allocation_rows: list[Allocation] = list(
+        (
+            await session.execute(
+                select(Allocation).where(Allocation.deployment_id == deployment_id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    allocations_by_subject_id: dict[str, Allocation] = {
+        a.subject_id: a for a in allocation_rows
+    }
+    subjects_by_id_full = {s.id: s for s in subjects}
+    allocations_by_usubjid: dict[str, Allocation] = {}
+    for subj_id, allocation in allocations_by_subject_id.items():
+        subj = subjects_by_id_full.get(subj_id)
+        if subj is None:
+            continue
+        usubjid = f"{deployment.research_study_id}-{subj.subject_code}"
+        allocations_by_usubjid[usubjid] = allocation
+
     mapper = BuiltinPythonMapper()
     cfg = config or ItemMappingConfig()
 
@@ -298,6 +323,7 @@ async def run_derivation(
         dm_records=dm,
         ae_records=ae,
         subject_item_data={s.subject_code: item_data_by_subject.get(s.id, []) for s in subjects},
+        allocations_by_usubjid=allocations_by_usubjid,
     )
     adtte = derive_adtte(
         deployment_id=deployment_id,

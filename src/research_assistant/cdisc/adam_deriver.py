@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from ..persistence.clinical.models import AdamAdsl, ItemData, SdtmAe, SdtmDm
+from ..persistence.clinical.models import AdamAdsl, Allocation, ItemData, SdtmAe, SdtmDm
 
 
 def _age_group(age: int | None) -> str | None:
@@ -40,6 +40,7 @@ def derive_adsl(
     dm_records: Iterable[SdtmDm],
     ae_records: Iterable[SdtmAe],
     subject_item_data: dict[str, list[ItemData]] | None = None,
+    allocations_by_usubjid: dict[str, Allocation] | None = None,
 ) -> list[AdamAdsl]:
     """Build ADSL rows from the derived SDTM DM + AE rows.
 
@@ -48,8 +49,16 @@ def derive_adsl(
     heuristic for SAFFL ("Y" iff any post-baseline data captured). When
     not provided, SAFFL defaults to "N" — caller must opt in by passing
     the captures map.
+
+    `allocations_by_usubjid` carries each subject's `Allocation.arm`
+    keyed by USUBJID. When present, TRT01P / TRT01A are taken from the
+    allocation; otherwise we fall back to DM.ARM (item-captured) or
+    'TBD' (no source available — pre-randomisation runs). This is the
+    eCRF-E8 (IRT) integration: post-randomisation derivation produces
+    real treatment fields without re-fabricating them from items.
     """
     subject_item_data = subject_item_data or {}
+    allocations_by_usubjid = allocations_by_usubjid or {}
     # Index AE rows by USUBJID for fast death-flag lookup.
     death_subjects: set[str] = set()
     for ae in ae_records:
@@ -58,14 +67,18 @@ def derive_adsl(
 
     out: list[AdamAdsl] = []
     for dm in dm_records:
-        # SAFFL heuristic: any non-empty item data → subject had at
-        # least one captured value, which corresponds to taking the
-        # intervention in practice. A real Safety-population flag
-        # requires the "first-dose" event from the eCRF; this is the
-        # platform's best-available proxy until that event captures.
         items = subject_item_data.get(dm.SUBJID, [])
         has_data = any(it.value not in (None, "") for it in items)
         saffl = "Y" if has_data else "N"
+
+        allocation = allocations_by_usubjid.get(dm.USUBJID)
+        if allocation is not None:
+            trt01p = allocation.arm
+            trt01a = allocation.arm
+        else:
+            trt01p = dm.ARM or "TBD"
+            trt01a = dm.ARM or "TBD"
+
         out.append(
             AdamAdsl(
                 deployment_id=deployment_id,
@@ -84,8 +97,8 @@ def derive_adsl(
                 DTHFL="Y" if dm.USUBJID in death_subjects else "N",
                 RFSTDTC=dm.RFSTDTC,
                 RFENDTC=dm.RFENDTC,
-                TRT01P=dm.ARM or "TBD",
-                TRT01A=dm.ARM or "TBD",
+                TRT01P=trt01p,
+                TRT01A=trt01a,
                 COUNTRY=dm.COUNTRY,
             )
         )

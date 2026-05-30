@@ -19,6 +19,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import func, select
 
 from ..auth import SessionPayload
 from ..auth.cognito_admin import (
@@ -29,7 +30,7 @@ from ..auth.rbac import Permission
 from ..config import get_settings
 from ..domain.ecrf import FormDefinition
 from ..persistence.clinical.database import get_clinical_session
-from ..persistence.clinical.models import Subject
+from ..persistence.clinical.models import Allocation, RandomizationSchedule, Subject
 from ..persistence.clinical.repository import (
     ClinicalError,
     ClinicalRepository,
@@ -247,6 +248,109 @@ class StudyLockStatusOut(BaseModel):
     deployment_id: str
     locked: bool
     active_lock: StudyLockOut | None
+
+
+# ── IRT (eCRF E8) ──────────────────────────────────────────────────────
+
+
+class ScheduleGenerateIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    algorithm: str = Field(
+        description="simple | permuted_block | stratified_permuted_block | minimisation",
+    )
+    arms: list[str] = Field(min_length=2)
+    ratio: list[int] | None = None
+    block_sizes: list[int] | None = None
+    strata_factors: list[str] | None = None
+    expected_per_stratum: dict[str, int] | None = Field(
+        default=None,
+        description=(
+            "For stratified_permuted_block: {stratum_label: expected_N} so the "
+            "generator emits a sequence per stratum. Operator computes this "
+            "from the protocol's planned enrolment per stratum."
+        ),
+    )
+    expected_n: int | None = Field(
+        default=None,
+        description=(
+            "For simple / permuted_block: total expected enrolment so the "
+            "schedule pre-generates the sequence. Ignored for stratified + "
+            "minimisation."
+        ),
+    )
+    weights: dict[str, float] | None = None
+    seed: int | None = Field(
+        default=None,
+        description=(
+            "Optional explicit seed for audit reproducibility. Server "
+            "generates one if omitted (and returns it)."
+        ),
+    )
+    blinding: str = Field(
+        default="open_label",
+        description="open_label | single_blind | double_blind | triple_blind",
+    )
+
+
+class ScheduleOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    deployment_id: str
+    algorithm: str
+    arms_json: str
+    ratio_json: str
+    block_sizes_json: str | None
+    strata_factors_json: str | None
+    weights_json: str | None
+    seed: int
+    blinding: str
+    status: str
+    created_by_sub: str | None
+    created_at: datetime
+    closed_at: datetime | None
+
+
+class AllocateIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    factor_values: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Subject-specific stratification factor values, captured at "
+            "enrolment (e.g. {'site_id': 'S01', 'sex': 'F'}). REQUIRED for "
+            "stratified_permuted_block + minimisation; ignored for simple "
+            "and permuted_block."
+        ),
+    )
+
+
+class AllocationOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    schedule_id: str
+    subject_id: str
+    arm: str | None
+    stratum_label: str | None
+    sequence_position: int | None
+    allocated_at: datetime
+    allocated_by_sub: str | None
+    unblinded: bool
+    unblinded_at: datetime | None
+
+
+class CodeBreakIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    reason: str = Field(min_length=8)
+
+
+class CodeBreakOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    subject_id: str
+    allocation_id: str
+    reason: str
+    broken_at: datetime
+    broken_by_sub: str | None
+    sponsor_notified: bool
 
 
 class SubjectSignatureOut(BaseModel):
@@ -1811,5 +1915,369 @@ def create_edc_router() -> APIRouter:
         async with get_clinical_session() as s:
             rows = await ClinicalRepository(s).list_study_locks(deployment_id)
             return [StudyLockOut.model_validate(r) for r in rows]
+
+    # ── IRT / Randomisation (E8) ─────────────────────────────────────────
+
+    def _mask_allocation_for_caller(
+        allocation: Any, schedule_blinding: str
+    ) -> AllocationOut:
+        """Blinded deployments hide the arm until a code-break.
+
+        The Allocation row's `arm` is the source of truth; this helper
+        clones it for output and clears the arm when the deployment is
+        blinded AND the allocation hasn't been broken.
+        """
+        out = AllocationOut.model_validate(allocation)
+        if schedule_blinding != "open_label" and not allocation.unblinded:
+            out = out.model_copy(update={"arm": None})
+        return out
+
+    @router.post(
+        "/deployments/{deployment_id}/randomization/schedule",
+        response_model=ScheduleOut,
+        status_code=201,
+    )
+    async def generate_schedule(
+        deployment_id: str,
+        body: ScheduleGenerateIn,
+        user: SessionPayload = require_permission_scoped(
+            Permission.RANDOMIZATION_GENERATE, resource_param="deployment_id"
+        ),
+    ) -> ScheduleOut:
+        import os as _os
+
+        from ..randomization import (
+            generate_permuted_block,
+            generate_simple,
+            generate_stratified_permuted_block,
+        )
+
+        seed = body.seed if body.seed is not None else int.from_bytes(_os.urandom(4), "big")
+        sequence_json: str | None = None
+        minimisation_state_json: str | None = None
+
+        try:
+            if body.algorithm == "simple":
+                if body.expected_n is None or body.expected_n <= 0:
+                    raise HTTPException(422, "expected_n required for simple algorithm.")
+                seq = generate_simple(
+                    body.expected_n,
+                    body.arms,
+                    ratio=body.ratio,
+                    seed=seed,
+                )
+                sequence_json = json.dumps(seq)
+            elif body.algorithm == "permuted_block":
+                if body.expected_n is None or body.expected_n <= 0:
+                    raise HTTPException(422, "expected_n required for permuted_block algorithm.")
+                seq = generate_permuted_block(
+                    body.expected_n,
+                    body.arms,
+                    ratio=body.ratio,
+                    block_sizes=body.block_sizes,
+                    seed=seed,
+                )
+                sequence_json = json.dumps(seq)
+            elif body.algorithm == "stratified_permuted_block":
+                if not body.expected_per_stratum:
+                    raise HTTPException(
+                        422,
+                        "expected_per_stratum required for stratified_permuted_block.",
+                    )
+                if not body.strata_factors:
+                    raise HTTPException(
+                        422,
+                        "strata_factors required for stratified_permuted_block.",
+                    )
+                seq_by_stratum = generate_stratified_permuted_block(
+                    body.expected_per_stratum,
+                    body.arms,
+                    ratio=body.ratio,
+                    block_sizes=body.block_sizes,
+                    seed=seed,
+                )
+                sequence_json = json.dumps(seq_by_stratum)
+            elif body.algorithm == "minimisation":
+                if not body.strata_factors:
+                    raise HTTPException(
+                        422,
+                        "strata_factors required for minimisation algorithm.",
+                    )
+                # Initial state: zeros for every (arm, factor) pair.
+                empty: dict[str, dict[str, dict[str, int]]] = {
+                    a: {f: {} for f in body.strata_factors} for a in body.arms
+                }
+                minimisation_state_json = json.dumps({"counts": empty})
+            else:
+                raise HTTPException(
+                    422, f"Unknown algorithm {body.algorithm!r}."
+                )
+        except ValueError as e:
+            raise HTTPException(422, str(e)) from e
+
+        async with get_clinical_session() as s:
+            try:
+                schedule = await ClinicalRepository(s).create_randomization_schedule(
+                    deployment_id,
+                    algorithm=body.algorithm,
+                    arms=body.arms,
+                    ratio=body.ratio,
+                    block_sizes=body.block_sizes,
+                    strata_factors=body.strata_factors,
+                    weights=body.weights,
+                    seed=seed,
+                    blinding=body.blinding,
+                    sequence_json=sequence_json,
+                    minimisation_state_json=minimisation_state_json,
+                    actor_sub=user.sub,
+                )
+            except ClinicalError as e:
+                raise HTTPException(409, str(e)) from e
+            return ScheduleOut.model_validate(schedule)
+
+    @router.get(
+        "/deployments/{deployment_id}/randomization/schedule",
+        response_model=ScheduleOut | None,
+    )
+    async def get_schedule(
+        deployment_id: str,
+        user: SessionPayload = require_permission_scoped(
+            Permission.RANDOMIZATION_READ, resource_param="deployment_id"
+        ),
+    ) -> ScheduleOut | None:
+        async with get_clinical_session() as s:
+            schedule = await ClinicalRepository(s).get_active_schedule(deployment_id)
+            return ScheduleOut.model_validate(schedule) if schedule else None
+
+    @router.post(
+        "/deployments/{deployment_id}/randomization/schedule/close",
+        response_model=ScheduleOut,
+    )
+    async def close_schedule(
+        deployment_id: str,
+        user: SessionPayload = require_permission_scoped(
+            Permission.RANDOMIZATION_GENERATE, resource_param="deployment_id"
+        ),
+    ) -> ScheduleOut:
+        async with get_clinical_session() as s:
+            schedule = await ClinicalRepository(s).get_active_schedule(deployment_id)
+            if schedule is None:
+                raise HTTPException(404, "No active schedule to close.")
+            try:
+                closed = await ClinicalRepository(s).close_randomization_schedule(
+                    schedule.id, actor_sub=user.sub
+                )
+            except ClinicalError as e:
+                raise HTTPException(409, str(e)) from e
+            return ScheduleOut.model_validate(closed)
+
+    @router.post(
+        "/subjects/{subject_id}/randomize",
+        response_model=AllocationOut,
+        status_code=201,
+    )
+    async def randomize_subject(
+        subject_id: str,
+        body: AllocateIn,
+        user: SessionPayload = require_permission_scoped(
+            Permission.RANDOMIZATION_ALLOCATE, resource_param="subject_id"
+        ),
+    ) -> AllocationOut:
+        from ..randomization import (
+            canonical_stratum_label,
+            pocock_simon_choose_arm,
+        )
+
+        async with get_clinical_session() as s:
+            subject = await s.get(Subject, subject_id)
+            if subject is None:
+                raise HTTPException(404, "Subject not found")
+            await _require_deployment_unlocked(s, subject.deployment_id)
+            repo = ClinicalRepository(s)
+            schedule = await repo.get_active_schedule(subject.deployment_id)
+            if schedule is None:
+                raise HTTPException(
+                    409,
+                    "No active randomisation schedule for this deployment.",
+                )
+
+            arms: list[str] = json.loads(schedule.arms_json)
+            strata_factors: list[str] | None = (
+                json.loads(schedule.strata_factors_json)
+                if schedule.strata_factors_json
+                else None
+            )
+
+            arm: str
+            stratum_label: str | None = None
+            sequence_position: int | None = None
+            updated_state_json: str | None = None
+
+            try:
+                if schedule.algorithm in ("simple", "permuted_block"):
+                    sequence: list[str] = json.loads(schedule.sequence_json or "[]")
+                    used = await s.scalar(
+                        select(func.count(Allocation.id)).where(
+                            Allocation.schedule_id == schedule.id
+                        )
+                    )
+                    used = int(used or 0)
+                    if used >= len(sequence):
+                        raise HTTPException(
+                            409,
+                            "Randomisation sequence exhausted — generate a "
+                            "new schedule or extend the existing one.",
+                        )
+                    arm = sequence[used]
+                    sequence_position = used
+                elif schedule.algorithm == "stratified_permuted_block":
+                    if not strata_factors:
+                        raise HTTPException(500, "Schedule missing strata_factors.")
+                    missing = [f for f in strata_factors if f not in body.factor_values]
+                    if missing:
+                        raise HTTPException(
+                            422,
+                            f"factor_values missing required factors: {missing!r}",
+                        )
+                    relevant = {f: body.factor_values[f] for f in strata_factors}
+                    stratum_label = canonical_stratum_label(relevant)
+                    by_stratum: dict[str, list[str]] = json.loads(
+                        schedule.sequence_json or "{}"
+                    )
+                    stratum_seq = by_stratum.get(stratum_label, [])
+                    used_in_stratum = await s.scalar(
+                        select(func.count(Allocation.id))
+                        .where(Allocation.schedule_id == schedule.id)
+                        .where(Allocation.stratum_label == stratum_label)
+                    )
+                    used_in_stratum = int(used_in_stratum or 0)
+                    if used_in_stratum >= len(stratum_seq):
+                        raise HTTPException(
+                            409,
+                            f"Stratum {stratum_label!r} sequence exhausted — "
+                            "extend the schedule for this stratum.",
+                        )
+                    arm = stratum_seq[used_in_stratum]
+                    sequence_position = used_in_stratum
+                elif schedule.algorithm == "minimisation":
+                    if not strata_factors:
+                        raise HTTPException(500, "Schedule missing strata_factors.")
+                    missing = [f for f in strata_factors if f not in body.factor_values]
+                    if missing:
+                        raise HTTPException(
+                            422,
+                            f"factor_values missing required factors: {missing!r}",
+                        )
+                    relevant = {f: body.factor_values[f] for f in strata_factors}
+                    stratum_label = canonical_stratum_label(relevant)
+                    weights = (
+                        json.loads(schedule.weights_json)
+                        if schedule.weights_json
+                        else None
+                    )
+                    current_state = (
+                        json.loads(schedule.minimisation_state_json)
+                        if schedule.minimisation_state_json
+                        else None
+                    )
+                    arm, new_state = pocock_simon_choose_arm(
+                        current_state,
+                        relevant,
+                        arms,
+                        weights=weights,
+                        seed=schedule.seed + len(
+                            await repo.list_allocations(subject.deployment_id)
+                        ),
+                    )
+                    updated_state_json = json.dumps(new_state)
+                else:
+                    raise HTTPException(
+                        500, f"Unsupported algorithm {schedule.algorithm!r}."
+                    )
+
+                allocation = await repo.persist_allocation(
+                    schedule=schedule,
+                    subject=subject,
+                    arm=arm,
+                    stratum_label=stratum_label,
+                    factor_values=dict(body.factor_values) or None,
+                    sequence_position=sequence_position,
+                    actor_sub=user.sub,
+                    updated_minimisation_state_json=updated_state_json,
+                )
+            except ClinicalError as e:
+                raise HTTPException(409, str(e)) from e
+            return _mask_allocation_for_caller(allocation, schedule.blinding)
+
+    @router.get(
+        "/subjects/{subject_id}/allocation",
+        response_model=AllocationOut | None,
+    )
+    async def get_subject_allocation(
+        subject_id: str,
+        user: SessionPayload = require_permission_scoped(
+            Permission.RANDOMIZATION_READ, resource_param="subject_id"
+        ),
+    ) -> AllocationOut | None:
+        async with get_clinical_session() as s:
+            repo = ClinicalRepository(s)
+            allocation = await repo.get_allocation_for_subject(subject_id)
+            if allocation is None:
+                return None
+            schedule = await s.get(RandomizationSchedule, allocation.schedule_id)
+            blinding = schedule.blinding if schedule else "open_label"
+            return _mask_allocation_for_caller(allocation, blinding)
+
+    @router.get(
+        "/deployments/{deployment_id}/allocations",
+        response_model=list[AllocationOut],
+    )
+    async def list_deployment_allocations(
+        deployment_id: str,
+        user: SessionPayload = require_permission_scoped(
+            Permission.RANDOMIZATION_READ, resource_param="deployment_id"
+        ),
+    ) -> list[AllocationOut]:
+        async with get_clinical_session() as s:
+            repo = ClinicalRepository(s)
+            rows = await repo.list_allocations(deployment_id)
+            schedule = await repo.get_active_schedule(deployment_id)
+            blinding = schedule.blinding if schedule else "open_label"
+            return [_mask_allocation_for_caller(r, blinding) for r in rows]
+
+    @router.post(
+        "/subjects/{subject_id}/code-break",
+        response_model=CodeBreakOut,
+        status_code=201,
+    )
+    async def code_break_subject(
+        subject_id: str,
+        body: CodeBreakIn,
+        user: SessionPayload = require_permission_scoped(
+            Permission.RANDOMIZATION_CODEBREAK, resource_param="subject_id"
+        ),
+    ) -> CodeBreakOut:
+        async with get_clinical_session() as s:
+            try:
+                event = await ClinicalRepository(s).code_break(
+                    subject_id, reason=body.reason, actor_sub=user.sub
+                )
+            except ClinicalError as e:
+                raise HTTPException(409, str(e)) from e
+            return CodeBreakOut.model_validate(event)
+
+    @router.get(
+        "/deployments/{deployment_id}/code-break-events",
+        response_model=list[CodeBreakOut],
+    )
+    async def list_deployment_code_breaks(
+        deployment_id: str,
+        user: SessionPayload = require_permission_scoped(
+            Permission.RANDOMIZATION_READ, resource_param="deployment_id"
+        ),
+    ) -> list[CodeBreakOut]:
+        async with get_clinical_session() as s:
+            rows = await ClinicalRepository(s).list_code_break_events(deployment_id)
+            return [CodeBreakOut.model_validate(r) for r in rows]
 
     return router
