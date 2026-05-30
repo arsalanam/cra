@@ -53,7 +53,7 @@ Where the item sits in the research lifecycle:
 | Execution | Randomisation / IRT service | **P0** | 💡 proposed | M |
 | Execution | AE / SAE workflow (detect, code, escalate) | **P0** | ✅ shipped 2026-05-29 | M |
 | Execution | eCRF formal validation pack (CSV / IQ-OQ-PQ) | **P0** | 📝 planned (feature-guide) | L |
-| Analysis | CDISC SDTM mapping → ADaM → TLF | **P0** | 💡 proposed | XL |
+| Analysis | CDISC SDTM mapping → ADaM → TLF | **P0** | ✅ shipped 2026-05-29 (partial — DM + AE + VS + ADSL + basic TLF; LB/EX/CM/MH/ADTTE deferred) | XL |
 | Analysis | CSR (ICH E3) drafter | **P0** | 💡 proposed | XL |
 | Execution | Protocol-deviation tracking + CAPA | **P1** | ✅ shipped 2026-05-29 | M |
 | Execution | Recruitment / screening logs | **P1** | 💡 proposed | S |
@@ -99,6 +99,7 @@ The starting state for this roadmap. Anything listed here is in production today
 | Sample-size calculator + SAP drafter — four formulas (two-proportions / two-means / time-to-event / paired) + ICH-E9-shaped Statistical Analysis Plan with PDF/DOCX export; multi-step PICOT → sample_size → analysis_plan → sap_document workflow | `src/research_assistant/tools/data_science/sample_size.py`, `agent/specialists/sap_drafter.py`, `reports/sap.py`, `domain/sap.py` |
 | eCRF safety subsystem — AE/SAE auto-classification (ICH E2A criteria) + 24h reporting timer + overdue SAE dashboard + MedDRA-PT field (free-text MVP; deploy with license for validation) + FDA 3500A draft PDF/DOCX; protocol-deviation log with major/minor/critical classification + CAPA lifecycle; subject-level safety panel in collector.html | `src/research_assistant/persistence/clinical/safety_rules.py`, `persistence/clinical/repository.py` (AE/deviation/CAPA methods), `reports/sae_3500a.py`, `web/edc.py` (16 safety endpoints), `web/static/collector.html` safety panel |
 | Manuscript drafter (IMRaD) + reviewer-response loop — 3-stage workflow (intake → draft → reviewer-response) targeting NEJM/Lancet/BMJ/JAMA/Annals/PLOS ONE/generic; PDF + DOCX export bundles cover letter + point-by-point; meta_analysis card gains a "→ Draft as manuscript" handoff button that seeds the new thread with the full meta-analysis JSON | `src/research_assistant/agent/specialists/manuscript_drafter.py`, `reports/manuscript.py`, `domain/manuscript.py`, three index.html card components |
+| CDISC SDTM → ADaM → TLF (partial) — `BuiltinPythonMapper` for DM/AE/VS via item-id mapping convention + per-deployment `ItemMappingConfig`; ADSL with SAFFL/ITTFL/DTHFL/AGEGR1; 3 tables (disposition / demographics / AE summary) + 1 SVG figure (top-10 AE frequency, hand-rolled); per-domain CSV + ZIP submission bundle with `define-overview.txt` manifest; `CdiscMapper` Protocol leaves a seam for an OSS-backed (pinnacle / OAK) implementation; 6 endpoints under `/api/edc/deployments/{id}/cdisc/*` gated by `cdisc.derive` / `cdisc.read` / `cdisc.export`; Submissions card in `collector.html` with run-derivation, CSV downloads, bundle download, collapsible TLF previews. Deferred: LB / EX / CM / MH SDTM domains, ADTTE, define.xml, XPT (CSV ships today), real MedDRA SOC mapping (PT is captured), randomisation-derived TRT01P/TRT01A (currently `"TBD"`). | `src/research_assistant/cdisc/` (mapper / adam / tlf / exporter / pipeline / terminology JSON), `web/edc.py` CDISC endpoints, `web/static/collector.html` Submissions card |
 | Sandboxed Python execution (Docker, network-disabled, capped CPU/RAM, RW output dir) | `src/research_assistant/tools/data_science/sandbox_exec.py` |
 | Multi-source paper search behind `PaperSource` Protocol (PubMed + Europe PMC live; Embase / Cochrane / Scopus / WoS as pluggable additions) | `src/research_assistant/tools/clinical/sources/` |
 | Per-thread quotas, per-turn ceilings, daily token caps | `src/research_assistant/services/quota.py`, `config/settings.py` |
@@ -196,16 +197,14 @@ Was a compliance-critical gap — closed. New `safety_rules.auto_classify_seriou
 
 ### Analysis / Reporting
 
-#### CDISC SDTM mapping → ADaM derivation → TLF generation · 💡 · XL
+#### ~~CDISC SDTM mapping → ADaM derivation → TLF generation~~ · ✅ shipped 2026-05-29 (partial) · XL
 
-The eCRF subsystem produces high-quality **research-grade** extracts (ODM-XML, JSON). SDTM domain mapping (DM, AE, VS, LB, EX, …) and ADaM derivation (ADSL, ADTTE) are what **regulators consume**. Tables/Listings/Figures (TLF) live on top of ADaM.
+First slice landed: SDTM **DM + AE + VS**, ADaM **ADSL**, and a basic TLF set (3 tables + 1 SVG figure), plus per-domain CSV and a submission-bundle ZIP. The pluggable `CdiscMapper` Protocol leaves room to swap in an OSS-backed implementation later without touching the API surface.
 
-Without these, eCRF data cannot reach a regulatory submission — capping the trial use case at "we collected the data" instead of "we submitted the trial".
-
-- **Effort:** XL — multi-quarter, ongoing. Likely incremental: SDTM first, then ADaM, then TLF.
-- **Dependencies:** eCRF ✅ shipped.
-- **Open question:** OSS mapping library (e.g. `pinnacle`, `OAK`) vs build internally? Material effort difference.
-- **Unlocks:** regulator-grade submissions; sponsor / CRO adoption; HTA dossiers downstream.
+- **What landed:** `cdisc/` package — `BuiltinPythonMapper` derives DM/AE/VS via an item-id mapping convention (`age`→AGE, `sex`→SEX, `sbp`→SYSBP …) overridable per deployment via `ItemMappingConfig`; controlled-terminology JSON for AE severity / outcome / relationship + DM sex / race + VS test codes; ADSL builds SAFFL / ITTFL / DTHFL / AGEGR1 (ICH E1 bins) with TRT01P/TRT01A defaulting to `"TBD"` until randomisation lands; TLF generator emits Disposition / Demographics / AE-summary tables (`content_json`) plus a hand-rolled top-10 AE-frequency SVG; per-domain CSV with SDTM column ordering + ZIP submission bundle (`sdtm/*.csv` + `adam/adsl.csv` + `tlf/*` + `define-overview.txt` manifest); `CdiscDerivation` audit row per run. Six endpoints under `/api/edc/deployments/{id}/cdisc/*` gated by `cdisc.derive` (data_manager only) / `cdisc.read` (data_manager, PI, monitor, auditor) / `cdisc.export` (data_manager + PI). Submissions card in `collector.html` with run-derivation, per-domain CSV download links, bundle download, and collapsible TLF previews.
+- **Resolved open question:** built internally in Python with a `CdiscMapper` Protocol seam — no R/OSS dependency at deploy time; an OSS-backed `pinnacle`/`OAK` subprocess implementation can be registered without changing endpoints when the platform is deployed in environments where that's preferred.
+- **Deferred for follow-up:** SDTM LB / EX / CM / MH; ADaM ADTTE (time-to-event analysis dataset); `define.xml` (today: `define-overview.txt` plain text); SAS Transport (XPT) — CSV is regulator-acceptable for many flows but XPT is the submission default; real MedDRA SOC back-indexing (PT is captured free-text); randomisation-derived TRT01P/TRT01A (waiting on IRT, P0 above).
+- **Unlocks now realised:** structured submission-bundle generation for sponsor / CRO adoption; the CSR drafter (P0, below) can begin once ADTTE + LB land.
 
 #### Clinical Study Report (CSR, ICH E3) drafter · 💡 · XL
 
@@ -358,9 +357,9 @@ Best ordering given unlock value × dependencies × effort:
 | ~~3~~ | ~~**Sample-size + SAP drafter (paired)**~~ — ✅ shipped 2026-05-29 | (Done — four formulas + ICH-E9 SAP workflow + PDF/DOCX export.) |
 | ~~4~~ | ~~**AE/SAE workflow + protocol-deviation tracking (paired)**~~ — ✅ shipped 2026-05-29 | (Done — ICH E2A auto-classification, 24h timer, FDA 3500A draft, CAPA lifecycle.) |
 | ~~5~~ | ~~**Manuscript drafter (IMRaD) + reviewer-response loop**~~ — ✅ shipped 2026-05-29 | (Done — 3-stage workflow with journal-target enum + handoff from meta_analysis + reviewer-response document; 575 tests pass.) |
-| 6 | **CDISC SDTM mapping (start the multi-quarter build)** | Largest effort item; needs to start now so it lands when CSR begins to demand it. Choose OSS library vs build during the design pass. |
+| ~~6~~ | ~~**CDISC SDTM mapping (start the multi-quarter build)**~~ — ✅ shipped 2026-05-29 (partial) | (Done — DM + AE + VS + ADSL + 3 tables + 1 SVG figure + submission-bundle ZIP. Built internally in Python with a `CdiscMapper` Protocol seam; LB/EX/CM/MH/ADTTE deferred.) |
 
-Beyond these six, sequencing flexes with customer pull.
+Beyond these six, sequencing flexes with customer pull. Likely next: **eCRF formal validation pack** (CSR/IQ-OQ-PQ — top P0 still outstanding), or fill in the deferred CDISC domains (LB / EX / ADTTE) ahead of starting the CSR drafter.
 
 ---
 
@@ -370,7 +369,7 @@ Beyond these six, sequencing flexes with customer pull.
 2. **RBAC vs SR screening sequencing** — SR screening *needs* RBAC for the two-reviewer model. Two options:
    - (a) RBAC first (delays screening start by ~1 quarter)
    - (b) screening built with placeholder two-user model, RBAC retrofitted later (faster MVP, ~1 week of rework when RBAC lands).
-3. **SDTM mapping** — adopt an existing OSS mapping library (e.g. `pinnacle`, `OAK`) or build internally? Material effort difference; affects sequencing of CSR.
+3. ~~**SDTM mapping** — adopt an existing OSS mapping library (e.g. `pinnacle`, `OAK`) or build internally?~~ → **Resolved 2026-05-29: build internally in Python**, with a `CdiscMapper` Protocol leaving room to register an OSS-backed implementation (subprocess) later without changing endpoints. First slice (DM + AE + VS + ADSL + basic TLF) shipped.
 4. **Sample-size + SAP** — new specialist, or extensions to the existing `sr_protocol` specialist? Worth a small design pass.
 5. **eCRF formal validation pack** — does any current customer require it for production deployment, or is it preventatively-prioritised? Answer changes its P0 → P1.
 6. **Source-document extraction priority** — current memory and feature-guide place it at the centre of the next eCRF/EDC build phase. Worth confirming it stays P1 vs being elevated to P0 if an EHR-integration customer pulls hard.

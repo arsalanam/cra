@@ -142,6 +142,7 @@ form.sign · form.unlock · casebook.signoff · subject.unlock
 audit.read
 sr.create · sr.manage · sr.read · sr.screen · sr.adjudicate · sr.ai_assist
 prisma.read
+cdisc.derive · cdisc.read · cdisc.export
 user.manage · source.manage
 ```
 
@@ -168,6 +169,9 @@ that role needs; the implementation expands them to the full catalogue.
 | `form.sign` / `casebook.signoff` | ✓ | – | – | – | ✓ | – | – | – | – |
 | `form.unlock` / `subject.unlock` | ✓ | – | – | – | – | – | ✓ | – | – |
 | `audit.read` | ✓ | – | – | – | ✓ | – | ✓ | ✓ | ✓ |
+| `cdisc.derive` | ✓ | – | – | – | – | – | ✓ | – | – |
+| `cdisc.read` | ✓ | – | – | – | ✓ | – | ✓ | ✓ | ✓ |
+| `cdisc.export` | ✓ | – | – | – | ✓ | – | ✓ | – | – |
 | `user.manage` / `source.manage` | ✓ | – | – | – | – | – | – | – | – |
 
 **Why `student` gets `skill.general_qa` despite being "meta-analysis only":** the
