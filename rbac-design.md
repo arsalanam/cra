@@ -130,7 +130,7 @@ skill.meta_analysis · skill.search_strategy · skill.sr_protocol ·
 skill.risk_of_bias · skill.general_qa · skill.ecrf_design ·
 skill.sap_drafter · skill.manuscript_drafter ·
 skill.registration_drafter · skill.irb_drafter ·
-skill.csr_drafter · skill.grade_drafter
+skill.csr_drafter · skill.grade_drafter · skill.trial_stats
 ae.record · ae.classify · sae.report
 deviation.record · deviation.classify · capa.author · capa.close
 library.read · library.write
