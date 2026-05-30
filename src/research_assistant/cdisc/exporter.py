@@ -37,6 +37,7 @@ from typing import Any
 
 from ..persistence.clinical.models import (
     AdamAdsl,
+    AdamAdtte,
     SdtmAe,
     SdtmCm,
     SdtmDm,
@@ -97,6 +98,13 @@ _MH_COLUMNS = [
     "MHTERM", "MHDECOD", "MHCAT",
     "MHSTDTC", "MHENDTC", "MHONGO",
 ]
+_ADTTE_COLUMNS = [
+    "STUDYID", "USUBJID", "PARAMCD", "PARAM",
+    "AVAL", "AVALU", "CNSR",
+    "STARTDT", "ADT",
+    "EVNTDESC", "SRCDOM", "SRCVAR",
+    "TRT01P", "TRT01A",
+]
 
 
 def _records_to_csv(columns: list[str], rows: Iterable[Any]) -> bytes:
@@ -146,6 +154,10 @@ def mh_to_csv(records: Iterable[SdtmMh]) -> bytes:
     return _records_to_csv(_MH_COLUMNS, records)
 
 
+def adtte_to_csv(records: Iterable[AdamAdtte]) -> bytes:
+    return _records_to_csv(_ADTTE_COLUMNS, records)
+
+
 def tlf_table_to_csv(tlf: TlfArtefact) -> bytes:
     """Serialise a TlfArtefact (kind='table' or 'listing') as CSV."""
     if tlf.kind not in ("table", "listing"):
@@ -176,17 +188,19 @@ def build_submission_bundle(
     ex: list[SdtmEx] | None = None,
     cm: list[SdtmCm] | None = None,
     mh: list[SdtmMh] | None = None,
+    adtte: list[AdamAdtte] | None = None,
 ) -> bytes:
     """Build the deployment's submission bundle as a ZIP bytes payload.
 
-    LB / EX / CM / MH are optional so existing callers (and the
-    empty-trial test path) keep working with just the original DM/AE/
-    VS/ADSL/TLF arguments. The pipeline always passes lists today
-    (possibly empty)."""
+    LB / EX / CM / MH / ADTTE are optional so existing callers (and
+    the empty-trial test path) keep working with just the original
+    DM/AE/VS/ADSL/TLF arguments. The pipeline always passes lists
+    today (possibly empty)."""
     lb_records = lb or []
     ex_records = ex or []
     cm_records = cm or []
     mh_records = mh or []
+    adtte_records = adtte or []
     ts = (triggered_at or datetime.now(UTC)).strftime("%Y-%m-%dT%H:%M:%SZ")
     manifest_lines = [
         "CRA submission bundle",
@@ -202,6 +216,7 @@ def build_submission_bundle(
         f"  SDTM CM:  {len(cm_records)}",
         f"  SDTM MH:  {len(mh_records)}",
         f"  ADaM ADSL: {len(adsl)}",
+        f"  ADaM ADTTE: {len(adtte_records)}",
         f"  TLF artefacts: {len(tlfs)}",
         "",
         "Notes:",
@@ -224,6 +239,7 @@ def build_submission_bundle(
         z.writestr("sdtm/cm.csv", cm_to_csv(cm_records))
         z.writestr("sdtm/mh.csv", mh_to_csv(mh_records))
         z.writestr("adam/adsl.csv", adsl_to_csv(adsl))
+        z.writestr("adam/adtte.csv", adtte_to_csv(adtte_records))
         for tlf in tlfs:
             ext = "svg" if tlf.kind == "figure" else "csv"
             content: bytes
@@ -237,6 +253,7 @@ def build_submission_bundle(
 
 __all__ = [
     "adsl_to_csv",
+    "adtte_to_csv",
     "ae_to_csv",
     "build_submission_bundle",
     "cm_to_csv",

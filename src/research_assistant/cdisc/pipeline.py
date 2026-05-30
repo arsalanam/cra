@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..persistence.clinical.models import (
     AdamAdsl,
+    AdamAdtte,
     AdverseEvent,
     CdiscDerivation,
     DeployedForm,
@@ -36,6 +37,7 @@ from ..persistence.clinical.models import (
     TlfArtefact,
 )
 from .adam_deriver import derive_adsl
+from .adtte_deriver import derive_adtte
 from .sdtm_mapper import (
     BuiltinPythonMapper,
     FormInstanceWithItems,
@@ -233,6 +235,7 @@ async def run_derivation(
         SdtmCm,
         SdtmMh,
         AdamAdsl,
+        AdamAdtte,
         TlfArtefact,
     ):
         await session.execute(
@@ -296,7 +299,18 @@ async def run_derivation(
         ae_records=ae,
         subject_item_data={s.subject_code: item_data_by_subject.get(s.id, []) for s in subjects},
     )
-    tlfs = generate_tlfs(deployment_id=deployment_id, adsl=adsl, ae_records=ae)
+    adtte = derive_adtte(
+        deployment_id=deployment_id,
+        study_id=study_id,
+        adsl=adsl,
+        ae_records=ae,
+    )
+    tlfs = generate_tlfs(
+        deployment_id=deployment_id,
+        adsl=adsl,
+        ae_records=ae,
+        adtte_records=adtte,
+    )
 
     session.add_all(dm)
     session.add_all(ae)
@@ -306,6 +320,7 @@ async def run_derivation(
     session.add_all(cm)
     session.add_all(mh)
     session.add_all(adsl)
+    session.add_all(adtte)
     session.add_all(tlfs)
 
     counts = {
@@ -317,6 +332,7 @@ async def run_derivation(
         "cm": len(cm),
         "mh": len(mh),
         "adsl": len(adsl),
+        "adtte": len(adtte),
         "tlf": len(tlfs),
     }
     triggered_at = datetime.now(UTC)
@@ -433,6 +449,22 @@ async def fetch_adsl(
     )
 
 
+async def fetch_adtte(
+    session: AsyncSession, deployment_id: str
+) -> list[AdamAdtte]:
+    return list(
+        (
+            await session.execute(
+                select(AdamAdtte)
+                .where(AdamAdtte.deployment_id == deployment_id)
+                .order_by(AdamAdtte.USUBJID, AdamAdtte.PARAMCD)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
 async def fetch_tlfs(
     session: AsyncSession, deployment_id: str
 ) -> list[TlfArtefact]:
@@ -516,6 +548,7 @@ async def fetch_mh(
 __all__ = [
     "DerivationResult",
     "fetch_adsl",
+    "fetch_adtte",
     "fetch_ae",
     "fetch_cm",
     "fetch_dm",

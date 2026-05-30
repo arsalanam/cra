@@ -900,6 +900,73 @@ class AdamAdsl(ClinicalBase):
     derived_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
+class AdamAdtte(ClinicalBase):
+    """ADaM Time-to-Event analysis dataset — one row per subject × PARAMCD.
+
+    PARAMCD enumerated for the MVP slice: TTAE (time to first AE),
+    TTSAE (time to first SAE), DEATH (overall survival). AVAL is the
+    elapsed time in AVALU (DAYS for the MVP). CNSR follows the SDTM/
+    ADaM convention: 0 = event observed, 1 = censored. SRCDOM /
+    SRCVAR carry the regulator-required audit trail back to the
+    source (e.g. SRCDOM=AE / SRCVAR=AESTDTC for TTAE event rows).
+    """
+
+    __tablename__ = "adam_adtte"
+    __table_args__ = (
+        UniqueConstraint(
+            "deployment_id", "USUBJID", "PARAMCD", name="uq_adam_adtte_param"
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    deployment_id: Mapped[str] = mapped_column(Text, index=True)
+    STUDYID: Mapped[str] = mapped_column(Text)
+    USUBJID: Mapped[str] = mapped_column(Text, index=True)
+    PARAMCD: Mapped[str] = mapped_column(Text, doc="TTAE | TTSAE | DEATH (MVP).")
+    PARAM: Mapped[str] = mapped_column(Text, doc="Human-readable parameter label.")
+    AVAL: Mapped[float | None] = mapped_column(
+        Float, nullable=True, default=None, doc="Analysis value (time in AVALU)."
+    )
+    AVALU: Mapped[str] = mapped_column(Text, default="DAYS")
+    CNSR: Mapped[int] = mapped_column(
+        Integer, doc="0 = event observed; 1 = censored (ADaM convention)."
+    )
+    STARTDT: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        default=None,
+        doc="Start date for the interval (usually DM.RFSTDTC).",
+    )
+    ADT: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        default=None,
+        doc="Analysis date — event date when CNSR=0, censor date when CNSR=1.",
+    )
+    EVNTDESC: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        default=None,
+        doc="Description of the observed event (free text).",
+    )
+    SRCDOM: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        default=None,
+        doc="Source SDTM domain (e.g. AE, DM) — for regulator audit trail.",
+    )
+    SRCVAR: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        default=None,
+        doc="Source variable in SRCDOM (e.g. AESTDTC, RFSTDTC).",
+    )
+    TRT01P: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    TRT01A: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+
+    derived_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
 class TlfArtefact(ClinicalBase):
     """A generated Table / Listing / Figure for the submission bundle.
 

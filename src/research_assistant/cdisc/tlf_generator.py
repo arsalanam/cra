@@ -22,7 +22,7 @@ from collections import Counter
 from collections.abc import Iterable
 from typing import Any
 
-from ..persistence.clinical.models import AdamAdsl, SdtmAe, TlfArtefact
+from ..persistence.clinical.models import AdamAdsl, AdamAdtte, SdtmAe, TlfArtefact
 
 
 def _table(
@@ -224,21 +224,107 @@ def _ae_frequency_figure(
     )
 
 
+def _km_median(times: list[float], events: list[int]) -> float | None:
+    """Median time-to-event via the Kaplan-Meier estimator.
+
+    Handles censoring properly (event=1 means observed, 0 means
+    censored — matches the convention used in this helper, NOT the
+    ADaM CNSR convention which is inverted). Returns the first time
+    at which the survival function S(t) drops below 0.5; None if it
+    never does (i.e. the median is not reached in the observation
+    window — a common, valid outcome for sparse or short follow-up).
+    """
+    if not times:
+        return None
+    paired = sorted(zip(times, events, strict=True), key=lambda x: x[0])
+    n_at_risk = len(paired)
+    surv = 1.0
+    median: float | None = None
+    i = 0
+    while i < len(paired):
+        t = paired[i][0]
+        j = i
+        events_at_t = 0
+        while j < len(paired) and paired[j][0] == t:
+            events_at_t += paired[j][1]
+            j += 1
+        if events_at_t > 0:
+            surv *= 1.0 - events_at_t / n_at_risk
+            if surv <= 0.5 and median is None:
+                median = t
+                break
+        n_at_risk -= (j - i)
+        i = j
+    return median
+
+
+def _tte_summary_table(
+    deployment_id: str, adtte_records: list[AdamAdtte]
+) -> TlfArtefact:
+    """Per-PARAMCD summary — n / events / censored / median TTE (days)."""
+    by_param: dict[str, dict[str, Any]] = {}
+    for r in adtte_records:
+        bucket = by_param.setdefault(
+            r.PARAMCD,
+            {"label": r.PARAM, "n": 0, "events": 0, "censored": 0, "times": [], "evts": []},
+        )
+        bucket["n"] += 1
+        if r.AVAL is not None:
+            bucket["times"].append(float(r.AVAL))
+            # K-M math uses 1=event, 0=censored; ADaM CNSR is inverted.
+            bucket["evts"].append(1 if r.CNSR == 0 else 0)
+        if r.CNSR == 0:
+            bucket["events"] += 1
+        else:
+            bucket["censored"] += 1
+    rows: list[list[Any]] = []
+    if not by_param:
+        rows.append(["(no ADTTE rows)", "—", "—", "—", "—"])
+    else:
+        for paramcd in sorted(by_param):
+            b = by_param[paramcd]
+            median = _km_median(b["times"], b["evts"])
+            rows.append(
+                [
+                    paramcd,
+                    b["label"],
+                    b["n"],
+                    f"{b['events']} ({b['censored']} censored)",
+                    f"{median:.1f}" if median is not None else "not reached",
+                ]
+            )
+    return _table(
+        deployment_id=deployment_id,
+        tlf_id="t-tte-summary",
+        title="Table 4 — Time-to-Event Summary",
+        columns=["PARAMCD", "Parameter", "n", "Events", "Median (days)"],
+        rows=rows,
+    )
+
+
 def generate_tlfs(
     *,
     deployment_id: str,
     adsl: Iterable[AdamAdsl],
     ae_records: Iterable[SdtmAe],
+    adtte_records: Iterable[AdamAdtte] | None = None,
 ) -> list[TlfArtefact]:
-    """Produce the MVP TLF set: 3 tables + 1 figure."""
+    """Produce the MVP TLF set: 4 tables + 1 figure.
+
+    `adtte_records` is optional for backward compatibility with the
+    sparse tests; when None, the t-tte-summary row is omitted.
+    """
     adsl_list = list(adsl)
     ae_list = list(ae_records)
-    return [
+    out: list[TlfArtefact] = [
         _disposition_table(deployment_id, adsl_list),
         _demographics_table(deployment_id, adsl_list),
         _ae_summary_table(deployment_id, ae_list, adsl_list),
         _ae_frequency_figure(deployment_id, ae_list),
     ]
+    if adtte_records is not None:
+        out.append(_tte_summary_table(deployment_id, list(adtte_records)))
+    return out
 
 
 __all__ = ["generate_tlfs"]

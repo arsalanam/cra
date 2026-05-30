@@ -82,7 +82,11 @@ extend-immutable-calls = [
 [tool.mypy]
 strict = true
 python_version = "3.13"
-exclude = ["tests/"]
+# Sandbox scripts are bundled package data — they execute inside the
+# Docker sandbox where pandas/numpy/statsmodels live; the host venv
+# may not have stubs for those. Treat them as opaque text from the
+# host's perspective and skip strict checking.
+exclude = ["tests/", "src/research_assistant/cdisc/sandbox_scripts/"]
 
 [[tool.mypy.overrides]]
 module = ["wikipediaapi", "tavily", "fitz", "docx", "docx.*", "pptx", "docker", "docker.*", "jose", "jose.*", "itsdangerous", "boto3", "botocore", "botocore.*", "pgvector", "pgvector.*", "apscheduler", "apscheduler.*", "reportlab", "reportlab.*"]

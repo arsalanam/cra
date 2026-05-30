@@ -1312,6 +1312,191 @@ def create_edc_router() -> APIRouter:
                 "counts": result.counts,
             }
 
+    @router.post("/deployments/{deployment_id}/cdisc/survival/render")
+    async def cdisc_render_survival(
+        deployment_id: str,
+        user: SessionPayload = require_permission_scoped(
+            Permission.CDISC_DERIVE, resource_param="deployment_id"
+        ),
+    ) -> dict[str, Any]:
+        """Run the K-M / Cox PH analysis script in the sandbox + persist
+        the resulting figures + Cox summary as TlfArtefact rows.
+
+        First CDISC output to round-trip the sandbox: pulls the current
+        ADTTE + ADSL rows, serialises them as JSON, hands them to
+        `_impl` along with the script text. Output PNGs are base64-
+        encoded into the TlfArtefact.svg_content field as data URIs so
+        the existing TLF preview UI renders them via an <img> tag
+        (which we already detect on the data-URI prefix).
+
+        Refuses 409 if no derivation has been run yet (no ADTTE rows
+        to analyse). Refuses 503 if the sandbox isn't available — the
+        sandbox is the regulator-audited compute boundary, so we
+        don't fall back to in-process Cox / K-M.
+        """
+        import base64
+        import json as _json
+
+        from ..cdisc.pipeline import (
+            fetch_adsl as _fetch_adsl,
+        )
+        from ..cdisc.pipeline import (
+            fetch_adtte as _fetch_adtte,
+        )
+        from ..persistence.clinical.models import TlfArtefact as _TlfArtefact
+        from ..tools.data_science.sandbox_exec import _impl as _sandbox_impl
+
+        settings = get_settings()
+        if not getattr(settings, "sandbox_enabled", False):
+            raise HTTPException(
+                503,
+                "Sandbox execution is disabled. Survival analyses require "
+                "the Docker sandbox — enable SANDBOX_ENABLED in the deploy.",
+            )
+
+        # Load script text from the bundled package data so the deploy
+        # ships one consistent script across all callers.
+        from importlib.resources import files as _files
+
+        script_text = (
+            _files("research_assistant.cdisc.sandbox_scripts")
+            .joinpath("survival_analysis.py")
+            .read_text(encoding="utf-8")
+        )
+
+        async with get_clinical_session() as s:
+            adsl = await _fetch_adsl(s, deployment_id)
+            adtte = await _fetch_adtte(s, deployment_id)
+            if not adtte:
+                raise HTTPException(
+                    409,
+                    "No ADTTE rows for this deployment — run /cdisc/derive first.",
+                )
+            payload = {
+                "adtte": [
+                    {
+                        "USUBJID": r.USUBJID,
+                        "PARAMCD": r.PARAMCD,
+                        "PARAM": r.PARAM,
+                        "AVAL": r.AVAL,
+                        "CNSR": r.CNSR,
+                        "TRT01A": r.TRT01A,
+                    }
+                    for r in adtte
+                ],
+                "adsl": [
+                    {"USUBJID": r.USUBJID, "TRT01A": r.TRT01A}
+                    for r in adsl
+                ],
+            }
+
+        result = await _sandbox_impl(
+            script_text, input_data=_json.dumps(payload), input_format="json"
+        )
+        if result.error:
+            raise HTTPException(500, f"Sandbox failed: {result.error}")
+
+        # Pull the PNGs back from images_dir; `_impl` returned URL paths
+        # of the form "/static/sandbox-images/{run_prefix}_km-{...}.png"
+        # — fetch them off disk so we can embed them as data URIs.
+        from pathlib import Path as _Path
+
+        images_dir = _Path(settings.images_dir)
+        new_tlfs: list[_TlfArtefact] = []
+        for filename, url_or_text in result.files.items():
+            if filename.startswith("km-") and filename.endswith(".png"):
+                stored_name = url_or_text.rsplit("/", 1)[-1]
+                png_path = images_dir / stored_name
+                if not png_path.exists():
+                    logger.warning("Survival PNG not found at %s", png_path)
+                    continue
+                b64 = base64.b64encode(png_path.read_bytes()).decode("ascii")
+                tlf_id = f"f-{filename.removesuffix('.png')}"
+                paramcd = filename.removeprefix("km-").removesuffix(".png").upper()
+                new_tlfs.append(
+                    _TlfArtefact(
+                        deployment_id=deployment_id,
+                        kind="figure",
+                        tlf_id=tlf_id,
+                        title=f"Figure — Kaplan-Meier for {paramcd}",
+                        svg_content=f"data:image/png;base64,{b64}",
+                    )
+                )
+            elif filename == "cox-summary.json" and isinstance(url_or_text, str):
+                try:
+                    cox = _json.loads(url_or_text)
+                except _json.JSONDecodeError:
+                    cox = {"params": []}
+                # Build a flat per-comparison table.
+                rows: list[list[Any]] = []
+                for param in cox.get("params", []):
+                    if not param.get("fitted"):
+                        rows.append(
+                            [
+                                param.get("paramcd", "?"),
+                                param.get("skip_reason", "not fitted"),
+                                "—", "—", "—", "—",
+                            ]
+                        )
+                        continue
+                    for crow in param.get("rows", []):
+                        rows.append(
+                            [
+                                param.get("paramcd", "?"),
+                                crow.get("comparison", "?"),
+                                f"{crow['hr']:.3f}",
+                                f"{crow['hr_95ci_lo']:.3f}",
+                                f"{crow['hr_95ci_hi']:.3f}",
+                                f"{crow['p_value']:.4f}",
+                            ]
+                        )
+                if not rows:
+                    rows.append(["(no Cox fits)", "—", "—", "—", "—", "—"])
+                new_tlfs.append(
+                    _TlfArtefact(
+                        deployment_id=deployment_id,
+                        kind="table",
+                        tlf_id="t-cox-ph-summary",
+                        title="Table 5 — Cox PH Summary (TRT01A reference)",
+                        content_json=json.dumps(
+                            {
+                                "columns": [
+                                    "PARAMCD",
+                                    "Comparison",
+                                    "HR",
+                                    "HR 95% CI low",
+                                    "HR 95% CI high",
+                                    "p-value",
+                                ],
+                                "rows": rows,
+                            }
+                        ),
+                    )
+                )
+
+        # Persist — replace any prior survival TLF rows for this deployment
+        # so a re-run is idempotent.
+        async with get_clinical_session() as s:
+            from sqlalchemy import delete as _delete
+
+            await s.execute(
+                _delete(_TlfArtefact)
+                .where(_TlfArtefact.deployment_id == deployment_id)
+                .where(
+                    (_TlfArtefact.tlf_id == "t-cox-ph-summary")
+                    | _TlfArtefact.tlf_id.like("f-km-%")
+                )
+            )
+            for tlf in new_tlfs:
+                s.add(tlf)
+            await s.flush()
+
+        return {
+            "deployment_id": deployment_id,
+            "tlfs_added": len(new_tlfs),
+            "stdout": result.stdout[:2000],
+        }
+
     @router.get("/deployments/{deployment_id}/cdisc/datasets")
     async def cdisc_list_datasets(
         deployment_id: str,
@@ -1334,6 +1519,7 @@ def create_edc_router() -> APIRouter:
     ) -> dict[str, Any]:
         from ..cdisc.pipeline import (
             fetch_adsl,
+            fetch_adtte,
             fetch_ae,
             fetch_cm,
             fetch_dm,
@@ -1364,11 +1550,13 @@ def create_edc_router() -> APIRouter:
                 rows = list(await fetch_mh(s, deployment_id))
             elif domain_upper == "ADSL":
                 rows = list(await fetch_adsl(s, deployment_id))
+            elif domain_upper == "ADTTE":
+                rows = list(await fetch_adtte(s, deployment_id))
             else:
                 raise HTTPException(
                     400,
                     f"Unknown domain {domain!r}. Choose one of: "
-                    "DM, AE, VS, LB, EX, CM, MH, ADSL.",
+                    "DM, AE, VS, LB, EX, CM, MH, ADSL, ADTTE.",
                 )
         return {
             "domain": domain_upper,
@@ -1393,6 +1581,7 @@ def create_edc_router() -> APIRouter:
     ) -> Response:
         from ..cdisc.exporter import (
             adsl_to_csv,
+            adtte_to_csv,
             ae_to_csv,
             cm_to_csv,
             dm_to_csv,
@@ -1403,6 +1592,7 @@ def create_edc_router() -> APIRouter:
         )
         from ..cdisc.pipeline import (
             fetch_adsl,
+            fetch_adtte,
             fetch_ae,
             fetch_cm,
             fetch_dm,
@@ -1430,11 +1620,13 @@ def create_edc_router() -> APIRouter:
                 payload = mh_to_csv(await fetch_mh(s, deployment_id))
             elif domain_upper == "ADSL":
                 payload = adsl_to_csv(await fetch_adsl(s, deployment_id))
+            elif domain_upper == "ADTTE":
+                payload = adtte_to_csv(await fetch_adtte(s, deployment_id))
             else:
                 raise HTTPException(
                     400,
                     f"Unknown domain {domain!r}. Choose one of: "
-                    "DM, AE, VS, LB, EX, CM, MH, ADSL.",
+                    "DM, AE, VS, LB, EX, CM, MH, ADSL, ADTTE.",
                 )
         return Response(
             content=payload,
@@ -1479,6 +1671,7 @@ def create_edc_router() -> APIRouter:
         from ..cdisc.exporter import build_submission_bundle
         from ..cdisc.pipeline import (
             fetch_adsl,
+            fetch_adtte,
             fetch_ae,
             fetch_cm,
             fetch_dm,
@@ -1506,6 +1699,7 @@ def create_edc_router() -> APIRouter:
             cm = await fetch_cm(s, deployment_id)
             mh = await fetch_mh(s, deployment_id)
             adsl = await fetch_adsl(s, deployment_id)
+            adtte = await fetch_adtte(s, deployment_id)
             tlfs = await fetch_tlfs(s, deployment_id)
             # Use the deployment's underlying research study id for the
             # manifest's STUDYID — that's what regulators expect.
@@ -1525,6 +1719,7 @@ def create_edc_router() -> APIRouter:
             cm=cm,
             mh=mh,
             adsl=adsl,
+            adtte=adtte,
             tlfs=tlfs,
         )
         return Response(
