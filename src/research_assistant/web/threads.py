@@ -22,8 +22,10 @@ from ..persistence.database import get_db_session
 from ..persistence.models import DEFAULT_USER_ID, Thread
 from ..persistence.repository import ThreadRepository
 from ..persistence.user_repository import UserRepository
+from ..reports import irb as _irb_report
 from ..reports import manuscript as _manuscript_report
 from ..reports import meta_analysis as _ma_report
+from ..reports import registration as _registration_report
 from ..reports import risk_of_bias as _rob_report
 from ..reports import sap as _sap_report
 from ..reports import sr_protocol as _proto_report
@@ -297,6 +299,20 @@ def create_thread_router() -> APIRouter:
             _manuscript_report.build_docx,
             "manuscript",
             "manuscript",
+        ),
+        "registration": (
+            _registration_report.assemble_report_data,
+            _registration_report.build_pdf,
+            _registration_report.build_docx,
+            "registration",
+            "trial registration",
+        ),
+        "irb": (
+            _irb_report.assemble_report_data,
+            _irb_report.build_pdf,
+            _irb_report.build_docx,
+            "irb-packet",
+            "IRB submission packet",
         ),
     }
 

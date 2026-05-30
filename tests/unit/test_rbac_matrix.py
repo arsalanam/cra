@@ -302,6 +302,9 @@ def test_skill_permission_covers_every_specialist() -> None:
         "sap_drafter",
         # manuscript_drafter (IMRaD + reviewer-response loop)
         "manuscript_drafter",
+        # Start-up tier: trial registration (CT.gov + EU CTR) + IRB packet
+        "registration_drafter",
+        "irb_drafter",
     }
     assert set(SKILL_PERMISSION) == expected_workflows
 
@@ -312,6 +315,35 @@ def test_researcher_can_run_sap_drafter_but_student_cannot() -> None:
     assert Permission.SKILL_SAP_DRAFTER in ROLE_PERMISSIONS[Role.RESEARCHER]
     assert Permission.SKILL_SAP_DRAFTER in ROLE_PERMISSIONS[Role.ADMIN]
     assert Permission.SKILL_SAP_DRAFTER not in ROLE_PERMISSIONS[Role.STUDENT]
+
+
+def test_researcher_can_run_registration_drafter_but_student_cannot() -> None:
+    """Start-up tier: trial-registration drafter is researcher-tier."""
+    assert Permission.SKILL_REGISTRATION_DRAFTER in ROLE_PERMISSIONS[Role.RESEARCHER]
+    assert Permission.SKILL_REGISTRATION_DRAFTER in ROLE_PERMISSIONS[Role.ADMIN]
+    assert Permission.SKILL_REGISTRATION_DRAFTER not in ROLE_PERMISSIONS[Role.STUDENT]
+
+
+def test_researcher_can_run_irb_drafter_but_student_cannot() -> None:
+    """Start-up tier: IRB packet drafter is researcher-tier."""
+    assert Permission.SKILL_IRB_DRAFTER in ROLE_PERMISSIONS[Role.RESEARCHER]
+    assert Permission.SKILL_IRB_DRAFTER in ROLE_PERMISSIONS[Role.ADMIN]
+    assert Permission.SKILL_IRB_DRAFTER not in ROLE_PERMISSIONS[Role.STUDENT]
+
+
+def test_clinical_roles_do_not_get_start_up_drafter_permissions() -> None:
+    """Coordinator / data_manager / monitor / PI / auditor don't draft
+    registrations or IRB packets — those are researcher-side artefacts."""
+    for role in (
+        Role.COORDINATOR,
+        Role.DATA_MANAGER,
+        Role.MONITOR,
+        Role.PRINCIPAL_INVESTIGATOR,
+        Role.AUDITOR,
+    ):
+        perms = ROLE_PERMISSIONS[role]
+        assert Permission.SKILL_REGISTRATION_DRAFTER not in perms
+        assert Permission.SKILL_IRB_DRAFTER not in perms
 
 
 def test_researcher_can_run_manuscript_drafter_but_student_cannot() -> None:

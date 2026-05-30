@@ -31,8 +31,10 @@ from ..auth.rbac import SKILL_PERMISSION, Permission
 from .specialists import (
     SPECIALISTS,
     general_qa,
+    irb_drafter,
     manuscript_drafter,
     meta_analysis,
+    registration_drafter,
     risk_of_bias,
     sap_drafter,
     search_strategy,
@@ -78,6 +80,15 @@ _SLASH_COMMANDS: dict[str, str] = {
     "imrad": manuscript_drafter.WORKFLOW_NAME,
     "draft": manuscript_drafter.WORKFLOW_NAME,
     "response": manuscript_drafter.WORKFLOW_NAME,
+    "register": registration_drafter.WORKFLOW_NAME,
+    "registration": registration_drafter.WORKFLOW_NAME,
+    "ctgov": registration_drafter.WORKFLOW_NAME,
+    "euctr": registration_drafter.WORKFLOW_NAME,
+    "ctis": registration_drafter.WORKFLOW_NAME,
+    "irb": irb_drafter.WORKFLOW_NAME,
+    "icf": irb_drafter.WORKFLOW_NAME,
+    "consent": irb_drafter.WORKFLOW_NAME,
+    "synopsis": irb_drafter.WORKFLOW_NAME,
     "general": general_qa.WORKFLOW_NAME,
     "ask": general_qa.WORKFLOW_NAME,
     # Future: "gap" -> "research_gap", "ecrf" -> "ecrf_design"
@@ -126,6 +137,19 @@ _WORKFLOW_CONTINUATIONS: dict[str, tuple[str, ...]] = {
         "Finalize reviewer response",
         "Draft as manuscript from meta-analysis",  # handoff seed (frontend)
         "Draft as manuscript from SR protocol",  # handoff seed
+    ),
+    registration_drafter.WORKFLOW_NAME: (
+        "Intake confirmed",
+        "Core fields confirmed",
+        "Drafts confirmed",
+        "Finalize registration",
+    ),
+    irb_drafter.WORKFLOW_NAME: (
+        "Synopsis confirmed",
+        "Refine ICF:",
+        "ICF confirmed",
+        "Finalize IRB",
+        "Draft IRB packet from registration intake",  # handoff seed
     ),
     # Future: research_gap / ecrf continuations
 }
@@ -192,6 +216,36 @@ _TRIGGER_KEYWORDS: list[tuple[str, list[re.Pattern[str]]]] = [
             re.compile(r"\btrial\s+design\b", re.I),
             re.compile(r"\bpowered\s+to\s+detect\b", re.I),
             re.compile(r"\bPICOT\b", re.I),
+        ],
+    ),
+    # registration_drafter: trial-registry shapes (CT.gov / EU CTR / CTIS).
+    # NB: dispatcher matches against `msg_lower`, so patterns are
+    # written lowercase (matches existing posture in this file).
+    (
+        registration_drafter.WORKFLOW_NAME,
+        [
+            re.compile(r"\bclinicaltrials\.?gov\b"),
+            re.compile(r"\bct\.gov\b"),
+            re.compile(r"\bprs\s+submission\b"),
+            re.compile(r"\beu\s*ctr\b"),
+            re.compile(r"\bctis\b"),
+            re.compile(r"\beudract\b"),
+            re.compile(r"\btrial\s+registration\b"),
+            re.compile(r"\bregister (a |an |the |my )?(trial|study)\b"),
+        ],
+    ),
+    # irb_drafter: IRB / ethics committee / Informed Consent Form.
+    (
+        irb_drafter.WORKFLOW_NAME,
+        [
+            re.compile(r"\birb\b"),
+            re.compile(r"\bethics\s+committee\b"),
+            re.compile(r"\binformed\s+consent\b"),
+            re.compile(r"\bicf\b"),
+            re.compile(r"\bprotocol\s+synopsis\b"),
+            re.compile(r"\b21\s*cfr\s*50(\.25)?\b"),
+            re.compile(r"\bich[-\s]?e6\b"),
+            re.compile(r"\bsubject\s+consent\b"),
         ],
     ),
     # sr_protocol checked before search_strategy/meta_analysis: phrases like

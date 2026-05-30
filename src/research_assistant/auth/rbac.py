@@ -32,6 +32,8 @@ class Permission(StrEnum):
     SKILL_ECRF_DESIGN = "skill.ecrf_design"
     SKILL_SAP_DRAFTER = "skill.sap_drafter"
     SKILL_MANUSCRIPT_DRAFTER = "skill.manuscript_drafter"
+    SKILL_REGISTRATION_DRAFTER = "skill.registration_drafter"
+    SKILL_IRB_DRAFTER = "skill.irb_drafter"
 
     # ── Library (cached publications + RAG) ──────────────────────────────
     LIBRARY_READ = "library.read"
@@ -158,6 +160,10 @@ _EVIDENCE_SKILLS: Final[frozenset[Permission]] = frozenset(
         # IMRaD manuscript drafter + reviewer-response loop — composes the
         # other workflows' outputs into a journal-shaped artefact.
         Permission.SKILL_MANUSCRIPT_DRAFTER,
+        # Start-up tier: trial-registration drafter (CT.gov + EU CTR /
+        # CTIS) and IRB-packet drafter (protocol synopsis + ICF).
+        Permission.SKILL_REGISTRATION_DRAFTER,
+        Permission.SKILL_IRB_DRAFTER,
     }
 )
 
@@ -422,6 +428,8 @@ SKILL_PERMISSION: Final[dict[str, Permission]] = {
     "ecrf_design": Permission.SKILL_ECRF_DESIGN,
     "sap_drafter": Permission.SKILL_SAP_DRAFTER,
     "manuscript_drafter": Permission.SKILL_MANUSCRIPT_DRAFTER,
+    "registration_drafter": Permission.SKILL_REGISTRATION_DRAFTER,
+    "irb_drafter": Permission.SKILL_IRB_DRAFTER,
 }
 
 
