@@ -139,6 +139,7 @@ data.read · data.enter
 query.raise · query.respond · query.close
 sdv.verify
 form.sign · form.unlock · casebook.signoff · subject.unlock
+study.lock
 audit.read
 sr.create · sr.manage · sr.read · sr.screen · sr.adjudicate · sr.ai_assist
 prisma.read
@@ -168,6 +169,7 @@ that role needs; the implementation expands them to the full catalogue.
 | `sdv.verify` | ✓ | – | – | – | – | – | – | ✓ | – |
 | `form.sign` / `casebook.signoff` | ✓ | – | – | – | ✓ | – | – | – | – |
 | `form.unlock` / `subject.unlock` | ✓ | – | – | – | – | – | ✓ | – | – |
+| `study.lock` | ✓ | – | – | – | – | – | ✓ | – | – |
 | `audit.read` | ✓ | – | – | – | ✓ | – | ✓ | ✓ | ✓ |
 | `cdisc.derive` | ✓ | – | – | – | – | – | ✓ | – | – |
 | `cdisc.read` | ✓ | – | – | – | ✓ | – | ✓ | ✓ | ✓ |
