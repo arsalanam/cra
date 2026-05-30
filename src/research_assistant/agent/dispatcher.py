@@ -30,6 +30,7 @@ from pydantic_ai.messages import ModelMessage
 from ..auth.rbac import SKILL_PERMISSION, Permission
 from .specialists import (
     SPECIALISTS,
+    csr_drafter,
     general_qa,
     irb_drafter,
     manuscript_drafter,
@@ -89,6 +90,9 @@ _SLASH_COMMANDS: dict[str, str] = {
     "icf": irb_drafter.WORKFLOW_NAME,
     "consent": irb_drafter.WORKFLOW_NAME,
     "synopsis": irb_drafter.WORKFLOW_NAME,
+    "csr": csr_drafter.WORKFLOW_NAME,
+    "e3": csr_drafter.WORKFLOW_NAME,
+    "study-report": csr_drafter.WORKFLOW_NAME,
     "general": general_qa.WORKFLOW_NAME,
     "ask": general_qa.WORKFLOW_NAME,
     # Future: "gap" -> "research_gap", "ecrf" -> "ecrf_design"
@@ -150,6 +154,16 @@ _WORKFLOW_CONTINUATIONS: dict[str, tuple[str, ...]] = {
         "ICF confirmed",
         "Finalize IRB",
         "Draft IRB packet from registration intake",  # handoff seed
+    ),
+    csr_drafter.WORKFLOW_NAME: (
+        "CSR intake confirmed",
+        "CSR synopsis confirmed",
+        "CSR data sections confirmed",
+        "Refine CSR:",
+        "Finalize CSR",
+        "Draft CSR from meta-analysis",  # handoff seed
+        "Draft CSR from ADTTE",  # handoff seed
+        "Draft CSR from SAP",  # handoff seed
     ),
     # Future: research_gap / ecrf continuations
 }
@@ -246,6 +260,16 @@ _TRIGGER_KEYWORDS: list[tuple[str, list[re.Pattern[str]]]] = [
             re.compile(r"\b21\s*cfr\s*50(\.25)?\b"),
             re.compile(r"\bich[-\s]?e6\b"),
             re.compile(r"\bsubject\s+consent\b"),
+        ],
+    ),
+    # csr_drafter: Clinical Study Report (ICH E3).
+    (
+        csr_drafter.WORKFLOW_NAME,
+        [
+            re.compile(r"\bclinical\s+study\s+report\b"),
+            re.compile(r"\bcsr\s+(draft|drafter|submission|document)\b"),
+            re.compile(r"\bich[-\s]?e3\b"),
+            re.compile(r"\bdraft\s+(a|the|my)?\s*csr\b"),
         ],
     ),
     # sr_protocol checked before search_strategy/meta_analysis: phrases like

@@ -305,6 +305,8 @@ def test_skill_permission_covers_every_specialist() -> None:
         # Start-up tier: trial registration (CT.gov + EU CTR) + IRB packet
         "registration_drafter",
         "irb_drafter",
+        # Analysis-finale tier: CSR (ICH E3) drafter
+        "csr_drafter",
     }
     assert set(SKILL_PERMISSION) == expected_workflows
 
@@ -329,6 +331,24 @@ def test_researcher_can_run_irb_drafter_but_student_cannot() -> None:
     assert Permission.SKILL_IRB_DRAFTER in ROLE_PERMISSIONS[Role.RESEARCHER]
     assert Permission.SKILL_IRB_DRAFTER in ROLE_PERMISSIONS[Role.ADMIN]
     assert Permission.SKILL_IRB_DRAFTER not in ROLE_PERMISSIONS[Role.STUDENT]
+
+
+def test_researcher_can_run_csr_drafter_but_student_cannot() -> None:
+    """Analysis-finale tier: CSR (ICH E3) drafter is researcher-tier."""
+    assert Permission.SKILL_CSR_DRAFTER in ROLE_PERMISSIONS[Role.RESEARCHER]
+    assert Permission.SKILL_CSR_DRAFTER in ROLE_PERMISSIONS[Role.ADMIN]
+    assert Permission.SKILL_CSR_DRAFTER not in ROLE_PERMISSIONS[Role.STUDENT]
+
+
+def test_clinical_roles_do_not_get_csr_drafter_permission() -> None:
+    for role in (
+        Role.COORDINATOR,
+        Role.DATA_MANAGER,
+        Role.MONITOR,
+        Role.PRINCIPAL_INVESTIGATOR,
+        Role.AUDITOR,
+    ):
+        assert Permission.SKILL_CSR_DRAFTER not in ROLE_PERMISSIONS[role]
 
 
 def test_data_manager_generates_randomization_schedule() -> None:

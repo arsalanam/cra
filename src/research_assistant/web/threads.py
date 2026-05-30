@@ -22,6 +22,7 @@ from ..persistence.database import get_db_session
 from ..persistence.models import DEFAULT_USER_ID, Thread
 from ..persistence.repository import ThreadRepository
 from ..persistence.user_repository import UserRepository
+from ..reports import csr as _csr_report
 from ..reports import irb as _irb_report
 from ..reports import manuscript as _manuscript_report
 from ..reports import meta_analysis as _ma_report
@@ -313,6 +314,13 @@ def create_thread_router() -> APIRouter:
             _irb_report.build_docx,
             "irb-packet",
             "IRB submission packet",
+        ),
+        "csr": (
+            _csr_report.assemble_report_data,
+            _csr_report.build_pdf,
+            _csr_report.build_docx,
+            "csr",
+            "Clinical Study Report (ICH E3)",
         ),
     }
 

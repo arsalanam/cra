@@ -34,6 +34,7 @@ class Permission(StrEnum):
     SKILL_MANUSCRIPT_DRAFTER = "skill.manuscript_drafter"
     SKILL_REGISTRATION_DRAFTER = "skill.registration_drafter"
     SKILL_IRB_DRAFTER = "skill.irb_drafter"
+    SKILL_CSR_DRAFTER = "skill.csr_drafter"
 
     # ── Library (cached publications + RAG) ──────────────────────────────
     LIBRARY_READ = "library.read"
@@ -170,6 +171,10 @@ _EVIDENCE_SKILLS: Final[frozenset[Permission]] = frozenset(
         # CTIS) and IRB-packet drafter (protocol synopsis + ICF).
         Permission.SKILL_REGISTRATION_DRAFTER,
         Permission.SKILL_IRB_DRAFTER,
+        # Analysis-finale tier: CSR (ICH E3) drafter — composes the
+        # other workflows' outputs into the regulator-submission
+        # Clinical Study Report.
+        Permission.SKILL_CSR_DRAFTER,
     }
 )
 
@@ -456,6 +461,7 @@ SKILL_PERMISSION: Final[dict[str, Permission]] = {
     "manuscript_drafter": Permission.SKILL_MANUSCRIPT_DRAFTER,
     "registration_drafter": Permission.SKILL_REGISTRATION_DRAFTER,
     "irb_drafter": Permission.SKILL_IRB_DRAFTER,
+    "csr_drafter": Permission.SKILL_CSR_DRAFTER,
 }
 
 
