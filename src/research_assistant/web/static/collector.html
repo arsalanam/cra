@@ -61,6 +61,10 @@
           <h2>Submissions (CDISC)</h2>
           <div id="cdisc-summary" class="muted">Select a deployment to view CDISC datasets.</div>
         </div>
+        <div class="card">
+          <h2>Study lock <span id="lock-badge" class="muted" style="font-size:11px"></span></h2>
+          <div id="lock-summary" class="muted">Select a deployment to view its lock state.</div>
+        </div>
       </div>
       <div>
         <div class="card">
@@ -457,9 +461,82 @@
     } catch (e) { setStatus("Derivation failed: "+e.message,"err"); }
   }
 
-  /* Reload the CDISC panel when the user picks a different deployment. */
+  /* ── Study lock (eCRF E7 — validation pack) ─────────────────────────── */
+
+  async function loadLockStatus(){
+    const root=document.getElementById("lock-summary");
+    const badge=document.getElementById("lock-badge");
+    if(!depId){ root.className="muted"; root.textContent="Select a deployment to view its lock state."; badge.textContent=""; return; }
+    try {
+      const r = await api(`/api/edc/deployments/${depId}/lock-status`);
+      if(!r.ok){ root.className="muted"; root.textContent="Lock status unavailable."; badge.textContent=""; return; }
+      const s = await r.json();
+      if(s.locked){
+        badge.textContent="🔒 LOCKED"; badge.style.color="#b95900";
+        const lock=s.active_lock||{};
+        root.className="";
+        root.innerHTML = `
+          <div><b>Locked at:</b> ${lock.locked_at?new Date(lock.locked_at).toLocaleString():"—"}</div>
+          <div><b>By:</b> ${esc(lock.locked_by_sub||"—")}</div>
+          <div><b>Reason:</b> ${esc(lock.lock_reason||"—")}</div>
+          <div class="row" style="margin-top:8px">
+            <input type="text" id="lock-unlock-reason" placeholder="Unlock reason" style="flex:1; min-width:200px" />
+            <button class="btn" onclick="unlockStudy()">Unlock study</button>
+          </div>
+        `;
+      } else {
+        badge.textContent="🔓 UNLOCKED"; badge.style.color="#3a7d44";
+        root.className="";
+        root.innerHTML = `
+          <div class="muted" style="margin-bottom:6px">Database is open — entries, signatures, and SDV are accepted. Lock once data capture + queries are closed for the analysis snapshot.</div>
+          <div class="row">
+            <input type="text" id="lock-reason" placeholder="Lock reason (e.g. interim analysis)" style="flex:1; min-width:200px" />
+            <label style="margin:0;text-transform:none;color:#5a6070;font-size:11px"><input type="checkbox" id="lock-force" /> force (ignore open queries)</label>
+            <button class="btn" onclick="lockStudy()">Lock study</button>
+          </div>
+        `;
+      }
+    } catch (e) { root.className="muted"; root.textContent="Lock status unavailable."; badge.textContent=""; }
+  }
+
+  async function lockStudy(){
+    const reason=(document.getElementById("lock-reason").value||"").trim();
+    if(!reason){ setStatus("A lock reason is required.","err"); return; }
+    const force=document.getElementById("lock-force").checked;
+    try {
+      const r = await api(`/api/edc/deployments/${depId}/lock`, {method:"POST", body: JSON.stringify({reason, force_open_queries: force})});
+      if(!r.ok){
+        const j=await r.json().catch(()=>({detail:r.statusText}));
+        setStatus("Lock failed: "+(j.detail||r.statusText),"err");
+        return;
+      }
+      setStatus("Study locked.","ok");
+      await loadLockStatus();
+    } catch (e) { setStatus("Lock failed: "+e.message,"err"); }
+  }
+
+  async function unlockStudy(){
+    const reason=(document.getElementById("lock-unlock-reason").value||"").trim();
+    if(!reason){ setStatus("An unlock reason is required.","err"); return; }
+    try {
+      const r = await api(`/api/edc/deployments/${depId}/unlock`, {method:"POST", body: JSON.stringify({reason})});
+      if(!r.ok){
+        const j=await r.json().catch(()=>({detail:r.statusText}));
+        setStatus("Unlock failed: "+(j.detail||r.statusText),"err");
+        return;
+      }
+      setStatus("Study unlocked.","ok");
+      await loadLockStatus();
+    } catch (e) { setStatus("Unlock failed: "+e.message,"err"); }
+  }
+
+  /* Reload the CDISC + lock panels when the user picks a different deployment. */
   const originalSelectDeployment = selectDeployment;
-  selectDeployment = async function(id){ await originalSelectDeployment(id); await loadCdiscSummary(); };
+  selectDeployment = async function(id){
+    await originalSelectDeployment(id);
+    await loadCdiscSummary();
+    await loadLockStatus();
+  };
 
   loadDeployments();
 </script>

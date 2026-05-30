@@ -66,6 +66,9 @@ class Permission(StrEnum):
     CASEBOOK_SIGNOFF = "casebook.signoff"
     SUBJECT_UNLOCK = "subject.unlock"
 
+    # ── Study-level lock (E7 — validation pack) ──────────────────────────
+    STUDY_LOCK = "study.lock"
+
     # ── eCRF safety subsystem (AE/SAE + protocol deviations + CAPA) ──────
     AE_RECORD = "ae.record"
     AE_CLASSIFY = "ae.classify"
@@ -268,6 +271,10 @@ ROLE_PERMISSIONS: Final[dict[Role, frozenset[Permission]]] = {
             Permission.CDISC_DERIVE,
             Permission.CDISC_READ,
             Permission.CDISC_EXPORT,
+            # E7: DM locks the study database for analysis. PI does NOT
+            # carry study.lock — separation-of-duties: PI signs off the
+            # casebook, DM locks the database afterward.
+            Permission.STUDY_LOCK,
         }
     ),
     Role.MONITOR: frozenset(

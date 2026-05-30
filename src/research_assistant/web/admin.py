@@ -1,4 +1,5 @@
-"""Admin endpoints — paper-source config + user invitations.
+"""Admin endpoints — paper-source config + user invitations + the
+validation pack (IQ / OQ / PQ) download surface (eCRF E7).
 
 Gated by the `AdminUser` dependency (Phase D): the caller must hold the
 'admin' role. When auth is disabled (tests / early dev) the dependency
@@ -11,17 +12,29 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 
 from ..auth.cognito_admin import CognitoAdminError, create_cognito_user
 from ..auth.rbac import Role, ScopeType, normalize_legacy_role
 from ..config import get_settings
+from ..persistence.clinical.database import get_clinical_session
 from ..persistence.database import get_db_session
 from ..persistence.models import RoleAssignment, SourceConfig, User
 from ..persistence.user_repository import UserRepository
+from ..reports.validation_pack import (
+    build_validation_bundle_zip,
+    render_iq_pdf,
+    render_oq_pdf,
+    render_pq_pdf,
+)
+from ..validation.iq import InstallationSnapshot, collect_iq_snapshot
+from ..validation.oq import OperationalReport, run_oq
+from ..validation.pq import PerformanceRunbook
+from ..validation.rtm import load_requirements_matrix
 from .auth import AdminUser
 
 logger = logging.getLogger(__name__)
@@ -290,5 +303,91 @@ def create_admin_router() -> APIRouter:
                 ", ".join(updates.keys()) or "(no fields)",
             )
             return SourceConfigOut.model_validate(row)
+
+    # ── Validation pack (eCRF E7) ──────────────────────────────────────────
+
+    last_oq_report: dict[str, OperationalReport] = {}
+
+    async def _build_iq_snapshot(environment: str) -> InstallationSnapshot:
+        async with get_clinical_session() as s:
+            return await collect_iq_snapshot(s, deployment_environment=environment)
+
+    @router.get("/validation-pack/iq.pdf")
+    async def get_iq_pdf(
+        admin: AdminUser,
+        environment: str = Query(default="unknown"),
+    ) -> Response:
+        snapshot = await _build_iq_snapshot(environment)
+        pdf = render_iq_pdf(snapshot)
+        return Response(
+            content=pdf,
+            media_type="application/pdf",
+            headers={"Content-Disposition": 'attachment; filename="iq-snapshot.pdf"'},
+        )
+
+    @router.get("/validation-pack/iq.json")
+    async def get_iq_json(
+        admin: AdminUser,
+        environment: str = Query(default="unknown"),
+    ) -> InstallationSnapshot:
+        return await _build_iq_snapshot(environment)
+
+    @router.post("/validation-pack/oq/run", response_model=OperationalReport)
+    async def run_oq_now(admin: AdminUser) -> OperationalReport:
+        """Execute pytest over the RTM tests + persist the result in
+        memory so subsequent OQ PDF downloads avoid a second run."""
+        report = await run_in_threadpool(run_oq)
+        last_oq_report["latest"] = report
+        return report
+
+    @router.get("/validation-pack/oq.pdf")
+    async def get_oq_pdf(admin: AdminUser) -> Response:
+        report = last_oq_report.get("latest")
+        if report is None:
+            raise HTTPException(
+                409,
+                "No OQ run on record. POST /api/admin/validation-pack/oq/run first.",
+            )
+        return Response(
+            content=render_oq_pdf(report),
+            media_type="application/pdf",
+            headers={"Content-Disposition": 'attachment; filename="oq-report.pdf"'},
+        )
+
+    @router.get("/validation-pack/oq/last", response_model=OperationalReport | None)
+    async def get_last_oq(admin: AdminUser) -> OperationalReport | None:
+        return last_oq_report.get("latest")
+
+    @router.get("/validation-pack/pq.pdf")
+    async def get_pq_pdf(admin: AdminUser) -> Response:
+        runbook = PerformanceRunbook()
+        return Response(
+            content=render_pq_pdf(runbook),
+            media_type="application/pdf",
+            headers={"Content-Disposition": 'attachment; filename="pq-runbook.pdf"'},
+        )
+
+    @router.get("/validation-pack/bundle.zip")
+    async def get_bundle_zip(
+        admin: AdminUser,
+        environment: str = Query(default="unknown"),
+    ) -> Response:
+        snapshot = await _build_iq_snapshot(environment)
+        payload = build_validation_bundle_zip(
+            iq_snapshot=snapshot,
+            oq_report=last_oq_report.get("latest"),
+            pq_runbook=PerformanceRunbook(),
+        )
+        return Response(
+            content=payload,
+            media_type="application/zip",
+            headers={"Content-Disposition": 'attachment; filename="validation-pack.zip"'},
+        )
+
+    @router.get("/validation-pack/rtm")
+    async def get_rtm(admin: AdminUser) -> dict[str, object]:
+        """Surface the RTM as JSON for the admin UI table."""
+        matrix = load_requirements_matrix()
+        return matrix.model_dump()
 
     return router

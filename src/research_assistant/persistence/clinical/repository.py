@@ -36,6 +36,7 @@ from .models import (
     Signature,
     Site,
     StudyDeployment,
+    StudyLock,
     Subject,
     SubjectSignature,
     Verification,
@@ -55,6 +56,12 @@ class ClinicalError(Exception):
 
 class LockedError(ClinicalError):
     """Edit attempted on a signed/locked form instance — unlock it first."""
+
+
+class StudyLockedError(ClinicalError):
+    """Operation attempted while the deployment-wide study database is
+    locked (eCRF E7 — validation pack). All writes/signs/SDV are refused
+    until a `data_manager` unlocks the study."""
 
 
 class HardCheckError(Exception):
@@ -809,6 +816,118 @@ class ClinicalRepository:
             .order_by(SubjectSignature.signed_at)
         )
         return list(rows.all())
+
+    # ── Study-level lock (E7 — validation pack) ─────────────────────────────
+
+    async def get_active_study_lock(self, deployment_id: str) -> StudyLock | None:
+        """Return the currently-active lock for a deployment, or None."""
+        rows = await self._s.scalars(
+            select(StudyLock)
+            .where(StudyLock.deployment_id == deployment_id)
+            .where(StudyLock.unlocked_at.is_(None))
+            .order_by(StudyLock.locked_at.desc())
+        )
+        return rows.first()
+
+    async def is_study_locked(self, deployment_id: str) -> bool:
+        return (await self.get_active_study_lock(deployment_id)) is not None
+
+    async def lock_study(
+        self,
+        deployment_id: str,
+        *,
+        reason: str,
+        actor_sub: str | None,
+        require_no_open_queries: bool = True,
+    ) -> StudyLock:
+        """Lock the whole deployment for analysis. Refuses while open
+        (non-closed) queries exist unless `require_no_open_queries=False`."""
+        if await self._s.get(StudyDeployment, deployment_id) is None:
+            raise ClinicalError(f"Deployment {deployment_id!r} not found")
+        if await self.is_study_locked(deployment_id):
+            raise ClinicalError(f"Deployment {deployment_id!r} is already locked")
+        if require_no_open_queries:
+            open_q = await self._s.scalars(
+                select(Query)
+                .join(FormInstance, Query.form_instance_id == FormInstance.id)
+                .join(Subject, FormInstance.subject_id == Subject.id)
+                .where(Subject.deployment_id == deployment_id)
+                .where(Query.status != "closed")
+                .limit(1)
+            )
+            if open_q.first() is not None:
+                raise ClinicalError(
+                    "Cannot lock: at least one open query exists. "
+                    "Resolve all queries first or pass require_no_open_queries=False."
+                )
+        lock = StudyLock(
+            deployment_id=deployment_id,
+            lock_reason=reason,
+            locked_by_sub=actor_sub,
+        )
+        self._s.add(lock)
+        await self._s.flush()
+        self._audit(
+            entity_type="study_deployment",
+            entity_id=deployment_id,
+            action="study_lock",
+            new_value="locked",
+            reason=reason,
+            actor_sub=actor_sub,
+        )
+        return lock
+
+    async def unlock_study(
+        self,
+        deployment_id: str,
+        *,
+        reason: str,
+        actor_sub: str | None,
+    ) -> StudyLock:
+        """Release the deployment-wide lock (audited)."""
+        lock = await self.get_active_study_lock(deployment_id)
+        if lock is None:
+            raise ClinicalError(f"Deployment {deployment_id!r} is not locked")
+        lock.unlocked_at = datetime.now(UTC)
+        lock.unlocked_by_sub = actor_sub
+        lock.unlock_reason = reason
+        await self._s.flush()
+        self._audit(
+            entity_type="study_deployment",
+            entity_id=deployment_id,
+            action="study_unlock",
+            old_value="locked",
+            new_value="unlocked",
+            reason=reason,
+            actor_sub=actor_sub,
+        )
+        return lock
+
+    async def list_study_locks(self, deployment_id: str) -> list[StudyLock]:
+        rows = await self._s.scalars(
+            select(StudyLock)
+            .where(StudyLock.deployment_id == deployment_id)
+            .order_by(StudyLock.locked_at)
+        )
+        return list(rows.all())
+
+    async def deployment_id_for_form_instance(self, form_instance_id: str) -> str | None:
+        fi = await self._s.get(FormInstance, form_instance_id)
+        if fi is None:
+            return None
+        subj = await self._s.get(Subject, fi.subject_id)
+        return subj.deployment_id if subj is not None else None
+
+    async def deployment_id_for_subject(self, subject_id: str) -> str | None:
+        subj = await self._s.get(Subject, subject_id)
+        return subj.deployment_id if subj is not None else None
+
+    async def assert_study_unlocked(self, deployment_id: str) -> None:
+        if await self.is_study_locked(deployment_id):
+            raise StudyLockedError(
+                f"Deployment {deployment_id!r} is locked. "
+                "Unlock the study before further writes / signatures / SDV."
+            )
 
     async def list_form_instances(self, subject_id: str) -> list[FormInstance]:
         rows = await self._s.scalars(

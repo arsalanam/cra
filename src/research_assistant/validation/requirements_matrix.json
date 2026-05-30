@@ -1,0 +1,136 @@
+{
+  "version": "1.0.0",
+  "generated_at": "2026-05-29",
+  "requirements": [
+    {
+      "code": "AUDIT-001",
+      "title": "Every write captures actor, action, old/new value, and timestamp",
+      "regulatory_anchor": "21 CFR Part 11 §11.10(e); ALCOA+ — Attributable, Original",
+      "system_anchor": "ClinicalRepository._audit(...) is called from every write path.",
+      "tests": [
+        "tests/unit/test_clinical_capture.py::test_submit_audits_each_item_and_change",
+        "tests/unit/test_clinical_capture.py::test_deploy_snapshots_forms_and_audits"
+      ]
+    },
+    {
+      "code": "AUDIT-002",
+      "title": "Audit-trail rows survive end-to-end through the API",
+      "regulatory_anchor": "21 CFR Part 11 §11.10(e); ICH E6(R2) §5.5.3(b)",
+      "system_anchor": "Integration test exercises deploy + capture + audit retrieval via the FastAPI surface.",
+      "tests": [
+        "tests/integration/test_edc_api.py::test_deploy_capture_and_audit"
+      ]
+    },
+    {
+      "code": "SIGN-001",
+      "title": "Electronic signature requires two identification components",
+      "regulatory_anchor": "21 CFR Part 11 §11.200(a)(1)",
+      "system_anchor": "_require_signing_reauth() in web/edc.py + verify_user_password helper hit Cognito.",
+      "tests": [
+        "tests/unit/test_password_reauth.py::test_verify_user_password_happy_path",
+        "tests/unit/test_password_reauth.py::test_verify_user_password_returns_false_on_bad_password"
+      ]
+    },
+    {
+      "code": "SIGN-002",
+      "title": "Signature binds to the exact data state; unlocking voids the signature",
+      "regulatory_anchor": "21 CFR Part 11 §11.70",
+      "system_anchor": "Signature.content_hash + unlock_form_instance flips signature.voided=True.",
+      "tests": [
+        "tests/integration/test_edc_api.py::test_sign_lock_and_unlock",
+        "tests/integration/test_edc_api.py::test_cannot_sign_incomplete_form"
+      ]
+    },
+    {
+      "code": "SIGN-003",
+      "title": "Subject-level casebook sign-off locks all of a subject's forms",
+      "regulatory_anchor": "21 CFR Part 11 §11.50/§11.70; ICH E6(R2) §5.18.4",
+      "system_anchor": "sign_subject + subject_signatures row + downstream lock semantics.",
+      "tests": [
+        "tests/integration/test_edc_api.py::test_subject_signoff_locks_then_unlock"
+      ]
+    },
+    {
+      "code": "LOCK-001",
+      "title": "Study-level database lock blocks all writes / signatures / SDV",
+      "regulatory_anchor": "ICH E6(R2) §5.5.3(c); GCP — database lock at analysis",
+      "system_anchor": "_require_deployment_unlocked_for_* gates in web/edc.py + repository assert.",
+      "tests": [
+        "tests/integration/test_study_lock_endpoint.py::test_locked_study_refuses_submit_data",
+        "tests/integration/test_study_lock_endpoint.py::test_locked_study_refuses_signing",
+        "tests/integration/test_study_lock_endpoint.py::test_locked_study_refuses_sdv_verify"
+      ]
+    },
+    {
+      "code": "LOCK-002",
+      "title": "Lock is refused while non-closed queries exist (unless explicitly forced)",
+      "regulatory_anchor": "ICH E6(R2) §5.5.3(c)",
+      "system_anchor": "lock_study(require_no_open_queries=True) check in ClinicalRepository.",
+      "tests": [
+        "tests/unit/test_study_lock.py::test_lock_refused_with_open_queries",
+        "tests/unit/test_study_lock.py::test_lock_force_open_queries_overrides"
+      ]
+    },
+    {
+      "code": "LOCK-003",
+      "title": "Only data_manager (or admin) can lock the study database",
+      "regulatory_anchor": "ICH E6(R2) §5.1.3 — separation of duties",
+      "system_anchor": "ROLE_PERMISSIONS Permission.STUDY_LOCK only on data_manager + admin.",
+      "tests": [
+        "tests/integration/test_study_lock_endpoint.py::test_data_manager_can_lock_unlock",
+        "tests/integration/test_study_lock_endpoint.py::test_coordinator_cannot_lock"
+      ]
+    },
+    {
+      "code": "RBAC-001",
+      "title": "Scope-bound permission checks satisfy broader scopes (global > study > site)",
+      "regulatory_anchor": "21 CFR Part 11 §11.10(d); ICH E6(R2) §1.6.5",
+      "system_anchor": "auth/rbac.py + persistence/role_resolver — scope hierarchy in is_scope_satisfied.",
+      "tests": [
+        "tests/unit/test_rbac_scope.py::test_global_assignment_always_applies",
+        "tests/unit/test_rbac_scope.py::test_study_check_aggregates_global_plus_matching_study_grants"
+      ]
+    },
+    {
+      "code": "RBAC-002",
+      "title": "Separation of duties: PI signs; DM unlocks + locks the study",
+      "regulatory_anchor": "ICH E6(R2) §5.1.3; ALCOA+ — Accurate, Original",
+      "system_anchor": "ROLE_PERMISSIONS — PI carries form.sign; DM carries form.unlock + study.lock.",
+      "tests": [
+        "tests/unit/test_rbac_matrix.py::test_pi_signs_and_signs_off_casebook",
+        "tests/unit/test_rbac_matrix.py::test_data_manager_holds_query_and_unlock_powers"
+      ]
+    },
+    {
+      "code": "DATA-001",
+      "title": "Edit-check failures block save (hard checks) atomically",
+      "regulatory_anchor": "ICH E6(R2) §5.5.3(a); FDA 2018 CSV guidance §5.3",
+      "system_anchor": "HardCheckError raised from submit_item_data when hard check fails — nothing persisted.",
+      "tests": [
+        "tests/unit/test_clinical_queries.py::test_hard_check_blocks_and_saves_nothing",
+        "tests/integration/test_edc_api.py::test_hard_check_returns_422_and_saves_nothing"
+      ]
+    },
+    {
+      "code": "AE-001",
+      "title": "Auto-classification of serious AEs per ICH E2A criteria",
+      "regulatory_anchor": "ICH E2A §III.A; 21 CFR §312.32(c)",
+      "system_anchor": "safety_rules.auto_classify_serious applies grade≥3 / death / life-threatening / hospitalisation / congenital / persistent-disability / other-significant criteria.",
+      "tests": [
+        "tests/unit/test_safety_rules.py::test_grade_3_alone_auto_serious_with_catchall_reason",
+        "tests/unit/test_safety_rules.py::test_grade_5_promotes_to_death_reason",
+        "tests/unit/test_safety_rules.py::test_hospitalisation_flag_supersedes_catchall_reason"
+      ]
+    },
+    {
+      "code": "PHI-001",
+      "title": "PHI minimisation in CDISC-derived datasets",
+      "regulatory_anchor": "HIPAA Safe Harbor; GDPR Art. 5(1)(c)",
+      "system_anchor": "CDISC exporters use subject_code (not name/email); SAE 3500A draft marks sponsor PHI fields TBD.",
+      "tests": [
+        "tests/unit/test_sdtm_mapper.py::test_derive_dm_maps_age_sex_race_from_item_data",
+        "tests/unit/test_cdisc_exporter.py::test_dm_csv_headers_in_sdtm_order"
+      ]
+    }
+  ]
+}

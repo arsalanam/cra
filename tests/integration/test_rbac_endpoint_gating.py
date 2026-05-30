@@ -43,6 +43,15 @@ def _env(monkeypatch: pytest.MonkeyPatch) -> None:
         "research_assistant.web.admin.create_cognito_user",
         lambda email, *, region, user_pool_id: "FORCE_CHANGE_PASSWORD",
     )
+
+    # Bypass E7 password reauth at signing time — these tests cover RBAC
+    # role gating, not the reauth flow (see test_password_reauth.py for
+    # that). Without this, the Cognito ListUsers + AdminInitiateAuth calls
+    # would try to hit AWS with the fake test pool.
+    async def _noop(_sub: str, _password: str) -> None:
+        return None
+
+    monkeypatch.setattr("research_assistant.web.edc._require_signing_reauth", _noop)
     reset_engine()
     reset_clinical_engine()
 

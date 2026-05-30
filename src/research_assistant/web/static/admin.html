@@ -122,6 +122,32 @@
       (per <code>rbac-design.md</code> §4.1). Grants take effect on the next request.
     </p>
     <div id="users-panel" class="loading">Loading users…</div>
+
+    <h2 style="margin-top:36px;">Validation pack (IQ / OQ / PQ)</h2>
+    <p class="lead">
+      The computer-system-validation (CSV) bundle for an audited deployment. Generate the IQ snapshot
+      from the running instance, run the OQ over the requirements-traceability matrix, and download
+      the PQ runbook for site operators. File the resulting PDFs in the customer's validation binder.
+    </p>
+    <div class="source-card">
+      <div class="grid">
+        <div class="field full">
+          <label>Deployment environment label</label>
+          <input type="text" id="vp-env" placeholder="prod-cra-customer1" value="prod" />
+          <p class="muted" style="font-size:12px;margin:6px 0 0;">Free-text label captured into the IQ snapshot so each binder records the environment it was filed against.</p>
+        </div>
+      </div>
+      <div class="row" style="margin-top:12px;display:flex;flex-wrap:wrap;gap:10px">
+        <a id="vp-iq" class="btn" href="#">⬇ IQ snapshot (PDF)</a>
+        <button id="vp-oq-run" class="btn" type="button" onclick="runOq()">⚙ Run OQ now</button>
+        <a id="vp-oq" class="btn" href="#">⬇ OQ report (PDF)</a>
+        <a id="vp-pq" class="btn" href="/api/admin/validation-pack/pq.pdf">⬇ PQ runbook (PDF)</a>
+        <a id="vp-bundle" class="btn" href="#">⬇ Full bundle (ZIP)</a>
+      </div>
+      <div id="vp-status" class="status"></div>
+      <div id="vp-last-oq" class="muted" style="font-size:12px;margin-top:8px"></div>
+      <div id="vp-rtm" class="muted" style="font-size:12px;margin-top:8px">Requirements matrix loading…</div>
+    </div>
   </div>
 
 <script>
@@ -438,6 +464,65 @@ async function init() {
 $("inv-btn").addEventListener("click", sendInvite);
 init();
 loadUsers();
+
+/* ── Validation pack (eCRF E7) ───────────────────────────────────────── */
+
+function vpEnv() { return ($("vp-env").value || "unknown").trim() || "unknown"; }
+
+function refreshVpLinks() {
+  const env = encodeURIComponent(vpEnv());
+  $("vp-iq").href = `/api/admin/validation-pack/iq.pdf?environment=${env}`;
+  $("vp-bundle").href = `/api/admin/validation-pack/bundle.zip?environment=${env}`;
+  $("vp-oq").href = `/api/admin/validation-pack/oq.pdf`;
+}
+
+async function runOq() {
+  const btn = $("vp-oq-run"), status = $("vp-status");
+  btn.disabled = true; status.textContent = "Running pytest over the requirements matrix… this may take ~30s."; status.className = "status";
+  try {
+    const r = await fetch("/api/admin/validation-pack/oq/run", { method: "POST" });
+    if (!r.ok) {
+      status.textContent = `OQ run failed: ${r.status} ${r.statusText}`; status.className = "status err";
+      btn.disabled = false; return;
+    }
+    const report = await r.json();
+    status.textContent = `OQ done: ${report.requirements_passed}/${report.total_requirements} requirements passed in ${report.duration_seconds.toFixed(1)}s.`;
+    status.className = "status ok";
+    await loadLastOq();
+  } catch (e) {
+    status.textContent = "OQ run failed: " + e.message; status.className = "status err";
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function loadLastOq() {
+  try {
+    const r = await fetch("/api/admin/validation-pack/oq/last");
+    if (!r.ok) return;
+    const j = await r.json();
+    if (!j) { $("vp-last-oq").textContent = "No OQ run on record yet — click \"Run OQ now\" to generate one."; return; }
+    const ts = new Date(j.generated_at).toLocaleString();
+    $("vp-last-oq").textContent = `Last OQ run: ${ts} — ${j.requirements_passed}/${j.total_requirements} passed, ${j.requirements_missing} missing.`;
+  } catch (e) { /* leave empty */ }
+}
+
+async function loadRtm() {
+  try {
+    const r = await fetch("/api/admin/validation-pack/rtm");
+    if (!r.ok) { $("vp-rtm").textContent = "Requirements matrix unavailable."; return; }
+    const matrix = await r.json();
+    const rows = matrix.requirements.map((req) =>
+      `<li><b>${req.code}</b> — ${req.title} <span class="muted">(${req.regulatory_anchor})</span></li>`
+    ).join("");
+    $("vp-rtm").innerHTML = `<details><summary>Requirements matrix v${matrix.version} — ${matrix.requirements.length} requirements</summary><ul style="margin-top:6px">${rows}</ul></details>`;
+  } catch (e) { $("vp-rtm").textContent = "Requirements matrix unavailable."; }
+}
+
+$("vp-env").addEventListener("input", refreshVpLinks);
+refreshVpLinks();
+loadLastOq();
+loadRtm();
 </script>
 </body>
 </html>

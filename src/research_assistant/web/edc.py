@@ -21,6 +21,10 @@ from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from ..auth import SessionPayload
+from ..auth.cognito_admin import (
+    CognitoAdminError,
+    verify_user_password_async,
+)
 from ..auth.rbac import Permission
 from ..config import get_settings
 from ..domain.ecrf import FormDefinition
@@ -160,8 +164,17 @@ class QueryResponseIn(BaseModel):
 
 
 class SignIn(BaseModel):
+    """Sign payload for both form-instance and casebook signing.
+
+    `password` carries the second identification component per Part 11
+    §11.200 (active session + explicit credential challenge). When
+    auth is not configured (dev/test), the reauth check is bypassed
+    and the field may be empty.
+    """
+
     model_config = ConfigDict(extra="forbid")
     meaning: str
+    password: str = ""
 
 
 class UnlockIn(BaseModel):
@@ -191,8 +204,49 @@ class VerificationOut(BaseModel):
 
 
 class SubjectSignIn(BaseModel):
+    """Casebook sign-off payload. `password` mirrors :class:`SignIn`."""
+
     model_config = ConfigDict(extra="forbid")
     meaning: str
+    password: str = ""
+
+
+class StudyLockIn(BaseModel):
+    """Deployment-wide study lock (E7 — validation pack)."""
+
+    model_config = ConfigDict(extra="forbid")
+    reason: str
+    force_open_queries: bool = Field(
+        default=False,
+        description=(
+            "When False (default), lock is refused if any non-closed "
+            "query exists. When True, lock is forced through anyway — "
+            "audited as such."
+        ),
+    )
+
+
+class StudyUnlockIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    reason: str
+
+
+class StudyLockOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    deployment_id: str
+    locked_at: datetime
+    locked_by_sub: str | None
+    lock_reason: str
+    unlocked_at: datetime | None
+    unlocked_by_sub: str | None
+    unlock_reason: str | None
+
+
+class StudyLockStatusOut(BaseModel):
+    deployment_id: str
+    locked: bool
+    active_lock: StudyLockOut | None
 
 
 class SubjectSignatureOut(BaseModel):
@@ -362,6 +416,59 @@ class CapaOut(BaseModel):
     completed_by: str | None
     created_by: str | None
     created_at: datetime
+
+
+async def _require_deployment_unlocked(s: Any, deployment_id: str) -> None:
+    """Refuse the write with 409 if the deployment-wide study lock is active."""
+    if await ClinicalRepository(s).is_study_locked(deployment_id):
+        raise HTTPException(
+            409,
+            f"Study deployment {deployment_id!r} is locked (E7). "
+            "Unlock before writes / signatures / SDV.",
+        )
+
+
+async def _require_deployment_unlocked_for_form(s: Any, form_instance_id: str) -> None:
+    dep_id = await ClinicalRepository(s).deployment_id_for_form_instance(form_instance_id)
+    if dep_id is None:
+        return
+    await _require_deployment_unlocked(s, dep_id)
+
+
+async def _require_deployment_unlocked_for_subject(s: Any, subject_id: str) -> None:
+    dep_id = await ClinicalRepository(s).deployment_id_for_subject(subject_id)
+    if dep_id is None:
+        return
+    await _require_deployment_unlocked(s, dep_id)
+
+
+async def _require_signing_reauth(user_sub: str, password: str) -> None:
+    """Enforce Part 11 §11.200 two-component re-auth at signing time.
+
+    Bypassed entirely when auth isn't configured (dev / pytest), so the
+    capture flow keeps working offline. Raises ``HTTPException(401)``
+    when Cognito refuses the password and ``HTTPException(503)`` when
+    Cognito itself fails (caller should retry, not infer auth failure).
+    """
+    settings = get_settings()
+    if not settings.auth_enabled:
+        return
+    if not password:
+        raise HTTPException(401, "Password re-authentication required to sign (Part 11 §11.200).")
+    try:
+        ok = await verify_user_password_async(
+            user_sub,
+            password,
+            region=settings.cognito_region,
+            user_pool_id=settings.cognito_user_pool_id,
+            client_id=settings.cognito_client_id,
+            client_secret=settings.cognito_client_secret,
+        )
+    except CognitoAdminError as e:
+        logger.warning("Signing re-auth: Cognito call failed: %s", e)
+        raise HTTPException(503, "Identity provider unavailable; retry signing.") from e
+    if not ok:
+        raise HTTPException(401, "Password re-authentication failed.")
 
 
 def create_edc_router() -> APIRouter:
@@ -548,6 +655,7 @@ def create_edc_router() -> APIRouter:
         ),
     ) -> FormInstanceOut:
         async with get_clinical_session() as s:
+            await _require_deployment_unlocked_for_form(s, form_instance_id)
             try:
                 fi = await ClinicalRepository(s).submit_item_data(
                     form_instance_id,
@@ -664,7 +772,9 @@ def create_edc_router() -> APIRouter:
             Permission.FORM_SIGN, resource_param="form_instance_id"
         ),
     ) -> SignatureOut:
+        await _require_signing_reauth(user.sub, body.password)
         async with get_clinical_session() as s:
+            await _require_deployment_unlocked_for_form(s, form_instance_id)
             try:
                 sig = await ClinicalRepository(s).sign_form_instance(
                     form_instance_id, meaning=body.meaning, signer_sub=user.sub
@@ -712,6 +822,7 @@ def create_edc_router() -> APIRouter:
         # SDV is monitor (CRA) territory under RBAC-2. Previously open to
         # any data-entry user, which violated separation-of-duties.
         async with get_clinical_session() as s:
+            await _require_deployment_unlocked_for_form(s, form_instance_id)
             try:
                 n = await ClinicalRepository(s).verify_items(
                     form_instance_id, body.item_ids, verifier_sub=user.sub
@@ -738,7 +849,9 @@ def create_edc_router() -> APIRouter:
             Permission.CASEBOOK_SIGNOFF, resource_param="subject_id"
         ),
     ) -> SubjectSignatureOut:
+        await _require_signing_reauth(user.sub, body.password)
         async with get_clinical_session() as s:
+            await _require_deployment_unlocked_for_subject(s, subject_id)
             try:
                 sig = await ClinicalRepository(s).sign_subject(
                     subject_id, meaning=body.meaning, signer_sub=user.sub
@@ -1340,5 +1453,85 @@ def create_edc_router() -> APIRouter:
                 ),
             },
         )
+
+    # ── Study-level lock (E7 — validation pack) ───────────────────────────
+
+    @router.get(
+        "/deployments/{deployment_id}/lock-status",
+        response_model=StudyLockStatusOut,
+    )
+    async def lock_status(
+        deployment_id: str,
+        user: SessionPayload = require_permission_scoped(
+            Permission.STUDY_READ, resource_param="deployment_id"
+        ),
+    ) -> StudyLockStatusOut:
+        async with get_clinical_session() as s:
+            active = await ClinicalRepository(s).get_active_study_lock(deployment_id)
+            return StudyLockStatusOut(
+                deployment_id=deployment_id,
+                locked=active is not None,
+                active_lock=StudyLockOut.model_validate(active) if active is not None else None,
+            )
+
+    @router.post(
+        "/deployments/{deployment_id}/lock",
+        response_model=StudyLockOut,
+        status_code=201,
+    )
+    async def lock_study(
+        deployment_id: str,
+        body: StudyLockIn,
+        user: SessionPayload = require_permission_scoped(
+            Permission.STUDY_LOCK, resource_param="deployment_id"
+        ),
+    ) -> StudyLockOut:
+        async with get_clinical_session() as s:
+            try:
+                lock = await ClinicalRepository(s).lock_study(
+                    deployment_id,
+                    reason=body.reason,
+                    actor_sub=user.sub,
+                    require_no_open_queries=not body.force_open_queries,
+                )
+            except ClinicalError as e:
+                raise HTTPException(409, str(e)) from e
+            return StudyLockOut.model_validate(lock)
+
+    @router.post(
+        "/deployments/{deployment_id}/unlock",
+        response_model=StudyLockOut,
+    )
+    async def unlock_study(
+        deployment_id: str,
+        body: StudyUnlockIn,
+        user: SessionPayload = require_permission_scoped(
+            Permission.STUDY_LOCK, resource_param="deployment_id"
+        ),
+    ) -> StudyLockOut:
+        async with get_clinical_session() as s:
+            try:
+                lock = await ClinicalRepository(s).unlock_study(
+                    deployment_id,
+                    reason=body.reason,
+                    actor_sub=user.sub,
+                )
+            except ClinicalError as e:
+                raise HTTPException(409, str(e)) from e
+            return StudyLockOut.model_validate(lock)
+
+    @router.get(
+        "/deployments/{deployment_id}/lock-history",
+        response_model=list[StudyLockOut],
+    )
+    async def lock_history(
+        deployment_id: str,
+        user: SessionPayload = require_permission_scoped(
+            Permission.AUDIT_READ, resource_param="deployment_id"
+        ),
+    ) -> list[StudyLockOut]:
+        async with get_clinical_session() as s:
+            rows = await ClinicalRepository(s).list_study_locks(deployment_id)
+            return [StudyLockOut.model_validate(r) for r in rows]
 
     return router

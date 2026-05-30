@@ -320,6 +320,36 @@ class SubjectSignature(ClinicalBase):
     )
 
 
+class StudyLock(ClinicalBase):
+    """A deployment-wide database lock (eCRF E7 — validation pack).
+
+    The last step before analysis: blocks all data entry, signing, SDV,
+    and signoff across every subject in the deployment. Distinct from
+    form-level + subject-level lock — those are casebook-progress steps;
+    this is the regulatory database-lock event.
+
+    Only one *active* row per deployment_id (locked=True with no
+    unlocked_at). Unlock writes back to the same row (sets unlocked_at +
+    unlock_reason + unlocked_by_sub) rather than deleting — so the lock
+    history is preserved for audit.
+    """
+
+    __tablename__ = "study_locks"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    deployment_id: Mapped[str] = mapped_column(
+        ForeignKey("study_deployments.id", ondelete="CASCADE"), index=True
+    )
+    locked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    locked_by_sub: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    lock_reason: Mapped[str] = mapped_column(Text, doc="Free-text reason captured at lock.")
+    unlocked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
+    unlocked_by_sub: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    unlock_reason: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+
+
 # ── Safety subsystem (AE/SAE + protocol deviations + CAPA) — top-6 #4 ────
 
 
