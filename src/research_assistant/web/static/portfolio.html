@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Portfolio · Clinical Research Assistant</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, Segoe UI, Roboto, sans-serif; background: #0f1115; color: #e6e6e6; }
+  .header { padding: 14px 24px; border-bottom: 1px solid #262a33; display: flex; justify-content: space-between; align-items: center; background: #171a21; }
+  .header h1 { margin: 0; font-size: 16px; }
+  .header a { color: #8b93a7; text-decoration: none; font-size: 13px; }
+  .header a:hover { color: #e6e6e6; }
+  .container { max-width: 1180px; margin: 22px auto; padding: 0 24px; }
+  .lead { color: #8b93a7; font-size: 13px; margin: 0 0 18px; }
+  .hero { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 22px; }
+  .hero .stat { background: #171a21; border: 1px solid #262a33; border-radius: 8px; padding: 14px 16px; }
+  .hero .stat .label { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: #8b93a7; font-weight: 700; }
+  .hero .stat .value { margin-top: 6px; font-size: 26px; font-weight: 700; color: #e6e6e6; }
+  .section { background: #171a21; border: 1px solid #262a33; border-radius: 8px; padding: 18px 20px; margin-bottom: 18px; }
+  h2 { font-size: 13px; text-transform: uppercase; color: #8b93a7; letter-spacing: .6px; margin: 0 0 12px; font-weight: 700; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; color: #8b93a7; font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; padding: 6px 4px; border-bottom: 1px solid #262a33; }
+  td { padding: 8px 4px; border-bottom: 1px solid #1f232c; vertical-align: top; }
+  .badge { font-family: monospace; font-size: 10px; padding: 2px 6px; border-radius: 4px; background: #0f1115; border: 1px solid #2a2f3a; color: #8b93a7; }
+  .badge.locked { color: #d97a7a; border-color: #4a2828; }
+  .badge.complete { color: #6bcf7f; border-color: #28492c; }
+  .muted { color: #5a6070; font-size: 12px; }
+  .err { color: #d97a7a; }
+  a { color: #7aa7d9; }
+  a:hover { color: #a3c3ec; }
+  .workflow-pill { padding: 1px 8px; border-radius: 10px; font-size: 10px; background: #1f232c; color: #cdd3df; }
+</style>
+</head>
+<body>
+  <div class="header"><h1>Portfolio</h1><a href="/">← Back to assistant</a></div>
+  <div class="container">
+    <p class="lead">Your conversations, SR projects, and eCRF deployments. Admins see the institutional rollup below their own data.</p>
+    <div id="hero" class="hero"></div>
+    <div id="my-threads" class="section"><h2>Recent threads</h2><div class="muted">Loading…</div></div>
+    <div id="my-sr-projects" class="section"><h2>SR projects</h2><div class="muted">Loading…</div></div>
+    <div id="my-deployments" class="section"><h2>eCRF deployments</h2><div class="muted">Loading…</div></div>
+    <div id="org-section" style="display:none">
+      <div class="section">
+        <h2>Organisation rollup <span class="muted" style="font-size:11px">admin-only</span></h2>
+        <div id="org-body" class="muted">Loading…</div>
+      </div>
+    </div>
+  </div>
+<script>
+  async function api(p, o){
+    const r = await fetch(p, o);
+    if (r.status === 401) { window.location.href = "/auth/login"; throw new Error("unauth"); }
+    return r;
+  }
+  function esc(s){ return (s==null?"":String(s)).replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+  function fmtDate(s){ try { return new Date(s).toLocaleString(); } catch(e){ return esc(s); } }
+  function pluralize(n, one, many){ return n === 1 ? `1 ${one}` : `${n} ${many||one+"s"}`; }
+
+  async function loadHero(){
+    const root = document.getElementById("hero");
+    try {
+      const r = await api("/api/portfolio/summary");
+      const s = await r.json();
+      const byWf = s.threads_by_workflow || {};
+      const cells = [
+        { label: "Threads", value: s.threads_total },
+        { label: "SR projects", value: s.sr_projects_total },
+        { label: "Deployments", value: s.deployments_total },
+        { label: "Top workflow", value: Object.entries(byWf).sort((a,b)=>b[1]-a[1])[0]?.[0] || "—" },
+      ];
+      root.innerHTML = cells.map(c =>
+        `<div class="stat"><div class="label">${esc(c.label)}</div><div class="value">${esc(c.value)}</div></div>`
+      ).join("");
+    } catch (e) {
+      root.innerHTML = `<div class="muted err">Failed to load summary.</div>`;
+    }
+  }
+
+  async function loadThreads(){
+    const root = document.getElementById("my-threads");
+    try {
+      const r = await api("/api/portfolio/threads?limit=20");
+      const rows = await r.json();
+      if (!rows.length) { root.innerHTML = "<h2>Recent threads</h2><div class='muted'>No threads yet.</div>"; return; }
+      const trs = rows.map(t => `
+        <tr>
+          <td><a href="/?thread=${encodeURIComponent(t.id)}">${esc(t.title || "(untitled)")}</a></td>
+          <td><span class="workflow-pill">${esc(t.workflow || "—")}</span></td>
+          <td><span class="badge">${esc(t.last_turn_kind || "—")}</span></td>
+          <td>${t.message_count}</td>
+          <td class="muted">${fmtDate(t.last_activity)}</td>
+        </tr>
+      `).join("");
+      root.innerHTML = `
+        <h2>Recent threads</h2>
+        <table>
+          <thead><tr><th>Title</th><th>Workflow</th><th>Last turn</th><th>#msgs</th><th>Updated</th></tr></thead>
+          <tbody>${trs}</tbody>
+        </table>
+      `;
+    } catch (e) {
+      root.innerHTML = "<h2>Recent threads</h2><div class='muted err'>Failed to load.</div>";
+    }
+  }
+
+  async function loadSrProjects(){
+    const root = document.getElementById("my-sr-projects");
+    try {
+      const r = await api("/api/portfolio/sr-projects");
+      const rows = await r.json();
+      if (!rows.length) { root.innerHTML = "<h2>SR projects</h2><div class='muted'>No SR projects.</div>"; return; }
+      const trs = rows.map(p => `
+        <tr>
+          <td><a href="/sr.html?project=${encodeURIComponent(p.id)}">${esc(p.title)}</a></td>
+          <td><span class="badge${p.status === "complete" ? " complete" : ""}">${esc(p.status || "—")}</span></td>
+          <td>${p.n_candidates}</td>
+          <td>${p.n_included}</td>
+          <td>${p.n_excluded}</td>
+          <td>${p.n_pending}</td>
+          <td class="muted">${fmtDate(p.last_activity)}</td>
+        </tr>
+      `).join("");
+      root.innerHTML = `
+        <h2>SR projects</h2>
+        <table>
+          <thead><tr><th>Title</th><th>Status</th><th>Candidates</th><th>Included</th><th>Excluded</th><th>Pending</th><th>Updated</th></tr></thead>
+          <tbody>${trs}</tbody>
+        </table>
+      `;
+    } catch (e) {
+      root.innerHTML = "<h2>SR projects</h2><div class='muted err'>Failed to load.</div>";
+    }
+  }
+
+  async function loadDeployments(){
+    const root = document.getElementById("my-deployments");
+    try {
+      const r = await api("/api/portfolio/deployments");
+      const rows = await r.json();
+      if (!rows.length) {
+        root.innerHTML = "<h2>eCRF deployments</h2><div class='muted'>None visible to you. eCRF deployments require a study-scoped role (study_designer / PI / DM / coordinator / monitor / auditor).</div>";
+        return;
+      }
+      const trs = rows.map(d => `
+        <tr>
+          <td><a href="/collector.html?deployment=${encodeURIComponent(d.id)}">${esc(d.name)}</a></td>
+          <td><span class="badge${d.is_locked ? " locked" : ""}">${d.is_locked ? "locked" : esc(d.status)}</span></td>
+          <td>${d.n_subjects}</td>
+          <td class="muted">${fmtDate(d.last_activity)}</td>
+        </tr>
+      `).join("");
+      root.innerHTML = `
+        <h2>eCRF deployments</h2>
+        <table>
+          <thead><tr><th>Name</th><th>Status</th><th>Subjects</th><th>Created</th></tr></thead>
+          <tbody>${trs}</tbody>
+        </table>
+      `;
+    } catch (e) {
+      root.innerHTML = "<h2>eCRF deployments</h2><div class='muted err'>Failed to load.</div>";
+    }
+  }
+
+  async function loadOrg(){
+    try {
+      const r = await fetch("/api/portfolio/org");
+      if (r.status === 403 || r.status === 401) return;  // not admin
+      if (!r.ok) return;
+      const data = await r.json();
+      const section = document.getElementById("org-section");
+      section.style.display = "block";
+      const body = document.getElementById("org-body");
+      const totals = data.org_totals;
+      const userRows = (data.users || []).map(u => `
+        <tr>
+          <td>${esc(u.email || u.name || u.sub.slice(0,8))}</td>
+          <td>${(u.role_summary||[]).map(r=>`<span class="badge">${esc(r)}</span>`).join(" ") || "<span class='muted'>—</span>"}</td>
+          <td>${u.thread_count}</td>
+          <td>${u.sr_project_count}</td>
+          <td class="muted">${u.last_activity ? fmtDate(u.last_activity) : "—"}</td>
+        </tr>
+      `).join("");
+      body.innerHTML = `
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:12px">
+          <div class="stat" style="background:#0f1115;border:1px solid #262a33;border-radius:6px;padding:10px"><div class="muted" style="font-size:11px;text-transform:uppercase">All threads</div><div style="font-size:20px;font-weight:700">${totals.threads_total}</div></div>
+          <div class="stat" style="background:#0f1115;border:1px solid #262a33;border-radius:6px;padding:10px"><div class="muted" style="font-size:11px;text-transform:uppercase">All SR projects</div><div style="font-size:20px;font-weight:700">${totals.sr_projects_total}</div></div>
+          <div class="stat" style="background:#0f1115;border:1px solid #262a33;border-radius:6px;padding:10px"><div class="muted" style="font-size:11px;text-transform:uppercase">All deployments</div><div style="font-size:20px;font-weight:700">${totals.deployments_total}</div></div>
+        </div>
+        <table>
+          <thead><tr><th>User</th><th>Roles</th><th>#Threads</th><th>#SR projects</th><th>Last activity</th></tr></thead>
+          <tbody>${userRows || `<tr><td colspan=5 class="muted">No users.</td></tr>`}</tbody>
+        </table>
+      `;
+    } catch (e) { /* admin endpoint failed silently */ }
+  }
+
+  loadHero();
+  loadThreads();
+  loadSrProjects();
+  loadDeployments();
+  loadOrg();
+</script>
+</body>
+</html>

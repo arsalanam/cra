@@ -131,6 +131,9 @@ class Permission(StrEnum):
     # ── Platform administration ──────────────────────────────────────────
     USER_MANAGE = "user.manage"
     SOURCE_MANAGE = "source.manage"
+    # P1 #9 portfolio: org-wide rollup (per-user totals). Admin only;
+    # researcher sees their own data via the per-user portfolio routes.
+    PORTFOLIO_READ_ORG = "portfolio.read_org"
 
 
 class Role(StrEnum):

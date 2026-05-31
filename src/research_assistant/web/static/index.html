@@ -1327,6 +1327,7 @@ function App() {
           )}
           {hasPerm("watch.read") && <a className="sidebar-link" href="/watches.html">▤ Watches</a>}
           {hasPerm("sr.read") && <a className="sidebar-link" href="/sr.html">⊟ SR Reviews</a>}
+          <a className="sidebar-link" href="/portfolio.html">▦ Portfolio</a>
           <button className="sidebar-link" onClick={openUsage} style={view === "usage" ? { background: "#1f232c", color: "#e6e6e6" } : {}}>
             ~ Usage
           </button>
