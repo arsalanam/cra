@@ -16,7 +16,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
@@ -890,6 +890,49 @@ class MultiSiteRollupOut(BaseModel):
     n_subjects: int
     site_totals: dict[str, object]
     sites: list[dict[str, object]]
+
+
+# ── Lab-data feeds DTOs (P2 #6) ──────────────────────────────────────────
+
+
+class LabBatchOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    deployment_id: str
+    source_format: str
+    content_hash: str
+    filename: str | None
+    raw_size_bytes: int
+    row_count: int
+    ingested_by_sub: str | None
+    ingested_at: datetime
+    notes: str
+
+
+class LabIngestResultOut(BaseModel):
+    batch: LabBatchOut
+    was_new: bool
+    warnings: list[str] = Field(default_factory=list)
+
+
+class LabResultOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    batch_id: str
+    deployment_id: str
+    subject_id: str | None
+    subject_code_hint: str | None
+    test_code: str
+    test_name: str | None
+    value_numeric: float | None
+    value_text: str | None
+    units: str | None
+    ref_range_low: float | None
+    ref_range_high: float | None
+    abnormal_flag: str | None
+    specimen_id: str | None
+    collected_at: datetime | None
+    parsed_at: datetime
 
 
 class CapaOut(BaseModel):
@@ -3436,6 +3479,188 @@ def create_edc_router() -> APIRouter:
         async with get_clinical_session() as s:
             rollup = await ClinicalRepository(s).drug_reconciliation(deployment_id)
             return DrugReconciliationOut.model_validate(rollup)
+
+    # ── Lab-data feeds (P2 #6) ─────────────────────────────────────────
+
+    _MAX_LAB_UPLOAD_BYTES = 20 * 1024 * 1024  # 20 MB
+    _CONTENT_TYPE_TO_FORMAT = {
+        "application/hl7-v2+er7": "hl7v2",
+        "application/x-hl7-v2": "hl7v2",
+        "text/x-hl7-v2": "hl7v2",
+        "text/hl7-v2": "hl7v2",
+        "application/json": "fhir",
+        "application/fhir+json": "fhir",
+        "text/tab-separated-values": "cdisc_lab",
+        "text/tsv": "cdisc_lab",
+        "text/csv": "cdisc_lab",
+        "application/x-cdisc-lab": "cdisc_lab",
+    }
+
+    @router.post(
+        "/deployments/{deployment_id}/lab-uploads",
+        response_model=LabIngestResultOut,
+        status_code=201,
+    )
+    async def upload_lab_batch(
+        deployment_id: str,
+        file: UploadFile = File(...),  # noqa: B008
+        source_format: str = Form(...),
+        notes: str = Form(default=""),
+        user: SessionPayload = require_permission_scoped(
+            Permission.LAB_UPLOAD, resource_param="deployment_id"
+        ),
+    ) -> LabIngestResultOut:
+        """Operator-driven upload: pick a format + attach a file.
+
+        Re-uploads of the same file dedupe by SHA-256 (returns the
+        existing batch with `was_new=False`).
+        """
+        data = await file.read()
+        if not data:
+            raise HTTPException(422, "Empty file.")
+        if len(data) > _MAX_LAB_UPLOAD_BYTES:
+            raise HTTPException(
+                413,
+                f"File exceeds {_MAX_LAB_UPLOAD_BYTES // (1024 * 1024)} MB limit.",
+            )
+        async with get_clinical_session() as s:
+            await _require_deployment_unlocked(s, deployment_id)
+            try:
+                batch, was_new, warnings = await ClinicalRepository(s).ingest_lab_batch(
+                    deployment_id,
+                    source_format=source_format,
+                    raw_bytes=data,
+                    filename=file.filename,
+                    actor_sub=user.sub,
+                )
+                if notes and was_new:
+                    batch.notes = notes
+                    await s.flush()
+            except ClinicalError as e:
+                raise HTTPException(422, str(e)) from e
+            return LabIngestResultOut(
+                batch=LabBatchOut.model_validate(batch),
+                was_new=was_new,
+                warnings=warnings,
+            )
+
+    @router.post(
+        "/deployments/{deployment_id}/lab-feed",
+        response_model=LabIngestResultOut,
+        status_code=201,
+    )
+    async def lab_listener_endpoint(
+        request: Request,
+        deployment_id: str,
+        user: SessionPayload = require_permission_scoped(
+            Permission.LAB_UPLOAD, resource_param="deployment_id"
+        ),
+    ) -> LabIngestResultOut:
+        """System-to-system listener endpoint.
+
+        Source format is derived from the Content-Type header (or the
+        `?source_format=` query string when the sender can't set it).
+        Authenticated like every other endpoint — bearer token in the
+        Cognito session. Lab vendors typically configure a service
+        account with `lab.upload`.
+        """
+        body = await request.body()
+        if not body:
+            raise HTTPException(422, "Empty body.")
+        if len(body) > _MAX_LAB_UPLOAD_BYTES:
+            raise HTTPException(413, "Payload too large.")
+        ctype = (request.headers.get("content-type") or "").split(";")[0].strip().lower()
+        fmt = request.query_params.get("source_format") or _CONTENT_TYPE_TO_FORMAT.get(ctype)
+        if not fmt:
+            raise HTTPException(
+                422,
+                "Unable to infer source_format. Set Content-Type or pass "
+                "?source_format=hl7v2|cdisc_lab|fhir.",
+            )
+        async with get_clinical_session() as s:
+            await _require_deployment_unlocked(s, deployment_id)
+            try:
+                batch, was_new, warnings = await ClinicalRepository(s).ingest_lab_batch(
+                    deployment_id,
+                    source_format=fmt,
+                    raw_bytes=body,
+                    filename=None,
+                    actor_sub=user.sub,
+                )
+            except ClinicalError as e:
+                raise HTTPException(422, str(e)) from e
+            return LabIngestResultOut(
+                batch=LabBatchOut.model_validate(batch),
+                was_new=was_new,
+                warnings=warnings,
+            )
+
+    @router.get(
+        "/deployments/{deployment_id}/lab-batches",
+        response_model=list[LabBatchOut],
+    )
+    async def list_lab_batches(
+        deployment_id: str,
+        user: SessionPayload = require_permission_scoped(
+            Permission.LAB_READ, resource_param="deployment_id"
+        ),
+    ) -> list[LabBatchOut]:
+        async with get_clinical_session() as s:
+            rows = await ClinicalRepository(s).list_lab_batches(deployment_id)
+            return [LabBatchOut.model_validate(r) for r in rows]
+
+    @router.get(
+        "/lab-batches/{batch_id}/results",
+        response_model=list[LabResultOut],
+    )
+    async def list_results_for_batch(
+        batch_id: str,
+        user: SessionPayload = require_permission_scoped(
+            Permission.LAB_READ, resource_param="batch_id"
+        ),
+    ) -> list[LabResultOut]:
+        async with get_clinical_session() as s:
+            rows = await ClinicalRepository(s).list_lab_results(batch_id=batch_id)
+            return [LabResultOut.model_validate(r) for r in rows]
+
+    @router.get(
+        "/deployments/{deployment_id}/lab-results",
+        response_model=list[LabResultOut],
+    )
+    async def list_lab_results(
+        deployment_id: str,
+        user: SessionPayload = require_permission_scoped(
+            Permission.LAB_READ, resource_param="deployment_id"
+        ),
+        subject_id: str | None = None,
+        test_code: str | None = None,
+    ) -> list[LabResultOut]:
+        async with get_clinical_session() as s:
+            rows = await ClinicalRepository(s).list_lab_results(
+                deployment_id=deployment_id,
+                subject_id=subject_id,
+                test_code=test_code,
+            )
+            return [LabResultOut.model_validate(r) for r in rows]
+
+    @router.post(
+        "/deployments/{deployment_id}/lab-results/backfill-subjects",
+        response_model=dict,
+    )
+    async def backfill_lab_subjects(
+        deployment_id: str,
+        user: SessionPayload = require_permission_scoped(
+            Permission.LAB_UPLOAD, resource_param="deployment_id"
+        ),
+    ) -> dict[str, int]:
+        """Re-link parsed-lab rows whose subject_code_hint now matches a
+        Subject. Run after enrolling a new cohort if labs arrived first."""
+        async with get_clinical_session() as s:
+            await _require_deployment_unlocked(s, deployment_id)
+            count = await ClinicalRepository(s).backfill_lab_subject_link(
+                deployment_id, actor_sub=user.sub
+            )
+            return {"updated": count}
 
     # ── Multi-site rollup (P2 #5) ──────────────────────────────────────
 

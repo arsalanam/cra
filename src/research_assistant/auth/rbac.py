@@ -130,6 +130,13 @@ class Permission(StrEnum):
     IP_RETURN = "ip.return"
     IP_RECONCILE = "ip.reconcile"
 
+    # ── Lab-data feeds (P2 #6) ───────────────────────────────────────────
+    # lab.upload: ingest an HL7 v2 / CDISC LAB / FHIR payload (POC
+    #   coordinators + central data managers).
+    # lab.read: see parsed lab results (every role with study.read).
+    LAB_UPLOAD = "lab.upload"
+    LAB_READ = "lab.read"
+
     # ── CDISC submission pipeline (SDTM → ADaM → TLF) ────────────────────
     CDISC_DERIVE = "cdisc.derive"
     CDISC_READ = "cdisc.read"
@@ -311,6 +318,9 @@ ROLE_PERMISSIONS: Final[dict[Role, frozenset[Permission]]] = {
             # rollup as part of GCP source-data review. Mutating events are
             # closed off.
             Permission.IP_RECONCILE,
+            # Lab-data feeds: auditor reads parsed lab results as
+            # source-data verification.
+            Permission.LAB_READ,
         }
     ),
     Role.STUDY_DESIGNER: frozenset(
@@ -330,6 +340,9 @@ ROLE_PERMISSIONS: Final[dict[Role, frozenset[Permission]]] = {
             # alongside the form definitions.
             Permission.EXTRACTION_MAPPING_AUTHOR,
             Permission.SOURCE_DOCUMENT_READ,
+            # Lab-data feeds: designer reads parsed labs during build
+            # so the LB derivation can be validated against early data.
+            Permission.LAB_READ,
             # Drug accountability: designer registers the IP catalogue at
             # study-design time (drug name + strength + units + lot pattern).
             Permission.IP_CATALOGUE,
@@ -378,6 +391,9 @@ ROLE_PERMISSIONS: Final[dict[Role, frozenset[Permission]]] = {
             # reconciliation rollup.
             Permission.IP_DISPENSE,
             Permission.IP_RECONCILE,
+            # Lab-data feeds: PI reviews central-lab results before
+            # signing the casebook.
+            Permission.LAB_READ,
             # PIs are the natural HTA / guideline-committee voter — when
             # an institution forms a panel, the PI is on it.
             Permission.WATCH_SUBSCRIPTION_VOTE,
@@ -423,6 +439,11 @@ ROLE_PERMISSIONS: Final[dict[Role, frozenset[Permission]]] = {
             Permission.IP_RECEIVE,
             Permission.IP_DISPENSE,
             Permission.IP_RETURN,
+            # Lab-data feeds: coordinators upload central-lab files at
+            # site visits (when the site receives a paper copy / PDF
+            # bundle) and read the parsed results.
+            Permission.LAB_UPLOAD,
+            Permission.LAB_READ,
         }
     ),
     Role.DATA_MANAGER: frozenset(
@@ -482,6 +503,11 @@ ROLE_PERMISSIONS: Final[dict[Role, frozenset[Permission]]] = {
             Permission.IP_CATALOGUE,
             Permission.IP_RECEIVE,
             Permission.IP_RECONCILE,
+            # Lab-data feeds: DM is the primary central-lab feed
+            # operator — receives the daily HL7 / CDISC LAB transfers
+            # and runs the SDTM LB cascade after derivation.
+            Permission.LAB_UPLOAD,
+            Permission.LAB_READ,
         }
     ),
     Role.MONITOR: frozenset(
@@ -512,6 +538,9 @@ ROLE_PERMISSIONS: Final[dict[Role, frozenset[Permission]]] = {
             # Drug accountability: monitor verifies the reconciliation
             # rollup against source records during site visits — read-only.
             Permission.IP_RECONCILE,
+            # Lab-data feeds: monitor verifies parsed labs against
+            # the lab source documents — read-only.
+            Permission.LAB_READ,
         }
     ),
     # SR screening roles — always granted at sr_review scope, never global.

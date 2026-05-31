@@ -38,6 +38,8 @@ from .models import (
     FormInstance,
     InvestigationalProduct,
     ItemData,
+    LabBatch,
+    LabResult,
     ParticipantAccess,
     ParticipantContact,
     PlannedVisit,
@@ -3178,3 +3180,172 @@ class ClinicalRepository:
             "totals": totals,
             "by_lot": by_lot,
         }
+
+    # ── Lab-data feeds (P2 #6) ─────────────────────────────────────────
+
+    _ALLOWED_LAB_FORMATS = ("hl7v2", "cdisc_lab", "fhir")
+
+    async def ingest_lab_batch(
+        self,
+        deployment_id: str,
+        *,
+        source_format: str,
+        raw_bytes: bytes,
+        filename: str | None = None,
+        actor_sub: str | None = None,
+    ) -> tuple[LabBatch, bool, list[str]]:
+        """Parse + persist one lab payload.
+
+        Returns (batch, was_new, warnings). `was_new=False` means the
+        payload's SHA-256 already existed for this deployment and the
+        existing batch was returned untouched — idempotent re-uploads
+        are the design intent.
+        """
+        if source_format not in self._ALLOWED_LAB_FORMATS:
+            raise ClinicalError(
+                f"Invalid lab source_format {source_format!r}; "
+                f"choose {', '.join(self._ALLOWED_LAB_FORMATS)}."
+            )
+        if not raw_bytes:
+            raise ClinicalError("Empty lab payload.")
+        deployment = await self._s.get(StudyDeployment, deployment_id)
+        if deployment is None:
+            raise ClinicalError(f"Deployment {deployment_id!r} not found.")
+
+        content_hash = hashlib.sha256(raw_bytes).hexdigest()
+        existing = await self._s.scalar(
+            select(LabBatch).where(
+                LabBatch.deployment_id == deployment_id,
+                LabBatch.content_hash == content_hash,
+            )
+        )
+        if existing is not None:
+            return existing, False, []
+
+        # Lazy import — keeps the lab parsers off the import path for
+        # tests / scripts that don't touch them.
+        from ...services.lab_ingest import parse_lab_payload
+
+        parsed = parse_lab_payload(source_format=source_format, raw=raw_bytes)
+        batch = LabBatch(
+            deployment_id=deployment_id,
+            source_format=source_format,
+            content_hash=content_hash,
+            filename=filename,
+            raw_size_bytes=len(raw_bytes),
+            row_count=len(parsed.results),
+            ingested_by_sub=actor_sub,
+        )
+        self._s.add(batch)
+        await self._s.flush()
+
+        # Subject-code resolution: try to map each parsed result's
+        # `subject_code_hint` to a registered Subject. Misses stay
+        # NULL — a Subject created later doesn't backfill automatically
+        # (deliberate; backfill is an explicit operation).
+        subject_lookup: dict[str, str] = {}
+        subjects = await self._s.scalars(
+            select(Subject).where(Subject.deployment_id == deployment_id)
+        )
+        for subj in subjects:
+            subject_lookup[subj.subject_code] = subj.id
+
+        for p in parsed.results:
+            mapped_subject_id = (
+                subject_lookup.get(p.subject_code_hint or "") if p.subject_code_hint else None
+            )
+            row = LabResult(
+                batch_id=batch.id,
+                deployment_id=deployment_id,
+                subject_id=mapped_subject_id,
+                subject_code_hint=p.subject_code_hint,
+                test_code=p.test_code,
+                test_name=p.test_name,
+                value_numeric=p.value_numeric,
+                value_text=p.value_text,
+                units=p.units,
+                ref_range_low=p.ref_range_low,
+                ref_range_high=p.ref_range_high,
+                abnormal_flag=p.abnormal_flag,
+                specimen_id=p.specimen_id,
+                collected_at=p.collected_at,
+                raw_segment_json=json.dumps(p.raw_segment, default=str),
+            )
+            self._s.add(row)
+        await self._s.flush()
+
+        self._audit(
+            entity_type="lab_batch",
+            entity_id=batch.id,
+            action="create",
+            actor_sub=actor_sub,
+            new_value=(
+                f"format={source_format},rows={len(parsed.results)},hash={content_hash[:12]}"
+            ),
+        )
+        return batch, True, parsed.warnings
+
+    async def list_lab_batches(self, deployment_id: str) -> list[LabBatch]:
+        stmt = (
+            select(LabBatch)
+            .where(LabBatch.deployment_id == deployment_id)
+            .order_by(LabBatch.ingested_at.desc())
+        )
+        return list((await self._s.scalars(stmt)).all())
+
+    async def list_lab_results(
+        self,
+        *,
+        deployment_id: str | None = None,
+        subject_id: str | None = None,
+        test_code: str | None = None,
+        batch_id: str | None = None,
+    ) -> list[LabResult]:
+        stmt = select(LabResult).order_by(LabResult.parsed_at.desc())
+        if subject_id is not None:
+            stmt = stmt.where(LabResult.subject_id == subject_id)
+        elif deployment_id is not None:
+            stmt = stmt.where(LabResult.deployment_id == deployment_id)
+        if test_code is not None:
+            stmt = stmt.where(LabResult.test_code == test_code)
+        if batch_id is not None:
+            stmt = stmt.where(LabResult.batch_id == batch_id)
+        return list((await self._s.scalars(stmt)).all())
+
+    async def backfill_lab_subject_link(
+        self,
+        deployment_id: str,
+        *,
+        actor_sub: str | None = None,
+    ) -> int:
+        """Re-link parsed-lab rows whose `subject_code_hint` now
+        matches a Subject. Returns the count of rows updated.
+        Operator-triggered; not run automatically on Subject
+        create."""
+        unlinked = await self._s.scalars(
+            select(LabResult).where(
+                LabResult.deployment_id == deployment_id,
+                LabResult.subject_id.is_(None),
+                LabResult.subject_code_hint.is_not(None),
+            )
+        )
+        subjects = await self._s.scalars(
+            select(Subject).where(Subject.deployment_id == deployment_id)
+        )
+        lookup = {s.subject_code: s.id for s in subjects}
+        updated = 0
+        for row in unlinked:
+            target = lookup.get(row.subject_code_hint or "")
+            if target is not None:
+                row.subject_id = target
+                updated += 1
+        if updated:
+            await self._s.flush()
+            self._audit(
+                entity_type="lab_result",
+                entity_id=deployment_id,
+                action="backfill_subject_link",
+                actor_sub=actor_sub,
+                new_value=f"updated={updated}",
+            )
+        return updated

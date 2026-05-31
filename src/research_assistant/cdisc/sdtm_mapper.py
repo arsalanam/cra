@@ -524,6 +524,111 @@ class BuiltinPythonMapper:
             )
         return out
 
+    def derive_lb_from_lab_results(
+        self,
+        *,
+        deployment_id: str,
+        study_id: str,
+        subjects_by_id: dict[str, Subject],
+        lab_results: Iterable[Any],
+        starting_seq_by_subject: dict[str, int] | None = None,
+    ) -> list[SdtmLb]:
+        """Emit one SDTM LB row per LabResult that links to a Subject.
+
+        Pulls parsed-lab rows from the lab-data-feeds subsystem (P2 #6)
+        into the SDTM bundle. LabResult rows without a linked subject
+        (subject_id IS NULL) are skipped — the operator can backfill
+        the link via the lab-results backfill endpoint and re-derive.
+
+        `starting_seq_by_subject` lets the caller continue numbering
+        after the form-based `derive_lb` ran, so LBSEQ stays unique
+        per (deployment, USUBJID).
+
+        Test-code lookup: prefers `_LB_TEST_CODES` for the parsed
+        `test_code`, then falls back to canonicalising the
+        `test_name`. Unknown tests still emit a row using the source
+        code verbatim — better an imperfect SDTM row than a dropped
+        observation.
+        """
+        out: list[SdtmLb] = []
+        per_subject_seq: dict[str, int] = dict(starting_seq_by_subject or {})
+        for r in lab_results:
+            if r.subject_id is None:
+                continue
+            subj = subjects_by_id.get(r.subject_id)
+            if subj is None:
+                continue
+            # Spec lookup: parsed test code first, then test name.
+            spec = _LB_TEST_CODES.get(r.test_code.strip().lower()) if r.test_code else None
+            if spec is None and r.test_name:
+                spec = _LB_TEST_CODES.get(r.test_name.strip().lower())
+            lbtestcd = spec["LBTESTCD"] if spec else (r.test_code or "")
+            lbtest = spec["LBTEST"] if spec else (r.test_name or r.test_code or "")
+            # Reference range: parsed range wins; fall back to the CT
+            # default so out-of-range flags compute downstream.
+            nrlo = r.ref_range_low
+            nrhi = r.ref_range_high
+            if spec is not None:
+                if nrlo is None:
+                    try:
+                        nrlo = (
+                            float(spec["default_low"])
+                            if spec.get("default_low") is not None
+                            else None
+                        )
+                    except (TypeError, ValueError):
+                        nrlo = None
+                if nrhi is None:
+                    try:
+                        nrhi = (
+                            float(spec["default_high"])
+                            if spec.get("default_high") is not None
+                            else None
+                        )
+                    except (TypeError, ValueError):
+                        nrhi = None
+            # Reference-range flag: explicit `abnormal_flag` wins. The
+            # parsers normalise H / HIGH variants into LBNRIND values
+            # downstream; here we accept whatever the source gave us
+            # and derive a 3-state indicator when numeric+range allow.
+            nrind = r.abnormal_flag
+            if nrind is None and r.value_numeric is not None:
+                if nrlo is not None and r.value_numeric < nrlo:
+                    nrind = "LOW"
+                elif nrhi is not None and r.value_numeric > nrhi:
+                    nrind = "HIGH"
+                elif nrlo is not None or nrhi is not None:
+                    nrind = "NORMAL"
+            per_subject_seq[r.subject_id] = per_subject_seq.get(r.subject_id, 0) + 1
+            usubjid = _usubjid(study_id, subj.subject_code)
+            unit = r.units or (spec.get("default_unit") if spec else None)
+            result_str = r.value_text or (
+                str(r.value_numeric) if r.value_numeric is not None else None
+            )
+            out.append(
+                SdtmLb(
+                    deployment_id=deployment_id,
+                    STUDYID=study_id,
+                    DOMAIN="LB",
+                    USUBJID=usubjid,
+                    LBSEQ=per_subject_seq[r.subject_id],
+                    LBTESTCD=lbtestcd,
+                    LBTEST=lbtest,
+                    LBORRES=result_str,
+                    LBORRESU=unit,
+                    LBSTRESC=result_str,
+                    LBSTRESN=r.value_numeric,
+                    LBSTRESU=unit,
+                    LBORNRLO=str(nrlo) if nrlo is not None else None,
+                    LBORNRHI=str(nrhi) if nrhi is not None else None,
+                    LBSTNRLO=nrlo,
+                    LBSTNRHI=nrhi,
+                    LBNRIND=nrind,
+                    LBDTC=_to_iso8601(r.collected_at) if r.collected_at else None,
+                )
+            )
+        return out
+
     def derive_ex(
         self,
         *,

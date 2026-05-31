@@ -226,6 +226,17 @@ async def resolve_dispensation_scope(dispensation_id: str) -> Scope:
         return await resolve_subject_scope(disp.subject_id)
 
 
+async def resolve_lab_batch_scope(batch_id: str) -> Scope:
+    """LabBatch → its deployment scope (P2 #6)."""
+    from ..persistence.clinical.models import LabBatch
+
+    async with get_clinical_session() as s:
+        batch = await s.get(LabBatch, batch_id)
+        if batch is None:
+            raise HTTPException(404, "Lab batch not found")
+        return await resolve_deployment_scope(batch.deployment_id)
+
+
 # ecrf StudyOut / FormOut path params resolve straight to (study_id, None).
 async def resolve_ecrf_study_scope(study_id: str) -> Scope:
     return (study_id, None, None)
@@ -288,6 +299,7 @@ RESOURCE_RESOLVERS: dict[str, ResolverFn] = {
     "mapping_id": resolve_extraction_mapping_scope,
     "ip_id": resolve_ip_scope,
     "dispensation_id": resolve_dispensation_scope,
+    "batch_id": resolve_lab_batch_scope,
 }
 
 

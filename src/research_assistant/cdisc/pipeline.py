@@ -274,6 +274,39 @@ async def run_derivation(
         form_instances=form_instances_by_domain.get("LB", []),
         config=cfg,
     )
+    # P2 #6 lab-data feeds: extend the LB domain with any parsed lab
+    # results that have a linked subject. The form-based path remains
+    # the source of truth for studies that don't have central lab
+    # feeds; parsed labs cascade additively without disturbing it.
+    from ..persistence.clinical.models import LabResult
+
+    lab_results_rows = list(
+        (
+            await session.scalars(
+                select(LabResult).where(
+                    LabResult.deployment_id == deployment_id,
+                    LabResult.subject_id.is_not(None),
+                )
+            )
+        ).all()
+    )
+    if lab_results_rows:
+        starting_seq: dict[str, int] = {}
+        for row in lb:
+            # Find the Subject.id for the existing LB row's USUBJID.
+            # Cheaper than another DB hit: walk subjects_by_id once.
+            for sid, subj in subjects_by_id.items():
+                if f"{study_id}-{subj.subject_code}" == row.USUBJID:
+                    starting_seq[sid] = max(starting_seq.get(sid, 0), row.LBSEQ)
+                    break
+        lb_from_labs = mapper.derive_lb_from_lab_results(
+            deployment_id=deployment_id,
+            study_id=study_id,
+            subjects_by_id=subjects_by_id,
+            lab_results=lab_results_rows,
+            starting_seq_by_subject=starting_seq,
+        )
+        lb = list(lb) + lb_from_labs
     ex = mapper.derive_ex(
         deployment_id=deployment_id,
         study_id=study_id,

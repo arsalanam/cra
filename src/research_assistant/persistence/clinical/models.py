@@ -1872,3 +1872,123 @@ class DrugReturn(ClinicalBase):
     returned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     returned_by_sub: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     notes: Mapped[str] = mapped_column(Text, default="")
+
+
+# ── Lab-data feeds (P2 #6) ──────────────────────────────────────────────
+
+
+class LabBatch(ClinicalBase):
+    """One ingest of a lab-data file or listener payload.
+
+    Carries the source-format provenance + SHA-256 content hash so
+    re-uploads of the same file dedupe. Children are LabResult rows
+    parsed out of the batch. Audit trail writes per batch + per row.
+    """
+
+    __tablename__ = "lab_batches"
+    __table_args__ = (
+        UniqueConstraint("deployment_id", "content_hash", name="uq_lab_batch_content"),
+    )
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    deployment_id: Mapped[str] = mapped_column(
+        ForeignKey("study_deployments.id", ondelete="CASCADE"), index=True
+    )
+    source_format: Mapped[str] = mapped_column(
+        Text,
+        doc="hl7v2 | cdisc_lab | fhir.",
+    )
+    content_hash: Mapped[str] = mapped_column(
+        Text,
+        doc="SHA-256 of the raw payload (hex). Drives idempotent re-uploads.",
+    )
+    filename: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    raw_size_bytes: Mapped[int] = mapped_column(Integer, default=0)
+    row_count: Mapped[int] = mapped_column(Integer, default=0)
+    ingested_by_sub: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    ingested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    notes: Mapped[str] = mapped_column(Text, default="")
+
+
+class LabResult(ClinicalBase):
+    """One parsed laboratory result row.
+
+    Source-format-agnostic shape. Common fields filled by all three
+    parsers (HL7 v2 ORU^R01, CDISC LAB tab, FHIR R4); format-specific
+    extras live in `raw_segment_json` for traceability.
+
+    Subject linkage: `subject_id` is nullable because a parsed message
+    may carry a subject_code that doesn't yet match a registered
+    Subject (e.g. lab arrives before randomisation completes). The
+    `subject_code_hint` field preserves the raw id from the source
+    so a later subject-create can backfill the link.
+    """
+
+    __tablename__ = "lab_results"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    batch_id: Mapped[str] = mapped_column(
+        ForeignKey("lab_batches.id", ondelete="CASCADE"), index=True
+    )
+    deployment_id: Mapped[str] = mapped_column(
+        ForeignKey("study_deployments.id", ondelete="CASCADE"), index=True
+    )
+    subject_id: Mapped[str | None] = mapped_column(
+        ForeignKey("subjects.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        default=None,
+    )
+    subject_code_hint: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        default=None,
+        doc=(
+            "Raw subject identifier from the source message. Lets the "
+            "platform link to a Subject row that's created later."
+        ),
+    )
+
+    # Test identity.
+    test_code: Mapped[str] = mapped_column(
+        Text,
+        doc=(
+            "Code identifying the test — LOINC for HL7 / FHIR, "
+            "LBTESTCD for CDISC LAB. Free-text if the source omits a "
+            "code system."
+        ),
+    )
+    test_name: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+
+    # Result. value_numeric is None for qualitative results (e.g.
+    # 'POSITIVE'), in which case value_text carries the answer.
+    value_numeric: Mapped[float | None] = mapped_column(Float, nullable=True, default=None)
+    value_text: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    units: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+
+    # Reference range + abnormal flag.
+    ref_range_low: Mapped[float | None] = mapped_column(Float, nullable=True, default=None)
+    ref_range_high: Mapped[float | None] = mapped_column(Float, nullable=True, default=None)
+    abnormal_flag: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        default=None,
+        doc=(
+            "HL7 OBX-8 flag (H / L / N / A / etc.) or the CDISC "
+            "LBNRIND value (LOW / NORMAL / HIGH). NULL when the source "
+            "didn't supply one."
+        ),
+    )
+
+    # Specimen + timing.
+    specimen_id: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    collected_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
+
+    # Raw provenance — JSON snapshot of the source segment / row /
+    # Observation so an auditor can trace any parsed field back to
+    # the wire format.
+    raw_segment_json: Mapped[str] = mapped_column(Text, default="{}")
+
+    parsed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)

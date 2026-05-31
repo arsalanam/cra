@@ -78,6 +78,10 @@
           <div id="da-summary" class="muted">Select a deployment to view IP inventory.</div>
         </div>
         <div class="card">
+          <h2>Lab-data feeds <span id="lab-badge" class="muted" style="font-size:11px"></span></h2>
+          <div id="lab-summary" class="muted">Select a deployment to ingest central-lab files.</div>
+        </div>
+        <div class="card">
           <h2>Study lock <span id="lock-badge" class="muted" style="font-size:11px"></span></h2>
           <div id="lock-summary" class="muted">Select a deployment to view its lock state.</div>
         </div>
@@ -983,7 +987,90 @@
     }
   }
 
-  /* Reload the CDISC + lock + randomisation + recruitment + calendar + source-extraction + drug-accountability panels when the user picks a different deployment. */
+  /* Lab-data feeds (P2 #6) */
+  async function loadLabFeeds(){
+    const root = document.getElementById("lab-summary");
+    const badge = document.getElementById("lab-badge");
+    if(!depId){
+      root.className="muted"; root.textContent="Select a deployment to ingest central-lab files."; badge.textContent="";
+      return;
+    }
+    root.className="muted"; root.textContent="Loading lab batches…"; badge.textContent="";
+    try {
+      const r = await api(`/api/edc/deployments/${depId}/lab-batches`);
+      if(r.status === 403){
+        root.className="muted"; root.textContent="Lab feeds require lab.read.";
+        badge.textContent=""; return;
+      }
+      const batches = await r.json();
+      const totalRows = batches.reduce((s, b) => s + (b.row_count || 0), 0);
+      badge.textContent = `${batches.length} batch(es) · ${totalRows} row(s)`;
+      badge.className = batches.length > 0 ? "ok" : "muted";
+
+      const batchRows = batches.slice(0, 5).map(b => `
+        <div style="display:flex;justify-content:space-between;border-top:1px solid #1f232c;padding:5px 0;font-size:12px">
+          <span><b>${esc(b.source_format)}</b> · ${b.row_count} row(s)${b.filename ? " · " + esc(b.filename) : ""}</span>
+          <span class="muted">${esc(b.content_hash.slice(0,8))}</span>
+        </div>
+      `).join("") || `<div class="muted" style="font-size:12px">No lab batches yet.</div>`;
+
+      root.className="";
+      root.innerHTML = `
+        <div class="sec-title" style="margin:0 0 4px">Recent batches</div>
+        ${batchRows}
+        <div class="row" style="margin-top:6px">
+          <input type="file" id="lab-file" accept=".hl7,.txt,.tsv,.csv,.json" style="flex:1;font-size:11px" />
+          <select id="lab-format" style="width:130px">
+            <option value="hl7v2">HL7 v2</option>
+            <option value="cdisc_lab">CDISC LAB</option>
+            <option value="fhir">FHIR</option>
+          </select>
+          <button class="btn secondary" onclick="uploadLabBatch()">Ingest</button>
+        </div>
+        <div class="row" style="margin-top:6px">
+          <button class="btn secondary" onclick="backfillLabSubjects()">Backfill subject links</button>
+          <span class="muted" style="font-size:11px;align-self:center">Re-link parsed labs whose subject_code now matches a Subject.</span>
+        </div>
+        <div id="lab-status" class="status"></div>
+      `;
+    } catch (e) { root.className="muted"; root.textContent="Lab feeds unavailable."; badge.textContent=""; }
+  }
+
+  async function uploadLabBatch(){
+    const fileEl = document.getElementById("lab-file");
+    const fmt = document.getElementById("lab-format").value;
+    if(!fileEl.files || !fileEl.files[0]) return;
+    const fd = new FormData();
+    fd.append("file", fileEl.files[0]);
+    fd.append("source_format", fmt);
+    const r = await api(`/api/edc/deployments/${depId}/lab-uploads`, { method:"POST", body: fd });
+    const status = document.getElementById("lab-status");
+    if(r.ok){
+      const d = await r.json();
+      const warn = d.warnings && d.warnings.length ? ` (${d.warnings.length} warning(s))` : "";
+      const dedupe = d.was_new ? "" : " — dedup'd";
+      status.className="status ok"; status.textContent=`Ingested ${d.batch.row_count} row(s)${warn}${dedupe}.`;
+      await loadLabFeeds();
+    } else {
+      const err = await r.json().catch(()=>({detail:r.statusText}));
+      status.className="status err"; status.textContent=`Failed: ${err.detail || r.statusText}`;
+    }
+  }
+
+  async function backfillLabSubjects(){
+    const r = await api(`/api/edc/deployments/${depId}/lab-results/backfill-subjects`, { method:"POST" });
+    const status = document.getElementById("lab-status");
+    if(r.ok){
+      const d = await r.json();
+      status.className="status ok"; status.textContent=`Re-linked ${d.updated} row(s).`;
+      await loadLabFeeds();
+    } else {
+      const err = await r.json().catch(()=>({detail:r.statusText}));
+      status.className="status err"; status.textContent=`Failed: ${err.detail || r.statusText}`;
+    }
+  }
+
+  /* Reload the CDISC + lock + randomisation + recruitment + calendar + source-extraction + drug-accountability + lab-feeds panels when the user picks a different deployment. */
   const originalSelectDeployment = selectDeployment;
   selectDeployment = async function(id){
     await originalSelectDeployment(id);
@@ -994,6 +1081,7 @@
     await loadVisitCalendar();
     await loadSourceExtraction();
     await loadDrugAccountability();
+    await loadLabFeeds();
   };
 
   loadDeployments();
