@@ -134,6 +134,8 @@ skill.csr_drafter · skill.grade_drafter · skill.trial_stats
 ae.record · ae.classify · sae.report
 deviation.record · deviation.classify · capa.author · capa.close
 screening.record · screening.update · screening.read
+visit_schedule.author · visit_schedule.read · visit.update ·
+participant_contact.manage · reminder.read · reminder.send
 library.read · library.write
 watch.read · watch.manage
 study.read · study.author · study.publish · study.create
