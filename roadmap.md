@@ -71,7 +71,7 @@ Where the item sits in the research lifecycle:
 | Dissemination | Patient-facing / lay summaries | **P2** | ✅ shipped 2026-05-31 | M |
 | Execution | Drug accountability (IP receipt → dispense → return) | **P2** | ✅ shipped 2026-05-31 | M |
 | Execution | Lab-data feeds (HL7 / CDISC LAB) | **P2** | 💡 proposed | L |
-| Cross-cutting | Multi-site / multi-tenant coordination roll-up | **P2** | 💡 proposed | M |
+| Cross-cutting | Multi-site / multi-tenant coordination roll-up | **P2** | ✅ shipped 2026-05-31 | M |
 | Cross-cutting | Budget + cost rollup across studies | **P2** | ✅ shipped 2026-05-31 | S |
 | Design | Research-gap analysis specialist | **P3** | 📝 planned (feature-guide) | M |
 | Start-up | DSMB / DMC charter + blinded views | **P3** | 💡 proposed | L |
@@ -515,9 +515,32 @@ Shipped as the second P2 — closes the GCP-mandated IP-tracking gap that the eC
 
 Central labs deliver via these standards. The eCRF re-keys lab values today. Worth doing once SDTM mapping is mature (the data shape converges).
 
-#### Multi-site / multi-tenant coordination rollup · 💡 · M
+#### ~~Multi-site / multi-tenant coordination rollup~~ · ✅ shipped 2026-05-31 · M
 
-Site-level aggregations are partial today; central-coordinator view of multi-site enrolment, query backlog, and per-site monitor visit status would close it.
+Shipped as the fifth P2 — pure read-side aggregation, no new persistence. Closes the gap between per-deployment surfaces (collector.html) and a central-coordinator / monitor / DM view that compares sites at a glance.
+
+- **`services/multisite.py`** — `site_rollup(session, deployment_id)` returns a `DeploymentCard` carrying one `SiteCard` per site plus a `(total)` row. `org_rollup(session)` returns one DeploymentCard per deployment + org-wide totals. Both functions are pure compositions over existing repository methods and direct SELECTs — no new tables, no new persistence.
+- **Four KPI groups per site**:
+  - **Enrolment funnel** — `screened / eligible / consented / enrolled` from `ScreeningLog` via the existing `recruitment_funnel` repo method (P1 #3).
+  - **Query backlog** — `open / answered / closed` from `Query` JOIN `FormInstance` JOIN `Subject`, filtered by site.
+  - **Safety** — `open_aes / open_serious_aes / open_deviations / open_capas`. An AE is "open" until outcome is `recovered` or `death` (the four other outcomes — `recovering / not_recovered / unknown` plus default — all keep the monitor on the hook). Open deviations include both `open` and `under_capa` statuses; CAPAs count only their own `open` status.
+  - **Operational** — `overdue_visits` (PlannedVisit.status=pending AND window_end < now), `low_ip_lots` (lots with `current_inventory < low_ip_threshold`; default 10, configurable per request), `last_sdv_at` (max Verification.verified_at per site).
+- **Two endpoints**:
+  - `GET /api/edc/deployments/{deployment_id}/multisite` — per-site rollup within one deployment. Gated on `study.read` at deployment scope; every clinical role (coordinator / DM / PI / monitor / auditor / study_designer) can hit it.
+  - `GET /api/portfolio/org/multisite` — cross-deployment org rollup. Gated on `portfolio.read_org` (the existing admin-only permission from P1 #9). Returns one DeploymentCard per deployment + org-wide totals.
+- **`low_ip_threshold` is a query parameter on both endpoints** so the central-coordinator dashboard can ask "show me lots below 20" when the trial dispenses in larger kits. Default 10.
+- **`last_sdv_at` per site computed via `SELECT site_id, MAX(verified_at) GROUP BY site_id`** — JOIN Verification → FormInstance → Subject. SQLite test fixtures hand back naive datetimes; the service normalises both sides of the comparison to naive UTC so the test path and runtime path use one code branch.
+- **IP low-stock surfaces on the deployment-totals row, not per-site cards** — IP catalogue + reconciliation are deployment-scoped (no site dimension on the lot reservation today). The dashboard renders the count on the totals card; site cards omit it. If a future slice splits IP by site, the KPI block migrates.
+- **`org_rollup` swallows per-deployment failures** — if one deployment's data is malformed, the rest of the org still renders. Failure logged via `logger.exception`; the deployment card is dropped from `cards`. Trade-off: silent missing card vs page that won't render.
+- **New `/multisite.html` page** with deployment picker, per-site cards in a responsive grid, and an admin-only org section at the top. Each site card shows the four KPI groups with red badges when counts indicate work (open queries / open AEs / overdue visits > 0). Sidebar link gated on `study.read`.
+- **Tests** — 12 new tests in `tests/unit/test_multisite_rollup.py` cover the empty-deployment edge, per-site separation, all four KPI groups (enrolment via the existing funnel method, query status counts, AE outcome semantics + serious threshold, deviation+CAPA cascade, overdue-visit windowing, last-SDV max per site, IP low-stock surfacing on totals), and cross-deployment org rollup. Plus a router-factory smoke test pinning `/portfolio/org/multisite` + the `OrgMultisiteRollupOut` DTO round-trip. 1386 tests pass.
+- **What's deferred**:
+  - **Per-site IP allocation.** Today IP lots are deployment-scoped; some studies allocate kits to sites at receipt time. Adding `DrugReceipt.site_id` (already exists!) → groupable IP cards is a small follow-up — `low_ip_lots` could migrate from deployment-totals down to per-site cards.
+  - **Monitor-visit scheduling + last-monitor-visit per site.** The service surfaces last-SDV, which is a proxy. A dedicated `MonitorVisit` table (or a free-text "last seen" log) would be more direct.
+  - **Time-series sparklines.** The cards show point-in-time counts; per-week deltas would help spot trending issues. The recruitment funnel already keeps per-week × per-site breakdowns; the rollup could surface them.
+  - **Per-site cost attribution.** The budget rollup (P2 #6) is per-user / per-thread; a per-deployment-per-site spend column would compose well but requires linking threads to deployments.
+  - **Filters / sort / search on the dashboard.** Today the cards render in `Site.created_at` order. A search box for site name + "show only sites with open queries" toggles would help at scale.
+  - **Drilldown links to the source surface.** Each KPI count could be a link into the corresponding eCRF endpoint (open AEs → AE list filtered to this site). One PR away once those filtered views exist.
 
 #### ~~Budget + cost rollup across studies~~ · ✅ shipped 2026-05-31 · S
 
