@@ -21,6 +21,7 @@ from . import (
     csr_drafter,
     general_qa,
     grade_drafter,
+    ipd,
     irb_drafter,
     manuscript_drafter,
     meta_analysis,
@@ -47,6 +48,7 @@ SPECIALISTS = {
     grade_drafter.WORKFLOW_NAME: grade_drafter,
     trial_stats.WORKFLOW_NAME: trial_stats,
     nma.WORKFLOW_NAME: nma,
+    ipd.WORKFLOW_NAME: ipd,
     general_qa.WORKFLOW_NAME: general_qa,
 }
 
@@ -55,6 +57,7 @@ __all__ = [
     "csr_drafter",
     "general_qa",
     "grade_drafter",
+    "ipd",
     "irb_drafter",
     "manuscript_drafter",
     "meta_analysis",

@@ -24,6 +24,7 @@ from ..persistence.repository import ThreadRepository
 from ..persistence.user_repository import UserRepository
 from ..reports import csr as _csr_report
 from ..reports import grade as _grade_report
+from ..reports import ipd as _ipd_report
 from ..reports import irb as _irb_report
 from ..reports import manuscript as _manuscript_report
 from ..reports import meta_analysis as _ma_report
@@ -345,6 +346,13 @@ def create_thread_router() -> APIRouter:
             _nma_report.build_docx,
             "nma",
             "network meta-analysis",
+        ),
+        "ipd": (
+            _ipd_report.assemble_report_data,
+            _ipd_report.build_pdf,
+            _ipd_report.build_docx,
+            "ipd-ma",
+            "individual patient data meta-analysis",
         ),
     }
 

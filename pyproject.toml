@@ -94,6 +94,7 @@ exclude = [
     "src/research_assistant/trial_stats/sandbox_scripts/",
     "src/research_assistant/visualizations/sandbox_scripts/",
     "src/research_assistant/nma/sandbox_scripts/",
+    "src/research_assistant/ipd/sandbox_scripts/",
 ]
 
 [[tool.mypy.overrides]]

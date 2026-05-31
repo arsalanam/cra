@@ -33,6 +33,7 @@ from .specialists import (
     csr_drafter,
     general_qa,
     grade_drafter,
+    ipd,
     irb_drafter,
     manuscript_drafter,
     meta_analysis,
@@ -108,6 +109,10 @@ _SLASH_COMMANDS: dict[str, str] = {
     "network-ma": nma.WORKFLOW_NAME,
     "indirect-comparison": nma.WORKFLOW_NAME,
     "league-table": nma.WORKFLOW_NAME,
+    "ipd": ipd.WORKFLOW_NAME,
+    "ipdma": ipd.WORKFLOW_NAME,
+    "ipd-ma": ipd.WORKFLOW_NAME,
+    "subject-level": ipd.WORKFLOW_NAME,
     "general": general_qa.WORKFLOW_NAME,
     "ask": general_qa.WORKFLOW_NAME,
     # Future: "gap" -> "research_gap", "ecrf" -> "ecrf_design"
@@ -212,6 +217,15 @@ _WORKFLOW_CONTINUATIONS: dict[str, tuple[str, ...]] = {
         "Run Bayesian NMA",
         "Refine NMA:",
         "Finalize NMA",
+    ),
+    ipd.WORKFLOW_NAME: (
+        "IPD intake confirmed",
+        "IPD bundle confirmed",
+        "IPD main results confirmed",
+        "IPD subgroup confirmed",
+        "Add IPD subgroup:",
+        "Refine IPD:",
+        "Finalize IPD",
     ),
     # Future: research_gap / ecrf continuations
 }
@@ -331,6 +345,23 @@ _TRIGGER_KEYWORDS: list[tuple[str, list[re.Pattern[str]]]] = [
             re.compile(r"\bcertainty\s+of\s+evidence\b"),
             re.compile(r"\bprisma\s+(checklist|2020|reporting)\b"),
             re.compile(r"\b(draft|generate)\s+(a|the|my)?\s*grade\s+(table|sof)\b"),
+        ],
+    ),
+    # ipd: individual patient data meta-analysis (pools subject-level
+    # data across trials). Checked BEFORE meta_analysis so "IPD MA on
+    # statins" routes here rather than the aggregate pairwise specialist.
+    (
+        ipd.WORKFLOW_NAME,
+        [
+            re.compile(r"\bindividual\s+patient\s+data\b"),
+            re.compile(r"\bipd\s+(meta[-\s]analysis|ma)\b"),
+            re.compile(r"\bipd\b"),
+            re.compile(r"\bpatient[-\s]level\s+data\b"),
+            re.compile(r"\bsubject[-\s]level\s+data\b"),
+            re.compile(r"\bone[-\s]stage\s+(model|meta|pooling)\b"),
+            re.compile(r"\btwo[-\s]stage\s+(model|meta|pooling)\b"),
+            re.compile(r"\btreatment\s*[×x]\s*subgroup\s+interaction\b"),
+            re.compile(r"\bsubgroup[-\s]by[-\s]treatment\b"),
         ],
     ),
     # nma: network meta-analysis (≥3 interventions; indirect comparisons).

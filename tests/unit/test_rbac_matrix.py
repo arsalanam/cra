@@ -313,6 +313,8 @@ def test_skill_permission_covers_every_specialist() -> None:
         "trial_stats",
         # Network meta-analysis (≥3 interventions, indirect comparisons)
         "nma",
+        # Individual patient data meta-analysis (pools subject-level rows)
+        "ipd",
     }
     assert set(SKILL_PERMISSION) == expected_workflows
 
@@ -516,6 +518,29 @@ def test_coordinator_records_screening_pi_dm_update_monitor_auditor_read() -> No
         Permission.SCREENING_READ,
     ):
         assert p not in student
+
+
+def test_researcher_can_run_ipd_but_student_cannot() -> None:
+    """IPD meta-analysis (P1 #7) — researcher tier; student blocked.
+    Same posture as NMA: synthesis tier; methodological judgement
+    required."""
+    assert Permission.SKILL_IPD in ROLE_PERMISSIONS[Role.RESEARCHER]
+    assert Permission.SKILL_IPD in ROLE_PERMISSIONS[Role.ADMIN]
+    assert Permission.SKILL_IPD not in ROLE_PERMISSIONS[Role.STUDENT]
+    for r in (
+        Role.STUDY_DESIGNER,
+        Role.PRINCIPAL_INVESTIGATOR,
+        Role.COORDINATOR,
+        Role.DATA_MANAGER,
+        Role.MONITOR,
+        Role.AUDITOR,
+        Role.REVIEWER_1,
+        Role.REVIEWER_2,
+        Role.ADJUDICATOR,
+    ):
+        assert Permission.SKILL_IPD not in ROLE_PERMISSIONS[r], (
+            f"{r.value} should not have skill.ipd"
+        )
 
 
 def test_researcher_can_run_nma_but_student_cannot() -> None:

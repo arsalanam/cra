@@ -38,6 +38,7 @@ class Permission(StrEnum):
     SKILL_GRADE_DRAFTER = "skill.grade_drafter"
     SKILL_TRIAL_STATS = "skill.trial_stats"
     SKILL_NMA = "skill.nma"
+    SKILL_IPD = "skill.ipd"
 
     # ── Library (cached publications + RAG) ──────────────────────────────
     LIBRARY_READ = "library.read"
@@ -211,6 +212,10 @@ _EVIDENCE_SKILLS: Final[frozenset[Permission]] = frozenset(
         # indirect comparisons through common comparators). League
         # table + SUCRA + network geometry.
         Permission.SKILL_NMA,
+        # Synthesis tier: individual patient data meta-analysis. Pools
+        # subject-level rows across trials with one-stage + two-stage
+        # comparison and treatment × subgroup interaction tests.
+        Permission.SKILL_IPD,
     }
 )
 
@@ -577,6 +582,7 @@ SKILL_PERMISSION: Final[dict[str, Permission]] = {
     "grade_drafter": Permission.SKILL_GRADE_DRAFTER,
     "trial_stats": Permission.SKILL_TRIAL_STATS,
     "nma": Permission.SKILL_NMA,
+    "ipd": Permission.SKILL_IPD,
 }
 
 
