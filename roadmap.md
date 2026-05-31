@@ -70,7 +70,7 @@ Where the item sits in the research lifecycle:
 | Synthesis | Group-level living-review subscriptions (quorum notifications) | **P2** | ✅ shipped 2026-05-31 | M |
 | Dissemination | Patient-facing / lay summaries | **P2** | ✅ shipped 2026-05-31 | M |
 | Execution | Drug accountability (IP receipt → dispense → return) | **P2** | ✅ shipped 2026-05-31 | M |
-| Execution | Lab-data feeds (HL7 / CDISC LAB) | **P2** | 💡 proposed | L |
+| Execution | Lab-data feeds (HL7 / CDISC LAB) | **P2** | ✅ shipped 2026-05-31 | L |
 | Cross-cutting | Multi-site / multi-tenant coordination roll-up | **P2** | ✅ shipped 2026-05-31 | M |
 | Cross-cutting | Budget + cost rollup across studies | **P2** | ✅ shipped 2026-05-31 | S |
 | Design | Research-gap analysis specialist | **P3** | 📝 planned (feature-guide) | M |
@@ -511,9 +511,39 @@ Shipped as the second P2 — closes the GCP-mandated IP-tracking gap that the eC
   - Temperature-excursion CAPA auto-link — `temp_excursion_flag` is logged but not yet wired to the protocol-deviation workflow
   - IRT integration for dispensation — kits are operator-selected today; randomisation-driven kit selection lives in the IRT subsystem (E8) but the join is not yet automatic
 
-#### Lab-data feeds (HL7 / CDISC LAB) · 💡 · L
+#### ~~Lab-data feeds (HL7 / CDISC LAB)~~ · ✅ shipped 2026-05-31 · L
 
-Central labs deliver via these standards. The eCRF re-keys lab values today. Worth doing once SDTM mapping is mature (the data shape converges).
+Shipped as the sixth P2 — closes the re-keying gap between central labs and the eCRF. Three stdlib-only parsers + idempotent ingest + auto-cascade into the SDTM LB pipeline. All 6 P2 items now shipped.
+
+- **3 parsers in `services/lab_ingest/`**, stdlib only (no hl7apy / fhir.resources / etc dependency):
+  - **HL7 v2 ORU^R01** (`hl7v2.py`) — pipe-delimited segments. Walks MSH/PID/OBR/OBX, extracts subject id (PID-3 component 1), specimen datetime (OBR-7), test code+name (OBX-3), value (OBX-5), units (OBX-6), reference range (OBX-7), abnormal flag (OBX-8). Handles CRLF / LF / CR line endings; ref-range parser handles bounded (`5.0-9.0`) and one-sided (`<2.5`, `>=0`) forms.
+  - **CDISC LAB tab-delimited** (`cdisc_lab.py`) — required columns SUBJID / ACCSNNUM / LBTESTCD / LBTEST / LBORRES / LBORRESU / LBORNRLO / LBORNRHI / LBNRIND / LBDTC. Auto-detects tab vs comma delimiter from the header row. Skips blank trailing rows.
+  - **HL7 FHIR R4** (`fhir.py`) — walks a Bundle of Observations (or a standalone Observation, or a bare list). Maps subject.reference, code.coding[0].code+display, valueQuantity / valueString / valueCodeableConcept, referenceRange[0].low/high, interpretation[0].coding[0].code, effectiveDateTime, specimen.reference.
+- **Common shape**: every parser produces `ParsedLabResult` rows with the same field set. The repository's `ingest_lab_batch` is source-format-agnostic — adding a fourth format means writing one more parser, not touching the repo.
+- **2 new ClinicalBase tables**:
+  - `LabBatch` — one per ingest, carries source_format + SHA-256 content hash + row count + filename + actor. UNIQUE on (deployment_id, content_hash) so re-uploads dedupe.
+  - `LabResult` — one row per parsed observation. Subject linkage is NULLABLE (`subject_id` SET NULL) — a lab message can arrive before the Subject is registered; `subject_code_hint` preserves the raw id so a later backfill can re-link. `raw_segment_json` keeps the source-format snapshot for audit.
+- **Idempotent re-uploads via SHA-256.** Identical content → existing batch returned with `was_new=False`. Different content under the same filename → new batch. Same dedupe posture as P1 #5 source documents.
+- **2 ingest endpoints**:
+  - `POST /api/edc/deployments/{deployment_id}/lab-uploads` — multipart file upload with `source_format` Form field. For operators using collector.html.
+  - `POST /api/edc/deployments/{deployment_id}/lab-feed` — system-to-system listener with `source_format` derived from `Content-Type` header (`application/hl7-v2+er7` → hl7v2, `application/fhir+json` → fhir, `text/tab-separated-values` → cdisc_lab) or `?source_format=` query parameter. For central labs configured to POST.
+- **5 read endpoints** (all gated on `lab.read`): list lab batches, list results per batch, list results filtered by subject / test_code, backfill subject links.
+- **2 new permissions** in the RBAC matrix:
+  - `lab.upload` — coordinator (POC site upload) + data_manager (central depot operator). Other roles do NOT carry by default.
+  - `lab.read` — every clinical-tier role (study_designer / PI / coordinator / DM / monitor / auditor). Researcher / student aren't trial-side and don't carry it.
+- **SDTM LB cascade** — new `derive_lb_from_lab_results` on the SDTM mapper. CDISC pipeline runs the existing form-based `derive_lb` first, then appends rows from parsed labs (only when the LabResult.subject_id is linked). The cascade honours a `starting_seq_by_subject` map so LBSEQ stays unique per (deployment, USUBJID). Form-based labs remain the source of truth for studies without central feeds; parsed labs cascade additively.
+- **Lock-aware writes** — every ingest endpoint calls `_require_deployment_unlocked`; once the study database is locked (E7), no new lab batches can land.
+- **Subject backfill endpoint** — `POST /api/edc/deployments/{id}/lab-results/backfill-subjects` re-links rows whose `subject_code_hint` now matches a registered Subject. Operator-triggered (not run automatically on Subject create) so the audit trail records who chose to link.
+- **Frontend** — `collector.html` gains a "Lab-data feeds" panel alongside Source extraction + Recruitment + Drug accountability. File picker + format dropdown (HL7 v2 / CDISC LAB / FHIR) + Ingest button + recent-batches list + "Backfill subject links" button. Graceful 403 fallback when the user lacks `lab.read`.
+- **30 new tests across 2 files**: parser correctness (HL7 v2 sample with 3 OBX rows + qualitative value + open ref ranges + line-ending variants + missing-OBX-3 warning; CDISC LAB sample with 3 rows + date-only LBDTC + CSV fallback + blank-row tolerance + missing-test-code warning; FHIR Bundle with valueQuantity / valueString / non-Observation filtering / bare-list payload / malformed-JSON tolerance) + ingest (happy path, SHA-256 dedupe, unknown format rejection, empty payload rejection, unknown deployment rejection, subject linkage when Subject exists vs NULL when not, backfill re-linking) + SDTM LB cascade (one row per parsed lab linked to a Subject, unlinked rows skipped, starting_seq honoured) + RBAC matrix (lab.upload coord+DM only, lab.read every clinical role). 1416 tests pass.
+- **What's deferred**:
+  - **Unit-conversion table** for LBSTRESN — today the cascade emits LBSTRESN = LBORNRLO (no conversion). A deploy-time unit-conversion dictionary would normalise mg/dL ↔ mmol/L for glucose, etc.
+  - **LBTESTCD ↔ LOINC mapping table.** Source messages carry LOINC codes (HL7 / FHIR) or LBTESTCD (CDISC LAB) which don't always align with the platform's `lb_test_codes.json` aliases. A configurable code-mapping table would catch sources that use sponsor-specific codes.
+  - **Real-time HL7 listener (MLLP / TCP).** Listener endpoint is HTTP today. A long-running MLLP listener for hospitals that can only ship over TCP is a separate slice.
+  - **Hospital → trial subject_code mapping table.** Source messages typically carry the hospital MRN; the trial uses subject_code. Today the operator pre-maps in the source message. A persistent translation table would close the loop.
+  - **Per-batch error report download.** Today warnings are returned in the API response and shown briefly in the UI. A downloadable per-batch report (PDF / CSV) for audit + sponsor reconciliation is a follow-up.
+  - **Streaming ingest for very large batches.** Files > 20 MB are rejected today. A streaming-parse path for multi-day central-lab dumps would close that gap.
+  - **Reverse cascade: trigger form-based LB re-derivation when labs backfill.** Today a backfill re-link doesn't automatically re-run the CDISC pipeline. The operator must trigger the derivation explicitly.
 
 #### ~~Multi-site / multi-tenant coordination rollup~~ · ✅ shipped 2026-05-31 · M
 
