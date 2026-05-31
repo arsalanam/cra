@@ -1246,3 +1246,143 @@ class AuditEntry(ClinicalBase):
     actor_role: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     source: Mapped[str] = mapped_column(Text, default="edc", doc="edc | epro | import | system")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class ScreeningLog(ClinicalBase):
+    """Recruitment / screening log row — one per prospect a site evaluates.
+
+    Closes the operational-hygiene gap PIs ask about weekly: "how many people
+    did we screen this month, how many were eligible, why were the rest
+    excluded, and how many actually consented + enrolled?"
+
+    Lifecycle:
+      pending → eligible | screen_failure
+                      ↓
+             pending → consented | declined | withdrew
+                                ↓
+                       pending → enrolled | not_enrolled
+
+    The screening_code is sponsor-assigned at first contact and is NOT the
+    eventual USUBJID — the latter only exists after enrolment links the log
+    to a `Subject` row via `enrolled_subject_id`. PHI minimisation: only the
+    age band, sex, race, ethnicity, and DOB *year* (not full DOB) are stored;
+    no name / DOB / MRN.
+
+    Exclusion reasons follow the CONSORT 2010 standard reason set (see
+    `recruitment_terminology.CONSORT_EXCLUSION_REASONS`).
+    """
+
+    __tablename__ = "screening_logs"
+    __table_args__ = (
+        UniqueConstraint(
+            "deployment_id", "screening_code", name="uq_screening_log_code"
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    deployment_id: Mapped[str] = mapped_column(
+        ForeignKey("study_deployments.id", ondelete="CASCADE"), index=True
+    )
+    site_id: Mapped[str | None] = mapped_column(
+        ForeignKey("sites.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        default=None,
+        doc="Optional — community-recruited prospects may not yet have a site.",
+    )
+    screening_code: Mapped[str] = mapped_column(
+        Text,
+        doc=(
+            "Sponsor-assigned screening identifier (e.g. 'SCR-0042'). NOT the "
+            "USUBJID — that only exists after enrolment."
+        ),
+    )
+    screening_date: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
+
+    # Demographics — identity-light + NIH-diversity-reportable.
+    age_band: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        default=None,
+        doc="One of the canonical age bands: <18 / 18-29 / 30-44 / 45-64 / 65-74 / 75+.",
+    )
+    sex: Mapped[str | None] = mapped_column(
+        Text, nullable=True, default=None, doc="M | F | other | unknown"
+    )
+    race: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        default=None,
+        doc=(
+            "OMB-1997 categorical (american_indian / asian / black / "
+            "native_hawaiian / white / multiracial / other / unknown)."
+        ),
+    )
+    ethnicity: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        default=None,
+        doc="OMB-1997 (hispanic_or_latino | not_hispanic_or_latino | unknown).",
+    )
+    dob_year: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+        default=None,
+        doc="Year-of-birth only — full DOB is identifying PHI.",
+    )
+
+    # Status pipeline.
+    eligibility_status: Mapped[str] = mapped_column(
+        Text,
+        default="pending",
+        doc="pending | eligible | screen_failure",
+    )
+    exclusion_reason_code: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        default=None,
+        doc="One of CONSORT_EXCLUSION_REASONS keys when status=screen_failure.",
+    )
+    exclusion_reason_text: Mapped[str] = mapped_column(Text, default="")
+
+    consent_status: Mapped[str] = mapped_column(
+        Text,
+        default="pending",
+        doc="pending | consented | declined | withdrew",
+    )
+    consent_date: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
+
+    enrolment_status: Mapped[str] = mapped_column(
+        Text,
+        default="pending",
+        doc="pending | enrolled | not_enrolled",
+    )
+    enrolled_subject_id: Mapped[str | None] = mapped_column(
+        ForeignKey("subjects.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        default=None,
+        doc="Set when the prospect enrols — links to the Subject row.",
+    )
+    enrolment_date: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
+
+    # Audit / provenance.
+    recorded_by_sub: Mapped[str | None] = mapped_column(
+        Text, nullable=True, default=None
+    )
+    recorded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
+    updated_by_sub: Mapped[str | None] = mapped_column(
+        Text, nullable=True, default=None
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
+    notes: Mapped[str] = mapped_column(Text, default="")

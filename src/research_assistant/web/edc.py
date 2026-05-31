@@ -508,6 +508,75 @@ class CapaIn(BaseModel):
     due_date: datetime | None = None
 
 
+# ── Screening / recruitment log DTOs (P1 #3) ─────────────────────────────
+
+
+class ScreeningLogIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    screening_code: str
+    site_id: str | None = None
+    screening_date: datetime | None = None
+    age_band: str | None = None
+    sex: str | None = None
+    race: str | None = None
+    ethnicity: str | None = None
+    dob_year: int | None = None
+    notes: str = ""
+
+
+class ScreeningEligibilityIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    eligibility_status: str  # pending | eligible | screen_failure
+    exclusion_reason_code: str | None = None
+    exclusion_reason_text: str = ""
+
+
+class ScreeningConsentIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    consent_status: str  # pending | consented | declined | withdrew
+    consent_date: datetime | None = None
+
+
+class ScreeningEnrolmentIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    enrolment_status: str  # pending | enrolled | not_enrolled
+    enrolled_subject_id: str | None = None
+    enrolment_date: datetime | None = None
+
+
+class ScreeningLogOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    deployment_id: str
+    site_id: str | None
+    screening_code: str
+    screening_date: datetime
+    age_band: str | None
+    sex: str | None
+    race: str | None
+    ethnicity: str | None
+    dob_year: int | None
+    eligibility_status: str
+    exclusion_reason_code: str | None
+    exclusion_reason_text: str
+    consent_status: str
+    consent_date: datetime | None
+    enrolment_status: str
+    enrolled_subject_id: str | None
+    enrolment_date: datetime | None
+    recorded_by_sub: str | None
+    recorded_at: datetime
+    updated_at: datetime
+    notes: str
+
+
+class RecruitmentFunnelOut(BaseModel):
+    deployment_id: str
+    totals: dict[str, int]
+    screen_failures_by_reason: dict[str, int]
+    per_week_per_site: dict[str, dict[str, dict[str, int]]]
+
+
 class CapaOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: str
@@ -2279,5 +2348,151 @@ def create_edc_router() -> APIRouter:
         async with get_clinical_session() as s:
             rows = await ClinicalRepository(s).list_code_break_events(deployment_id)
             return [CodeBreakOut.model_validate(r) for r in rows]
+
+    # ── Recruitment / screening log (P1 #3) ──────────────────────────────
+
+    @router.post(
+        "/deployments/{deployment_id}/screening",
+        response_model=ScreeningLogOut,
+        status_code=201,
+    )
+    async def record_screening(
+        deployment_id: str,
+        body: ScreeningLogIn,
+        user: SessionPayload = require_permission_scoped(
+            Permission.SCREENING_RECORD, resource_param="deployment_id"
+        ),
+    ) -> ScreeningLogOut:
+        async with get_clinical_session() as s:
+            await _require_deployment_unlocked(s, deployment_id)
+            try:
+                log = await ClinicalRepository(s).record_screening(
+                    deployment_id=deployment_id,
+                    screening_code=body.screening_code,
+                    screening_date=body.screening_date,
+                    site_id=body.site_id,
+                    age_band=body.age_band,
+                    sex=body.sex,
+                    race=body.race,
+                    ethnicity=body.ethnicity,
+                    dob_year=body.dob_year,
+                    notes=body.notes,
+                    actor_sub=user.sub,
+                )
+            except ClinicalError as e:
+                raise HTTPException(422, str(e)) from e
+            return ScreeningLogOut.model_validate(log)
+
+    @router.get(
+        "/deployments/{deployment_id}/screening",
+        response_model=list[ScreeningLogOut],
+    )
+    async def list_screening_logs(
+        deployment_id: str,
+        user: SessionPayload = require_permission_scoped(
+            Permission.SCREENING_READ, resource_param="deployment_id"
+        ),
+        site_id: str | None = None,
+        eligibility_status: str | None = None,
+        consent_status: str | None = None,
+        enrolment_status: str | None = None,
+    ) -> list[ScreeningLogOut]:
+        async with get_clinical_session() as s:
+            rows = await ClinicalRepository(s).list_screening_logs(
+                deployment_id=deployment_id,
+                site_id=site_id,
+                eligibility_status=eligibility_status,
+                consent_status=consent_status,
+                enrolment_status=enrolment_status,
+            )
+            return [ScreeningLogOut.model_validate(r) for r in rows]
+
+    @router.patch(
+        "/screening/{log_id}/eligibility",
+        response_model=ScreeningLogOut,
+    )
+    async def update_screening_eligibility(
+        log_id: str,
+        body: ScreeningEligibilityIn,
+        user: SessionPayload = require_permission_scoped(
+            Permission.SCREENING_UPDATE, resource_param="log_id"
+        ),
+    ) -> ScreeningLogOut:
+        async with get_clinical_session() as s:
+            try:
+                log = await ClinicalRepository(s).update_screening_eligibility(
+                    log_id,
+                    eligibility_status=body.eligibility_status,
+                    exclusion_reason_code=body.exclusion_reason_code,
+                    exclusion_reason_text=body.exclusion_reason_text,
+                    actor_sub=user.sub,
+                )
+            except ClinicalError as e:
+                raise HTTPException(422, str(e)) from e
+            return ScreeningLogOut.model_validate(log)
+
+    @router.patch(
+        "/screening/{log_id}/consent",
+        response_model=ScreeningLogOut,
+    )
+    async def update_screening_consent(
+        log_id: str,
+        body: ScreeningConsentIn,
+        user: SessionPayload = require_permission_scoped(
+            Permission.SCREENING_UPDATE, resource_param="log_id"
+        ),
+    ) -> ScreeningLogOut:
+        async with get_clinical_session() as s:
+            try:
+                log = await ClinicalRepository(s).update_screening_consent(
+                    log_id,
+                    consent_status=body.consent_status,
+                    consent_date=body.consent_date,
+                    actor_sub=user.sub,
+                )
+            except ClinicalError as e:
+                raise HTTPException(422, str(e)) from e
+            return ScreeningLogOut.model_validate(log)
+
+    @router.patch(
+        "/screening/{log_id}/enrolment",
+        response_model=ScreeningLogOut,
+    )
+    async def update_screening_enrolment(
+        log_id: str,
+        body: ScreeningEnrolmentIn,
+        user: SessionPayload = require_permission_scoped(
+            Permission.SCREENING_UPDATE, resource_param="log_id"
+        ),
+    ) -> ScreeningLogOut:
+        async with get_clinical_session() as s:
+            try:
+                log = await ClinicalRepository(s).update_screening_enrolment(
+                    log_id,
+                    enrolment_status=body.enrolment_status,
+                    enrolled_subject_id=body.enrolled_subject_id,
+                    enrolment_date=body.enrolment_date,
+                    actor_sub=user.sub,
+                )
+            except ClinicalError as e:
+                raise HTTPException(422, str(e)) from e
+            return ScreeningLogOut.model_validate(log)
+
+    @router.get(
+        "/deployments/{deployment_id}/recruitment/funnel",
+        response_model=RecruitmentFunnelOut,
+    )
+    async def get_recruitment_funnel(
+        deployment_id: str,
+        user: SessionPayload = require_permission_scoped(
+            Permission.SCREENING_READ, resource_param="deployment_id"
+        ),
+        site_id: str | None = None,
+    ) -> RecruitmentFunnelOut:
+        async with get_clinical_session() as s:
+            payload = await ClinicalRepository(s).recruitment_funnel(
+                deployment_id, site_id=site_id
+            )
+            return RecruitmentFunnelOut.model_validate(payload)
 
     return router

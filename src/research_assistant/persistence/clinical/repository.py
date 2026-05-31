@@ -36,6 +36,7 @@ from .models import (
     Query,
     QueryResponse,
     RandomizationSchedule,
+    ScreeningLog,
     Signature,
     Site,
     StudyDeployment,
@@ -43,6 +44,12 @@ from .models import (
     Subject,
     SubjectSignature,
     Verification,
+)
+from .recruitment_terminology import (
+    CONSENT_STATUSES,
+    CONSORT_EXCLUSION_REASONS,
+    ELIGIBILITY_STATUSES,
+    ENROLMENT_STATUSES,
 )
 from .safety_rules import (
     SeriousReason,
@@ -1553,3 +1560,294 @@ class ClinicalRepository:
             actor_sub=actor_sub,
         )
         return dev
+
+    # ── Recruitment / screening log (P1 #3) ────────────────────────────
+
+    async def record_screening(
+        self,
+        deployment_id: str,
+        *,
+        screening_code: str,
+        screening_date: datetime | None = None,
+        site_id: str | None = None,
+        age_band: str | None = None,
+        sex: str | None = None,
+        race: str | None = None,
+        ethnicity: str | None = None,
+        dob_year: int | None = None,
+        notes: str = "",
+        actor_sub: str | None = None,
+    ) -> ScreeningLog:
+        """Create a new screening-log row at eligibility_status='pending'."""
+        deployment = await self._s.get(StudyDeployment, deployment_id)
+        if deployment is None:
+            raise ClinicalError(f"Deployment {deployment_id!r} not found.")
+        if site_id is not None:
+            site = await self._s.get(Site, site_id)
+            if site is None or site.deployment_id != deployment_id:
+                raise ClinicalError(
+                    f"Site {site_id!r} not found in deployment {deployment_id!r}."
+                )
+        # Enforce unique screening_code per deployment at the app layer too —
+        # gives a clear error message instead of an IntegrityError.
+        existing_stmt = select(ScreeningLog).where(
+            ScreeningLog.deployment_id == deployment_id,
+            ScreeningLog.screening_code == screening_code,
+        )
+        if (await self._s.scalars(existing_stmt)).first() is not None:
+            raise ClinicalError(
+                f"Screening code {screening_code!r} already exists in this deployment."
+            )
+        log = ScreeningLog(
+            deployment_id=deployment_id,
+            site_id=site_id,
+            screening_code=screening_code,
+            screening_date=screening_date or datetime.now(UTC),
+            age_band=age_band,
+            sex=sex,
+            race=race,
+            ethnicity=ethnicity,
+            dob_year=dob_year,
+            notes=notes,
+            recorded_by_sub=actor_sub,
+            updated_by_sub=actor_sub,
+        )
+        self._s.add(log)
+        await self._s.flush()
+        self._audit(
+            entity_type="screening_log",
+            entity_id=log.id,
+            action="create",
+            actor_sub=actor_sub,
+            new_value=f"code={screening_code}",
+        )
+        return log
+
+    async def get_screening_log(self, log_id: str) -> ScreeningLog | None:
+        return await self._s.get(ScreeningLog, log_id)
+
+    async def list_screening_logs(
+        self,
+        *,
+        deployment_id: str,
+        site_id: str | None = None,
+        eligibility_status: str | None = None,
+        consent_status: str | None = None,
+        enrolment_status: str | None = None,
+    ) -> list[ScreeningLog]:
+        stmt = (
+            select(ScreeningLog)
+            .where(ScreeningLog.deployment_id == deployment_id)
+            .order_by(ScreeningLog.screening_date.desc(), ScreeningLog.recorded_at.desc())
+        )
+        if site_id is not None:
+            stmt = stmt.where(ScreeningLog.site_id == site_id)
+        if eligibility_status is not None:
+            stmt = stmt.where(ScreeningLog.eligibility_status == eligibility_status)
+        if consent_status is not None:
+            stmt = stmt.where(ScreeningLog.consent_status == consent_status)
+        if enrolment_status is not None:
+            stmt = stmt.where(ScreeningLog.enrolment_status == enrolment_status)
+        return list((await self._s.scalars(stmt)).all())
+
+    async def update_screening_eligibility(
+        self,
+        log_id: str,
+        *,
+        eligibility_status: str,
+        exclusion_reason_code: str | None = None,
+        exclusion_reason_text: str = "",
+        actor_sub: str | None = None,
+    ) -> ScreeningLog:
+        """Set eligibility_status. When marking screen_failure, MUST supply
+        a CONSORT-coded reason."""
+        if eligibility_status not in ELIGIBILITY_STATUSES:
+            raise ClinicalError(
+                f"Invalid eligibility_status {eligibility_status!r}; choose one of "
+                f"{', '.join(ELIGIBILITY_STATUSES)}."
+            )
+        log = await self.get_screening_log(log_id)
+        if log is None:
+            raise ClinicalError(f"Screening log {log_id!r} not found.")
+        if eligibility_status == "screen_failure":
+            if not exclusion_reason_code:
+                raise ClinicalError(
+                    "exclusion_reason_code required when marking screen_failure."
+                )
+            if exclusion_reason_code not in CONSORT_EXCLUSION_REASONS:
+                raise ClinicalError(
+                    f"Unknown exclusion_reason_code {exclusion_reason_code!r}; choose one of "
+                    f"{', '.join(CONSORT_EXCLUSION_REASONS)}."
+                )
+        old = log.eligibility_status
+        log.eligibility_status = eligibility_status
+        log.exclusion_reason_code = (
+            exclusion_reason_code if eligibility_status == "screen_failure" else None
+        )
+        log.exclusion_reason_text = (
+            exclusion_reason_text if eligibility_status == "screen_failure" else ""
+        )
+        log.updated_by_sub = actor_sub
+        await self._s.flush()
+        self._audit(
+            entity_type="screening_log",
+            entity_id=log.id,
+            action="eligibility",
+            actor_sub=actor_sub,
+            old_value=old,
+            new_value=eligibility_status,
+        )
+        return log
+
+    async def update_screening_consent(
+        self,
+        log_id: str,
+        *,
+        consent_status: str,
+        consent_date: datetime | None = None,
+        actor_sub: str | None = None,
+    ) -> ScreeningLog:
+        if consent_status not in CONSENT_STATUSES:
+            raise ClinicalError(
+                f"Invalid consent_status {consent_status!r}; choose one of "
+                f"{', '.join(CONSENT_STATUSES)}."
+            )
+        log = await self.get_screening_log(log_id)
+        if log is None:
+            raise ClinicalError(f"Screening log {log_id!r} not found.")
+        if log.eligibility_status != "eligible" and consent_status == "consented":
+            raise ClinicalError(
+                "Cannot mark consented before eligibility=eligible."
+            )
+        old = log.consent_status
+        log.consent_status = consent_status
+        log.consent_date = (
+            consent_date or (datetime.now(UTC) if consent_status == "consented" else None)
+        )
+        log.updated_by_sub = actor_sub
+        await self._s.flush()
+        self._audit(
+            entity_type="screening_log",
+            entity_id=log.id,
+            action="consent",
+            actor_sub=actor_sub,
+            old_value=old,
+            new_value=consent_status,
+        )
+        return log
+
+    async def update_screening_enrolment(
+        self,
+        log_id: str,
+        *,
+        enrolment_status: str,
+        enrolled_subject_id: str | None = None,
+        enrolment_date: datetime | None = None,
+        actor_sub: str | None = None,
+    ) -> ScreeningLog:
+        if enrolment_status not in ENROLMENT_STATUSES:
+            raise ClinicalError(
+                f"Invalid enrolment_status {enrolment_status!r}; choose one of "
+                f"{', '.join(ENROLMENT_STATUSES)}."
+            )
+        log = await self.get_screening_log(log_id)
+        if log is None:
+            raise ClinicalError(f"Screening log {log_id!r} not found.")
+        if enrolment_status == "enrolled":
+            if log.consent_status != "consented":
+                raise ClinicalError(
+                    "Cannot mark enrolled before consent_status=consented."
+                )
+            if enrolled_subject_id is None:
+                raise ClinicalError(
+                    "enrolled_subject_id required when marking enrolled."
+                )
+            subject = await self._s.get(Subject, enrolled_subject_id)
+            if subject is None:
+                raise ClinicalError(
+                    f"Subject {enrolled_subject_id!r} not found."
+                )
+            if subject.deployment_id != log.deployment_id:
+                raise ClinicalError(
+                    "Subject and screening log belong to different deployments."
+                )
+        old = log.enrolment_status
+        log.enrolment_status = enrolment_status
+        log.enrolled_subject_id = (
+            enrolled_subject_id if enrolment_status == "enrolled" else None
+        )
+        log.enrolment_date = (
+            enrolment_date or (datetime.now(UTC) if enrolment_status == "enrolled" else None)
+        )
+        log.updated_by_sub = actor_sub
+        await self._s.flush()
+        self._audit(
+            entity_type="screening_log",
+            entity_id=log.id,
+            action="enrolment",
+            actor_sub=actor_sub,
+            old_value=old,
+            new_value=enrolment_status,
+        )
+        return log
+
+    async def recruitment_funnel(
+        self,
+        deployment_id: str,
+        *,
+        site_id: str | None = None,
+    ) -> dict[str, object]:
+        """Compute the funnel rollup for a deployment.
+
+        Returns the four canonical stage counts plus per-week per-site
+        breakdowns + per-reason exclusion counts. Counts are computed
+        in-Python for portability across SQLite (test fixtures) and
+        Postgres (runtime) — the screening_logs table is bounded by
+        per-deployment lifetime screening volume, which is small enough
+        (≤ low thousands) that a single fetch + dict aggregation is fine.
+        """
+        logs = await self.list_screening_logs(
+            deployment_id=deployment_id, site_id=site_id
+        )
+        screened = len(logs)
+        eligible = sum(1 for log in logs if log.eligibility_status == "eligible")
+        consented = sum(1 for log in logs if log.consent_status == "consented")
+        enrolled = sum(1 for log in logs if log.enrolment_status == "enrolled")
+
+        # Per-reason breakdown (excluded subjects only).
+        per_reason: dict[str, int] = {}
+        for log in logs:
+            if log.eligibility_status == "screen_failure" and log.exclusion_reason_code:
+                per_reason[log.exclusion_reason_code] = (
+                    per_reason.get(log.exclusion_reason_code, 0) + 1
+                )
+
+        # Per-week × per-site breakdown.
+        per_week_site: dict[str, dict[str, dict[str, int]]] = {}
+        for log in logs:
+            week = log.screening_date.strftime("%Y-W%V")
+            site = log.site_id or "(unassigned)"
+            week_bucket = per_week_site.setdefault(week, {})
+            site_bucket = week_bucket.setdefault(
+                site,
+                {"screened": 0, "eligible": 0, "consented": 0, "enrolled": 0},
+            )
+            site_bucket["screened"] += 1
+            if log.eligibility_status == "eligible":
+                site_bucket["eligible"] += 1
+            if log.consent_status == "consented":
+                site_bucket["consented"] += 1
+            if log.enrolment_status == "enrolled":
+                site_bucket["enrolled"] += 1
+
+        return {
+            "deployment_id": deployment_id,
+            "totals": {
+                "screened": screened,
+                "eligible": eligible,
+                "consented": consented,
+                "enrolled": enrolled,
+            },
+            "screen_failures_by_reason": per_reason,
+            "per_week_per_site": per_week_site,
+        }

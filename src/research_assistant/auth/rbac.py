@@ -89,6 +89,11 @@ class Permission(StrEnum):
     CAPA_AUTHOR = "capa.author"
     CAPA_CLOSE = "capa.close"
 
+    # ── Recruitment / screening logs (P1 #3) ─────────────────────────────
+    SCREENING_RECORD = "screening.record"
+    SCREENING_UPDATE = "screening.update"
+    SCREENING_READ = "screening.read"
+
     # ── CDISC submission pipeline (SDTM → ADaM → TLF) ────────────────────
     CDISC_DERIVE = "cdisc.derive"
     CDISC_READ = "cdisc.read"
@@ -231,6 +236,8 @@ ROLE_PERMISSIONS: Final[dict[Role, frozenset[Permission]]] = {
             Permission.PRISMA_READ,
             Permission.CDISC_READ,
             Permission.RANDOMIZATION_READ,
+            # Recruitment / screening logs: auditor reads, doesn't mutate.
+            Permission.SCREENING_READ,
         }
     ),
     Role.STUDY_DESIGNER: frozenset(
@@ -269,6 +276,10 @@ ROLE_PERMISSIONS: Final[dict[Role, frozenset[Permission]]] = {
             Permission.RANDOMIZATION_ALLOCATE,
             Permission.RANDOMIZATION_READ,
             Permission.RANDOMIZATION_CODEBREAK,
+            # Recruitment / screening: PI updates eligibility / consent /
+            # enrolment status; reads the log + funnel rollup.
+            Permission.SCREENING_UPDATE,
+            Permission.SCREENING_READ,
         }
     ),
     Role.COORDINATOR: frozenset(
@@ -286,6 +297,12 @@ ROLE_PERMISSIONS: Final[dict[Role, frozenset[Permission]]] = {
             # unblinded per the deployment's blinding state).
             Permission.RANDOMIZATION_ALLOCATE,
             Permission.RANDOMIZATION_READ,
+            # Recruitment / screening: coordinators record screenings,
+            # update eligibility / consent / enrolment at the point of
+            # contact, and read the funnel rollup.
+            Permission.SCREENING_RECORD,
+            Permission.SCREENING_UPDATE,
+            Permission.SCREENING_READ,
         }
     ),
     Role.DATA_MANAGER: frozenset(
@@ -299,6 +316,11 @@ ROLE_PERMISSIONS: Final[dict[Role, frozenset[Permission]]] = {
             Permission.SUBJECT_UNLOCK,
             Permission.SDV_VERIFY,
             Permission.AUDIT_READ,
+            # Recruitment / screening: DMs reclassify ineligible cases and
+            # read the funnel for data-management oversight. They don't
+            # record at point-of-care (coordinator's job).
+            Permission.SCREENING_UPDATE,
+            Permission.SCREENING_READ,
             # Data managers classify deviations + author CAPAs; they also
             # have sae.report so the IND-safety report can be produced
             # outside the PI's signing flow.
@@ -338,6 +360,9 @@ ROLE_PERMISSIONS: Final[dict[Role, frozenset[Permission]]] = {
             Permission.CDISC_READ,
             # E8: monitors verify allocation events vs source — read only.
             Permission.RANDOMIZATION_READ,
+            # Recruitment / screening: monitors read for source-data
+            # verification — they don't record or update.
+            Permission.SCREENING_READ,
         }
     ),
     # SR screening roles — always granted at sr_review scope, never global.

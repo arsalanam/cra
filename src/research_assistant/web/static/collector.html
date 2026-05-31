@@ -62,6 +62,10 @@
           <div id="cdisc-summary" class="muted">Select a deployment to view CDISC datasets.</div>
         </div>
         <div class="card">
+          <h2>Recruitment <span id="rec-badge" class="muted" style="font-size:11px"></span></h2>
+          <div id="rec-summary" class="muted">Select a deployment to view the recruitment funnel.</div>
+        </div>
+        <div class="card">
           <h2>Study lock <span id="lock-badge" class="muted" style="font-size:11px"></span></h2>
           <div id="lock-summary" class="muted">Select a deployment to view its lock state.</div>
         </div>
@@ -607,13 +611,100 @@
     } catch (e) { root.className="muted"; root.textContent="Randomisation status unavailable."; badge.textContent=""; }
   }
 
-  /* Reload the CDISC + lock + randomisation panels when the user picks a different deployment. */
+  /* ── Recruitment / screening (P1 #3) ─────────────────────────────── */
+
+  const CONSORT_REASONS = {
+    age_out_of_range: "Outside the protocol's age window",
+    lab_or_imaging_abnormality: "Abnormal lab or imaging value",
+    prior_treatment: "Prior or current disallowed treatment",
+    pregnancy: "Pregnant or refusing contraception",
+    declined_consent: "Declined to provide informed consent",
+    inclusion_criteria_not_met: "Inclusion criteria not met (other)",
+    exclusion_criteria_met: "Exclusion criteria met (other)",
+    withdrawn: "Withdrew or did not return",
+    other: "Other (specify)",
+  };
+
+  async function loadRecruitment(){
+    const root = document.getElementById("rec-summary");
+    const badge = document.getElementById("rec-badge");
+    if(!depId){ root.className="muted"; root.textContent="Select a deployment."; badge.textContent=""; return; }
+    try {
+      const [funnelR, listR] = await Promise.all([
+        api(`/api/edc/deployments/${depId}/recruitment/funnel`),
+        api(`/api/edc/deployments/${depId}/screening`),
+      ]);
+      if(funnelR.status === 403 || listR.status === 403){
+        root.className="muted"; root.textContent="Recruitment requires screening.read permission.";
+        badge.textContent=""; return;
+      }
+      const funnel = await funnelR.json();
+      const logs = await listR.json();
+      const totals = funnel.totals;
+      const enrolledPct = totals.screened ? Math.round(100*totals.enrolled/totals.screened) : 0;
+      badge.textContent = `${totals.enrolled} / ${totals.screened} (${enrolledPct}%)`;
+      badge.className = totals.enrolled > 0 ? "ok" : "muted";
+
+      const reasonRows = Object.entries(funnel.screen_failures_by_reason || {})
+        .sort((a,b)=>b[1]-a[1])
+        .map(([code,n])=>`<div style="font-size:12px"><b>${n}</b> ${esc(CONSORT_REASONS[code] || code)}</div>`)
+        .join("") || `<div class="muted" style="font-size:12px">No screen failures.</div>`;
+
+      const logRows = (logs || []).slice(0, 8).map(l => `
+        <div style="display:flex;justify-content:space-between;border-top:1px solid #1f232c;padding:5px 0;font-size:12px">
+          <span><b>${esc(l.screening_code)}</b> · ${esc(l.age_band || "—")} · ${esc(l.sex || "—")}</span>
+          <span class="muted">${esc(l.eligibility_status)} / ${esc(l.consent_status)} / ${esc(l.enrolment_status)}</span>
+        </div>
+      `).join("") || `<div class="muted" style="font-size:12px">No screenings yet.</div>`;
+
+      root.className="";
+      root.innerHTML = `
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:8px">
+          <div style="text-align:center;background:#0f1115;border:1px solid #2a2f3a;border-radius:5px;padding:6px"><div style="font-size:18px;font-weight:700">${totals.screened}</div><div class="muted" style="font-size:11px">Screened</div></div>
+          <div style="text-align:center;background:#0f1115;border:1px solid #2a2f3a;border-radius:5px;padding:6px"><div style="font-size:18px;font-weight:700">${totals.eligible}</div><div class="muted" style="font-size:11px">Eligible</div></div>
+          <div style="text-align:center;background:#0f1115;border:1px solid #2a2f3a;border-radius:5px;padding:6px"><div style="font-size:18px;font-weight:700">${totals.consented}</div><div class="muted" style="font-size:11px">Consented</div></div>
+          <div style="text-align:center;background:#0f1115;border:1px solid #2a2f3a;border-radius:5px;padding:6px"><div style="font-size:18px;font-weight:700;color:#6bcf7f">${totals.enrolled}</div><div class="muted" style="font-size:11px">Enrolled</div></div>
+        </div>
+        <div class="sec-title" style="margin:8px 0 4px">Screen-failure reasons</div>
+        ${reasonRows}
+        <div class="sec-title" style="margin:10px 0 4px">Recent screenings</div>
+        ${logRows}
+        <div class="row" style="margin-top:8px">
+          <input type="text" id="rec-new-code" placeholder="Screening code e.g. SCR-0042" style="flex:1;min-width:120px" />
+          <button class="btn secondary" onclick="recordScreening()">+ Record</button>
+        </div>
+        <div id="rec-status" class="status"></div>
+      `;
+    } catch (e) { root.className="muted"; root.textContent="Recruitment unavailable."; badge.textContent=""; }
+  }
+
+  async function recordScreening(){
+    const code = document.getElementById("rec-new-code").value.trim();
+    if(!code){ return; }
+    const r = await api(`/api/edc/deployments/${depId}/screening`, {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ screening_code: code }),
+    });
+    const status = document.getElementById("rec-status");
+    if(r.ok){
+      status.className="status ok"; status.textContent=`Screening ${code} recorded.`;
+      document.getElementById("rec-new-code").value="";
+      await loadRecruitment();
+    } else {
+      const err = await r.json().catch(()=>({detail:r.statusText}));
+      status.className="status err"; status.textContent=`Failed: ${err.detail || r.statusText}`;
+    }
+  }
+
+  /* Reload the CDISC + lock + randomisation + recruitment panels when the user picks a different deployment. */
   const originalSelectDeployment = selectDeployment;
   selectDeployment = async function(id){
     await originalSelectDeployment(id);
     await loadCdiscSummary();
     await loadLockStatus();
     await loadRandomisation();
+    await loadRecruitment();
   };
 
   loadDeployments();

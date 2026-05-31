@@ -133,6 +133,20 @@ async def resolve_capa_scope(capa_id: str) -> Scope:
         return await resolve_deviation_scope(capa.deviation_id)
 
 
+async def resolve_screening_log_scope(log_id: str) -> Scope:
+    """ScreeningLog → (deployment_id, site_id, None). Site is included so
+    site-scoped coordinators can be granted SCREENING_UPDATE without
+    cross-site reach (the rbac matrix grants update at deployment scope
+    today, but the site lift gives the design room to tighten later)."""
+    from ..persistence.clinical.models import ScreeningLog
+
+    async with get_clinical_session() as s:
+        log = await s.get(ScreeningLog, log_id)
+        if log is None:
+            raise HTTPException(404, "Screening log not found")
+        return (log.deployment_id, log.site_id, None)
+
+
 # ecrf StudyOut / FormOut path params resolve straight to (study_id, None).
 async def resolve_ecrf_study_scope(study_id: str) -> Scope:
     return (study_id, None, None)
@@ -187,6 +201,7 @@ RESOURCE_RESOLVERS: dict[str, ResolverFn] = {
     "ae_id": resolve_adverse_event_scope,
     "deviation_id": resolve_deviation_scope,
     "capa_id": resolve_capa_scope,
+    "log_id": resolve_screening_log_scope,
 }
 
 

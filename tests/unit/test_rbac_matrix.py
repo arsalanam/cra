@@ -351,6 +351,49 @@ def test_researcher_can_run_grade_drafter_but_student_cannot() -> None:
     assert Permission.SKILL_GRADE_DRAFTER not in ROLE_PERMISSIONS[Role.STUDENT]
 
 
+def test_coordinator_records_screening_pi_dm_update_monitor_auditor_read() -> None:
+    """Recruitment / screening (P1 #3):
+      - Coordinator records + updates + reads (point-of-care).
+      - PI: updates eligibility/consent/enrolment + reads.
+      - DM: updates (reclassification) + reads, no record.
+      - Monitor: read for SDV; no mutations.
+      - Auditor: read only.
+      - Student: blocked from everything (researcher-tier skill, not eCRF).
+    """
+    coord = ROLE_PERMISSIONS[Role.COORDINATOR]
+    assert Permission.SCREENING_RECORD in coord
+    assert Permission.SCREENING_UPDATE in coord
+    assert Permission.SCREENING_READ in coord
+
+    pi = ROLE_PERMISSIONS[Role.PRINCIPAL_INVESTIGATOR]
+    assert Permission.SCREENING_RECORD not in pi  # PI doesn't capture
+    assert Permission.SCREENING_UPDATE in pi
+    assert Permission.SCREENING_READ in pi
+
+    dm = ROLE_PERMISSIONS[Role.DATA_MANAGER]
+    assert Permission.SCREENING_RECORD not in dm
+    assert Permission.SCREENING_UPDATE in dm
+    assert Permission.SCREENING_READ in dm
+
+    mon = ROLE_PERMISSIONS[Role.MONITOR]
+    assert Permission.SCREENING_RECORD not in mon
+    assert Permission.SCREENING_UPDATE not in mon
+    assert Permission.SCREENING_READ in mon
+
+    aud = ROLE_PERMISSIONS[Role.AUDITOR]
+    assert Permission.SCREENING_RECORD not in aud
+    assert Permission.SCREENING_UPDATE not in aud
+    assert Permission.SCREENING_READ in aud
+
+    student = ROLE_PERMISSIONS[Role.STUDENT]
+    for p in (
+        Permission.SCREENING_RECORD,
+        Permission.SCREENING_UPDATE,
+        Permission.SCREENING_READ,
+    ):
+        assert p not in student
+
+
 def test_researcher_can_run_trial_stats_but_student_cannot() -> None:
     """Post-lock trial-stats specialist (K-M / MMRM / Cox / subgroup) is
     researcher-tier. Clinical roles and students are explicitly blocked."""
