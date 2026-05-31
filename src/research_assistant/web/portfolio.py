@@ -54,6 +54,7 @@ class PortfolioThreadOut(BaseModel):
     last_turn_kind: str | None
     message_count: int
     last_activity: datetime
+    cost_usd: float = 0.0
 
 
 class PortfolioSrReviewOut(BaseModel):
@@ -97,6 +98,23 @@ class UserTotalsOut(BaseModel):
 class OrgRolloutOut(BaseModel):
     org_totals: PortfolioRolloutOut
     users: list[UserTotalsOut]
+
+
+class CostRollupOut(BaseModel):
+    """Per-user / per-org cost rollup (P2 #6 budget)."""
+
+    usd_total: float
+    usd_this_month: float
+    input_tokens: int
+    output_tokens: int
+    by_workflow: dict[str, float]
+    by_model_family: dict[str, float]
+    n_turns: int
+
+
+class OrgCostRollupOut(BaseModel):
+    org_totals: CostRollupOut
+    users: list[dict[str, object]]  # [{user_id, email, cost: CostRollupOut.as_dict()}]
 
 
 # ── Helpers ────────────────────────────────────────────────────────────
@@ -158,6 +176,9 @@ def create_portfolio_router() -> APIRouter:
                 kind = _last_turn_kind(
                     last_assistant.final_answer if last_assistant else None
                 )
+                from ..services.cost_rollup import rollup_for_thread
+
+                cost = await rollup_for_thread(session, thread_id=t.id)
                 out.append(
                     PortfolioThreadOut(
                         id=t.id,
@@ -166,6 +187,7 @@ def create_portfolio_router() -> APIRouter:
                         last_turn_kind=kind,
                         message_count=count,
                         last_activity=t.updated_at,
+                        cost_usd=round(cost, 6),
                     )
                 )
             return out
@@ -420,6 +442,59 @@ def create_portfolio_router() -> APIRouter:
             deployments_total=n_deployments_total,
         )
         return OrgRolloutOut(org_totals=org_totals, users=per_user)
+
+    @router.get("/costs", response_model=CostRollupOut)
+    async def get_my_costs(user: CurrentUser) -> CostRollupOut:
+        """Per-user cost rollup (current month + cumulative + per-workflow
+        + per-model-family breakdowns). Powers the dashboard cost cards
+        (P2 #6 budget rollup)."""
+        from ..services.cost_rollup import rollup_for_user
+
+        owner_id = await _resolve_user_id(user)
+        async with get_db_session() as session:
+            rollup = await rollup_for_user(session, user_id=owner_id)
+        return CostRollupOut.model_validate(rollup.as_dict())
+
+    @router.get("/org/costs", response_model=OrgCostRollupOut)
+    async def get_org_costs(
+        user: SessionPayload = require_permission_scoped(
+            Permission.PORTFOLIO_READ_ORG
+        ),
+    ) -> OrgCostRollupOut:
+        """Admin-only org-wide cost rollup. Returns the organisation
+        total + per-user cost rollups (the per-user list carries
+        anonymised user_id + email + the full CostRollup as_dict
+        payload)."""
+        from ..services.cost_rollup import rollup_for_org
+
+        async with get_db_session() as session:
+            org_rollup, per_user_rollups = await rollup_for_org(session)
+            users_list = list((await session.scalars(select(User))).all())
+        users_by_id = {u.id: u for u in users_list}
+        rows: list[dict[str, object]] = []
+        for uid, rollup in per_user_rollups.items():
+            u = users_by_id.get(uid)
+            rows.append(
+                {
+                    "user_id": uid,
+                    "email": (u.email if u else None),
+                    "cost": rollup.as_dict(),
+                }
+            )
+        # Sort by spend descending so the dashboard's "top spenders"
+        # naturally lands at the top.
+        rows.sort(
+            key=lambda r: (
+                float(r["cost"].get("usd_total", 0.0))
+                if isinstance(r["cost"], dict)
+                else 0.0
+            ),
+            reverse=True,
+        )
+        return OrgCostRollupOut(
+            org_totals=CostRollupOut.model_validate(org_rollup.as_dict()),
+            users=rows,
+        )
 
     return router
 

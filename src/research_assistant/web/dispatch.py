@@ -332,11 +332,18 @@ def create_dispatch_router() -> APIRouter:
                 final_answer=output_json,
             )
             assistant_msg_id = assistant_msg.id
+            # Inject the bedrock model_id into the done event so the
+            # cost-rollup service (P2 #6) can attribute USD per-model.
+            # Falls back gracefully when model_id is absent.
+            usage_with_model = dict(meta.get("usage", {}))
+            usage_with_model.setdefault(
+                "model_id", get_settings().bedrock_model_id
+            )
             await repo.add_stream_event(
                 message_id=assistant_msg_id,
                 event_type="done",
                 data={
-                    "usage": meta.get("usage", {}),
+                    "usage": usage_with_model,
                     "tool_usage": meta.get("tool_usage", {}),
                     "workflow": chosen_workflow,
                 },

@@ -32,6 +32,33 @@ def test_portfolio_read_org_admin_only() -> None:
         )
 
 
+def test_portfolio_cost_dtos_round_trip() -> None:
+    """CostRollupOut + OrgCostRollupOut validate against shaped data
+    (P2 #6 budget rollup)."""
+    from research_assistant.web.portfolio import (
+        CostRollupOut,
+        OrgCostRollupOut,
+    )
+
+    cost = CostRollupOut(
+        usd_total=1.23,
+        usd_this_month=0.42,
+        input_tokens=15000,
+        output_tokens=8000,
+        by_workflow={"meta_analysis": 0.8, "nma": 0.43},
+        by_model_family={"haiku": 0.1, "sonnet": 1.13},
+        n_turns=12,
+    )
+    assert cost.n_turns == 12
+    assert cost.by_workflow["meta_analysis"] == 0.8
+
+    org = OrgCostRollupOut(
+        org_totals=cost,
+        users=[{"user_id": "u1", "email": "a@b.com", "cost": cost.model_dump()}],
+    )
+    assert org.users[0]["email"] == "a@b.com"
+
+
 def test_portfolio_router_factory_smoke() -> None:
     """Importing + instantiating the router smoke-tests the endpoint
     registrations and DTO definitions."""
@@ -44,6 +71,9 @@ def test_portfolio_router_factory_smoke() -> None:
     assert "/portfolio/deployments" in paths
     assert "/portfolio/summary" in paths
     assert "/portfolio/org" in paths
+    # P2 #6 budget rollup endpoints
+    assert "/portfolio/costs" in paths
+    assert "/portfolio/org/costs" in paths
 
 
 def test_portfolio_dtos_round_trip() -> None:

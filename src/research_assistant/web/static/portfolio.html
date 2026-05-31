@@ -40,10 +40,15 @@
     <div id="my-threads" class="section"><h2>Recent threads</h2><div class="muted">Loading…</div></div>
     <div id="my-sr-projects" class="section"><h2>SR projects</h2><div class="muted">Loading…</div></div>
     <div id="my-deployments" class="section"><h2>eCRF deployments</h2><div class="muted">Loading…</div></div>
+    <div id="my-costs" class="section"><h2>Spend (USD)</h2><div class="muted">Loading…</div></div>
     <div id="org-section" style="display:none">
       <div class="section">
         <h2>Organisation rollup <span class="muted" style="font-size:11px">admin-only</span></h2>
         <div id="org-body" class="muted">Loading…</div>
+      </div>
+      <div class="section" id="org-costs-section" style="display:none">
+        <h2>Top-spend users <span class="muted" style="font-size:11px">admin-only</span></h2>
+        <div id="org-costs-body" class="muted">Loading…</div>
       </div>
     </div>
   </div>
@@ -89,13 +94,14 @@
           <td><span class="workflow-pill">${esc(t.workflow || "—")}</span></td>
           <td><span class="badge">${esc(t.last_turn_kind || "—")}</span></td>
           <td>${t.message_count}</td>
+          <td>$${(t.cost_usd ?? 0).toFixed(4)}</td>
           <td class="muted">${fmtDate(t.last_activity)}</td>
         </tr>
       `).join("");
       root.innerHTML = `
         <h2>Recent threads</h2>
         <table>
-          <thead><tr><th>Title</th><th>Workflow</th><th>Last turn</th><th>#msgs</th><th>Updated</th></tr></thead>
+          <thead><tr><th>Title</th><th>Workflow</th><th>Last turn</th><th>#msgs</th><th>Cost</th><th>Updated</th></tr></thead>
           <tbody>${trs}</tbody>
         </table>
       `;
@@ -195,11 +201,109 @@
     } catch (e) { /* admin endpoint failed silently */ }
   }
 
+  function fmtUsd(n){ return `$${(n || 0).toFixed(4)}`; }
+
+  async function loadCosts(){
+    const root = document.getElementById("my-costs");
+    try {
+      const r = await api("/api/portfolio/costs");
+      if (!r.ok) { root.innerHTML = "<h2>Spend (USD)</h2><div class='muted err'>Failed to load.</div>"; return; }
+      const c = await r.json();
+      const wf = Object.entries(c.by_workflow || {}).sort((a,b)=>b[1]-a[1]);
+      const family = Object.entries(c.by_model_family || {}).sort((a,b)=>b[1]-a[1]);
+      const wfRows = wf.length
+        ? wf.map(([k,v]) => `<tr><td><span class="workflow-pill">${esc(k)}</span></td><td>${fmtUsd(v)}</td></tr>`).join("")
+        : `<tr><td colspan=2 class="muted">No workflow attribution yet.</td></tr>`;
+      const familyRows = family.length
+        ? family.map(([k,v]) => `<tr><td><span class="badge">${esc(k)}</span></td><td>${fmtUsd(v)}</td></tr>`).join("")
+        : `<tr><td colspan=2 class="muted">No model attribution yet.</td></tr>`;
+      root.innerHTML = `
+        <h2>Spend (USD)</h2>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px">
+          <div class="stat" style="background:#0f1115;border:1px solid #262a33;border-radius:6px;padding:10px">
+            <div class="muted" style="font-size:11px;text-transform:uppercase">This month</div>
+            <div style="font-size:22px;font-weight:700">${fmtUsd(c.usd_this_month)}</div>
+          </div>
+          <div class="stat" style="background:#0f1115;border:1px solid #262a33;border-radius:6px;padding:10px">
+            <div class="muted" style="font-size:11px;text-transform:uppercase">Cumulative</div>
+            <div style="font-size:22px;font-weight:700">${fmtUsd(c.usd_total)}</div>
+          </div>
+          <div class="stat" style="background:#0f1115;border:1px solid #262a33;border-radius:6px;padding:10px">
+            <div class="muted" style="font-size:11px;text-transform:uppercase">Turns</div>
+            <div style="font-size:22px;font-weight:700">${c.n_turns || 0}</div>
+          </div>
+          <div class="stat" style="background:#0f1115;border:1px solid #262a33;border-radius:6px;padding:10px">
+            <div class="muted" style="font-size:11px;text-transform:uppercase">Tokens (in / out)</div>
+            <div style="font-size:13px;font-weight:600">${(c.input_tokens||0).toLocaleString()} / ${(c.output_tokens||0).toLocaleString()}</div>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+          <div>
+            <div class="muted" style="font-size:11px;text-transform:uppercase;margin-bottom:6px">By workflow</div>
+            <table style="font-size:12px"><tbody>${wfRows}</tbody></table>
+          </div>
+          <div>
+            <div class="muted" style="font-size:11px;text-transform:uppercase;margin-bottom:6px">By model family</div>
+            <table style="font-size:12px"><tbody>${familyRows}</tbody></table>
+          </div>
+        </div>
+        <div class="muted" style="font-size:11px;margin-top:10px">Pricing source: AWS Bedrock public rates as of 2026-05. Verify before invoicing.</div>
+      `;
+    } catch (e) {
+      root.innerHTML = "<h2>Spend (USD)</h2><div class='muted err'>Failed to load.</div>";
+    }
+  }
+
+  async function loadOrgCosts(){
+    try {
+      const r = await fetch("/api/portfolio/org/costs");
+      if (r.status === 403 || r.status === 401 || !r.ok) return;
+      const data = await r.json();
+      const section = document.getElementById("org-costs-section");
+      section.style.display = "block";
+      const body = document.getElementById("org-costs-body");
+      const totals = data.org_totals || {};
+      const userRows = (data.users || []).slice(0, 25).map(u => {
+        const c = u.cost || {};
+        return `
+          <tr>
+            <td>${esc(u.email || u.user_id.slice(0,8))}</td>
+            <td>${fmtUsd(c.usd_this_month)}</td>
+            <td>${fmtUsd(c.usd_total)}</td>
+            <td>${c.n_turns || 0}</td>
+          </tr>
+        `;
+      }).join("");
+      body.innerHTML = `
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:12px">
+          <div class="stat" style="background:#0f1115;border:1px solid #262a33;border-radius:6px;padding:10px">
+            <div class="muted" style="font-size:11px;text-transform:uppercase">Org this month</div>
+            <div style="font-size:20px;font-weight:700">${fmtUsd(totals.usd_this_month)}</div>
+          </div>
+          <div class="stat" style="background:#0f1115;border:1px solid #262a33;border-radius:6px;padding:10px">
+            <div class="muted" style="font-size:11px;text-transform:uppercase">Org cumulative</div>
+            <div style="font-size:20px;font-weight:700">${fmtUsd(totals.usd_total)}</div>
+          </div>
+          <div class="stat" style="background:#0f1115;border:1px solid #262a33;border-radius:6px;padding:10px">
+            <div class="muted" style="font-size:11px;text-transform:uppercase">Org turns</div>
+            <div style="font-size:20px;font-weight:700">${totals.n_turns || 0}</div>
+          </div>
+        </div>
+        <table>
+          <thead><tr><th>User</th><th>This month</th><th>Cumulative</th><th>Turns</th></tr></thead>
+          <tbody>${userRows || `<tr><td colspan=4 class="muted">No spend yet.</td></tr>`}</tbody>
+        </table>
+      `;
+    } catch (e) { /* admin endpoint failed silently */ }
+  }
+
   loadHero();
   loadThreads();
   loadSrProjects();
   loadDeployments();
+  loadCosts();
   loadOrg();
+  loadOrgCosts();
 </script>
 </body>
 </html>
