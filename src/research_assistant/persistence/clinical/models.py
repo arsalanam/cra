@@ -695,10 +695,7 @@ class SdtmVs(ClinicalBase):
     VSSEQ: Mapped[int] = mapped_column(Integer)
     VSTESTCD: Mapped[str] = mapped_column(
         Text,
-        doc=(
-            "VS test code from SDTM CT (e.g. HEIGHT, WEIGHT, SYSBP, DIABP, "
-            "PULSE, TEMP)."
-        ),
+        doc=("VS test code from SDTM CT (e.g. HEIGHT, WEIGHT, SYSBP, DIABP, PULSE, TEMP)."),
     )
     VSTEST: Mapped[str] = mapped_column(Text, doc="Human-readable test name.")
     VSORRES: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
@@ -807,9 +804,7 @@ class SdtmCm(ClinicalBase):
             "is wired in at deploy time — analogous to MedDRA PT on AE)."
         ),
     )
-    CMINDC: Mapped[str | None] = mapped_column(
-        Text, nullable=True, default=None, doc="Indication."
-    )
+    CMINDC: Mapped[str | None] = mapped_column(Text, nullable=True, default=None, doc="Indication.")
     CMDOSE: Mapped[float | None] = mapped_column(Float, nullable=True, default=None)
     CMDOSU: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     CMSTDTC: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
@@ -924,9 +919,7 @@ class AdamAdtte(ClinicalBase):
 
     __tablename__ = "adam_adtte"
     __table_args__ = (
-        UniqueConstraint(
-            "deployment_id", "USUBJID", "PARAMCD", name="uq_adam_adtte_param"
-        ),
+        UniqueConstraint("deployment_id", "USUBJID", "PARAMCD", name="uq_adam_adtte_param"),
     )
 
     id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
@@ -1062,9 +1055,7 @@ class RandomizationSchedule(ClinicalBase):
         Text,
         doc="simple | permuted_block | stratified_permuted_block | minimisation",
     )
-    arms_json: Mapped[str] = mapped_column(
-        Text, doc="JSON array of arm labels in canonical order."
-    )
+    arms_json: Mapped[str] = mapped_column(Text, doc="JSON array of arm labels in canonical order.")
     ratio_json: Mapped[str] = mapped_column(
         Text,
         default="[1,1]",
@@ -1106,9 +1097,7 @@ class RandomizationSchedule(ClinicalBase):
         default="open_label",
         doc="open_label | single_blind | double_blind | triple_blind",
     )
-    status: Mapped[str] = mapped_column(
-        Text, default="active", doc="active | closed"
-    )
+    status: Mapped[str] = mapped_column(Text, default="active", doc="active | closed")
     sequence_json: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
@@ -1145,9 +1134,7 @@ class Allocation(ClinicalBase):
     """
 
     __tablename__ = "allocations"
-    __table_args__ = (
-        UniqueConstraint("subject_id", name="uq_allocation_subject"),
-    )
+    __table_args__ = (UniqueConstraint("subject_id", name="uq_allocation_subject"),)
 
     id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
     deployment_id: Mapped[str] = mapped_column(Text, index=True)
@@ -1191,10 +1178,7 @@ class Allocation(ClinicalBase):
     unblinded: Mapped[bool] = mapped_column(
         Boolean,
         default=False,
-        doc=(
-            "True after a CodeBreakEvent. Open-label trials are always "
-            "True at allocation time."
-        ),
+        doc=("True after a CodeBreakEvent. Open-label trials are always True at allocation time."),
     )
     unblinded_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True, default=None
@@ -1285,9 +1269,7 @@ class ScreeningLog(ClinicalBase):
 
     __tablename__ = "screening_logs"
     __table_args__ = (
-        UniqueConstraint(
-            "deployment_id", "screening_code", name="uq_screening_log_code"
-        ),
+        UniqueConstraint("deployment_id", "screening_code", name="uq_screening_log_code"),
     )
 
     id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
@@ -1308,9 +1290,7 @@ class ScreeningLog(ClinicalBase):
             "USUBJID — that only exists after enrolment."
         ),
     )
-    screening_date: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=_utcnow
-    )
+    screening_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
     # Demographics — identity-light + NIH-diversity-reportable.
     age_band: Mapped[str | None] = mapped_column(
@@ -1384,15 +1364,9 @@ class ScreeningLog(ClinicalBase):
     )
 
     # Audit / provenance.
-    recorded_by_sub: Mapped[str | None] = mapped_column(
-        Text, nullable=True, default=None
-    )
-    recorded_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=_utcnow
-    )
-    updated_by_sub: Mapped[str | None] = mapped_column(
-        Text, nullable=True, default=None
-    )
+    recorded_by_sub: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_by_sub: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
     )
@@ -1409,9 +1383,7 @@ class VisitSchedule(ClinicalBase):
     """
 
     __tablename__ = "visit_schedules"
-    __table_args__ = (
-        UniqueConstraint("deployment_id", "name", name="uq_visit_schedule_name"),
-    )
+    __table_args__ = (UniqueConstraint("deployment_id", "name", name="uq_visit_schedule_name"),)
 
     id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
     deployment_id: Mapped[str] = mapped_column(
@@ -1444,9 +1416,7 @@ class ScheduledVisit(ClinicalBase):
 
     __tablename__ = "scheduled_visits"
     __table_args__ = (
-        UniqueConstraint(
-            "schedule_id", "visit_name", name="uq_scheduled_visit_name"
-        ),
+        UniqueConstraint("schedule_id", "visit_name", name="uq_scheduled_visit_name"),
     )
 
     id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
@@ -1454,9 +1424,7 @@ class ScheduledVisit(ClinicalBase):
         ForeignKey("visit_schedules.id", ondelete="CASCADE"), index=True
     )
     visit_name: Mapped[str] = mapped_column(Text)
-    day_offset: Mapped[int] = mapped_column(
-        Integer, doc="Days from baseline (0 = baseline visit)."
-    )
+    day_offset: Mapped[int] = mapped_column(Integer, doc="Days from baseline (0 = baseline visit).")
     window_before_days: Mapped[int] = mapped_column(Integer, default=0)
     window_after_days: Mapped[int] = mapped_column(Integer, default=0)
     reminder_offsets_json: Mapped[str] = mapped_column(
@@ -1464,9 +1432,7 @@ class ScheduledVisit(ClinicalBase):
         default="[-7, -1, 0]",
         doc="JSON list[int] of offsets (days before due_date) when reminders fire.",
     )
-    ordering: Mapped[int] = mapped_column(
-        Integer, default=0, doc="Sort order within schedule."
-    )
+    ordering: Mapped[int] = mapped_column(Integer, default=0, doc="Sort order within schedule.")
 
     schedule: Mapped[VisitSchedule] = relationship(back_populates="visits")
 
@@ -1482,9 +1448,7 @@ class PlannedVisit(ClinicalBase):
 
     __tablename__ = "planned_visits"
     __table_args__ = (
-        UniqueConstraint(
-            "subject_id", "scheduled_visit_id", name="uq_planned_visit"
-        ),
+        UniqueConstraint("subject_id", "scheduled_visit_id", name="uq_planned_visit"),
     )
 
     id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
@@ -1588,9 +1552,7 @@ class SentReminder(ClinicalBase):
     offset_days: Mapped[int] = mapped_column(
         Integer, doc="Days before due_date this reminder was for (e.g. -7)."
     )
-    provider: Mapped[str] = mapped_column(
-        Text, doc="ses | twilio | dry_run"
-    )
+    provider: Mapped[str] = mapped_column(Text, doc="ses | twilio | dry_run")
     status: Mapped[str] = mapped_column(
         Text, default="queued", doc="queued | sent | failed | skipped"
     )
@@ -1623,9 +1585,7 @@ class SourceDocument(ClinicalBase):
 
     __tablename__ = "source_documents"
     __table_args__ = (
-        UniqueConstraint(
-            "deployment_id", "content_hash", name="uq_source_document_hash"
-        ),
+        UniqueConstraint("deployment_id", "content_hash", name="uq_source_document_hash"),
     )
 
     id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
@@ -1636,12 +1596,8 @@ class SourceDocument(ClinicalBase):
     content_hash: Mapped[str] = mapped_column(Text, index=True)
     row_count: Mapped[int] = mapped_column(Integer, default=0)
     headers_json: Mapped[str] = mapped_column(Text, default="[]")
-    uploaded_by_sub: Mapped[str | None] = mapped_column(
-        Text, nullable=True, default=None
-    )
-    uploaded_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=_utcnow
-    )
+    uploaded_by_sub: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     notes: Mapped[str] = mapped_column(Text, default="")
 
     rows: Mapped[list[SourceRow]] = relationship(
@@ -1723,12 +1679,8 @@ class ExtractionMapping(ClinicalBase):
         doc="JSON object {source_field: item_id} from form definition.",
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_by_sub: Mapped[str | None] = mapped_column(
-        Text, nullable=True, default=None
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=_utcnow
-    )
+    created_by_sub: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     notes: Mapped[str] = mapped_column(Text, default="")
 
 
@@ -1757,16 +1709,166 @@ class ExtractionFill(ClinicalBase):
         ForeignKey("extraction_mappings.id", ondelete="RESTRICT"), index=True
     )
     mapping_version: Mapped[int] = mapped_column(Integer)
-    target_kind: Mapped[str] = mapped_column(
-        Text, doc="item_data | extraction_cell"
-    )
+    target_kind: Mapped[str] = mapped_column(Text, doc="item_data | extraction_cell")
     target_id: Mapped[str] = mapped_column(Text, index=True)
-    applied_value: Mapped[str | None] = mapped_column(
-        Text, nullable=True, default=None
+    applied_value: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    applied_by_sub: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    applied_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+# ── Drug accountability (P2 #3) ─────────────────────────────────────────
+
+
+class InvestigationalProduct(ClinicalBase):
+    """Per-deployment catalogue of the investigational products in use.
+
+    The data manager / study designer registers each IP up front; receipts
+    and dispensations reference the catalogue row by FK. Defines the
+    accounting unit (`units`, typically 'tablet' / 'capsule' / 'ml') used
+    across receipts + dispensations + returns for the same IP.
+    """
+
+    __tablename__ = "investigational_products"
+    __table_args__ = (
+        UniqueConstraint(
+            "deployment_id",
+            "drug_name",
+            "strength",
+            name="uq_ip_deployment_name_strength",
+        ),
     )
-    applied_by_sub: Mapped[str | None] = mapped_column(
-        Text, nullable=True, default=None
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    deployment_id: Mapped[str] = mapped_column(
+        ForeignKey("study_deployments.id", ondelete="CASCADE"), index=True
     )
-    applied_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=_utcnow
+    drug_name: Mapped[str] = mapped_column(Text)
+    strength: Mapped[str] = mapped_column(
+        Text,
+        doc="e.g. '10 mg', '500 IU', '5 mg/ml'.",
     )
+    units: Mapped[str] = mapped_column(
+        Text,
+        default="tablet",
+        doc="Accounting unit: tablet | capsule | ml | mg | vial | kit.",
+    )
+    kit_id_pattern: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        default=None,
+        doc=(
+            "Optional regex pattern that kit_ids for this IP must match "
+            "(e.g. 'KIT-[0-9]{4}'). Documented; not enforced this slice."
+        ),
+    )
+    status: Mapped[str] = mapped_column(Text, default="active")
+    created_by_sub: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    notes: Mapped[str] = mapped_column(Text, default="")
+
+
+class DrugReceipt(ClinicalBase):
+    """A shipment of investigational product received at a site.
+
+    Each shipment carries a lot_number (used downstream for the lot-level
+    reconciliation rollup) + a quantity. `temp_excursion_flag` flags
+    cold-chain breaks so the data-manager triage queue can pick them up;
+    the reason text + corrective action live in `notes`.
+    """
+
+    __tablename__ = "drug_receipts"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    deployment_id: Mapped[str] = mapped_column(
+        ForeignKey("study_deployments.id", ondelete="CASCADE"), index=True
+    )
+    site_id: Mapped[str | None] = mapped_column(
+        ForeignKey("sites.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        default=None,
+    )
+    ip_id: Mapped[str] = mapped_column(
+        ForeignKey("investigational_products.id", ondelete="RESTRICT"),
+        index=True,
+    )
+    lot_number: Mapped[str] = mapped_column(Text, index=True)
+    expiry_date: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
+    quantity_received: Mapped[int] = mapped_column(Integer)
+    packing_slip_ref: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    temp_excursion_flag: Mapped[bool] = mapped_column(Boolean, default=False)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    received_by_sub: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    notes: Mapped[str] = mapped_column(Text, default="")
+
+
+class DrugDispensation(ClinicalBase):
+    """One dispense event — IP handed from site to a subject.
+
+    `kit_id` is the sponsor-assigned dispensing unit (each kit is one
+    physical container; e.g. a bottle with a sticker). The reconciliation
+    rollup keys per (lot_number, kit_id). `planned_visit_id` links the
+    dispense to the visit calendar from P1 #4 when available.
+    """
+
+    __tablename__ = "drug_dispensations"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    deployment_id: Mapped[str] = mapped_column(Text, index=True)
+    subject_id: Mapped[str] = mapped_column(
+        ForeignKey("subjects.id", ondelete="CASCADE"), index=True
+    )
+    ip_id: Mapped[str] = mapped_column(
+        ForeignKey("investigational_products.id", ondelete="RESTRICT"),
+        index=True,
+    )
+    lot_number: Mapped[str] = mapped_column(Text, index=True)
+    kit_id: Mapped[str] = mapped_column(Text, index=True)
+    quantity_dispensed: Mapped[int] = mapped_column(Integer)
+    planned_visit_id: Mapped[str | None] = mapped_column(
+        ForeignKey("planned_visits.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        default=None,
+    )
+    dispensed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    dispensed_by_sub: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    notes: Mapped[str] = mapped_column(Text, default="")
+
+
+class DrugReturn(ClinicalBase):
+    """Return event — subject brings unused IP back.
+
+    State invariants enforced at the repository layer: a return must
+    reference a prior dispensation (subject + kit_id pair), and
+    quantity_used + quantity_lost + quantity_returned == quantity
+    originally dispensed when reconciled. quantity_lost captures
+    'subject misplaced 2 tablets' / damage / etc; quantity_used is the
+    sponsor-reported compliance count.
+    """
+
+    __tablename__ = "drug_returns"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    deployment_id: Mapped[str] = mapped_column(Text, index=True)
+    subject_id: Mapped[str] = mapped_column(
+        ForeignKey("subjects.id", ondelete="CASCADE"), index=True
+    )
+    dispensation_id: Mapped[str] = mapped_column(
+        ForeignKey("drug_dispensations.id", ondelete="RESTRICT"),
+        index=True,
+    )
+    kit_id: Mapped[str] = mapped_column(Text, index=True)
+    quantity_returned: Mapped[int] = mapped_column(Integer)
+    quantity_used: Mapped[int] = mapped_column(Integer, default=0)
+    quantity_lost: Mapped[int] = mapped_column(Integer, default=0)
+    return_reason: Mapped[str] = mapped_column(
+        Text,
+        default="end_of_visit",
+        doc=("end_of_visit | end_of_treatment | early_termination | adverse_event | other"),
+    )
+    returned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    returned_by_sub: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    notes: Mapped[str] = mapped_column(Text, default="")

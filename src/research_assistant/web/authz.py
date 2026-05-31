@@ -202,6 +202,30 @@ async def resolve_extraction_mapping_scope(mapping_id: str) -> Scope:
         return await resolve_deployment_scope(mapping.deployment_id)
 
 
+async def resolve_ip_scope(ip_id: str) -> Scope:
+    """InvestigationalProduct → its deployment scope (P2 #3)."""
+    from ..persistence.clinical.models import InvestigationalProduct
+
+    async with get_clinical_session() as s:
+        ip = await s.get(InvestigationalProduct, ip_id)
+        if ip is None:
+            raise HTTPException(404, "Investigational product not found")
+        return await resolve_deployment_scope(ip.deployment_id)
+
+
+async def resolve_dispensation_scope(dispensation_id: str) -> Scope:
+    """DrugDispensation → its subject's scope (P2 #3). Used by the return
+    endpoint so site-scoped coordinators can only return kits they
+    dispensed."""
+    from ..persistence.clinical.models import DrugDispensation
+
+    async with get_clinical_session() as s:
+        disp = await s.get(DrugDispensation, dispensation_id)
+        if disp is None:
+            raise HTTPException(404, "Drug dispensation not found")
+        return await resolve_subject_scope(disp.subject_id)
+
+
 # ecrf StudyOut / FormOut path params resolve straight to (study_id, None).
 async def resolve_ecrf_study_scope(study_id: str) -> Scope:
     return (study_id, None, None)
@@ -262,6 +286,8 @@ RESOURCE_RESOLVERS: dict[str, ResolverFn] = {
     "access_id": resolve_participant_access_scope,
     "doc_id": resolve_source_document_scope,
     "mapping_id": resolve_extraction_mapping_scope,
+    "ip_id": resolve_ip_scope,
+    "dispensation_id": resolve_dispensation_scope,
 }
 
 

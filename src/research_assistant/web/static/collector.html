@@ -74,6 +74,10 @@
           <div id="src-summary" class="muted">Select a deployment to upload source-data files.</div>
         </div>
         <div class="card">
+          <h2>Drug accountability <span id="da-badge" class="muted" style="font-size:11px"></span></h2>
+          <div id="da-summary" class="muted">Select a deployment to view IP inventory.</div>
+        </div>
+        <div class="card">
           <h2>Study lock <span id="lock-badge" class="muted" style="font-size:11px"></span></h2>
           <div id="lock-summary" class="muted">Select a deployment to view its lock state.</div>
         </div>
@@ -883,7 +887,103 @@
     }
   }
 
-  /* Reload the CDISC + lock + randomisation + recruitment + calendar + source-extraction panels when the user picks a different deployment. */
+  async function loadDrugAccountability(){
+    const root = document.getElementById("da-summary");
+    const badge = document.getElementById("da-badge");
+    if(!depId){
+      root.className="muted"; root.textContent="Select a deployment to view IP inventory."; badge.textContent="";
+      return;
+    }
+    root.className="muted"; root.textContent="Loading drug accountability…"; badge.textContent="";
+    try {
+      const [catalogueR, reconR] = await Promise.all([
+        api(`/api/edc/deployments/${depId}/ip-catalogue`),
+        api(`/api/edc/deployments/${depId}/drug-reconciliation`),
+      ]);
+      if(catalogueR.status === 403){
+        root.className="muted"; root.textContent="Drug accountability requires study.read."; badge.textContent="";
+        return;
+      }
+      const catalogue = await catalogueR.json();
+      const reconAvailable = reconR.ok;
+      const recon = reconAvailable ? await reconR.json() : null;
+
+      const totals = recon ? recon.totals : null;
+      if(totals){
+        badge.textContent = `${totals.current_inventory} in stock · ${totals.dispensed} dispensed`;
+        badge.className = totals.current_inventory >= 0 ? "ok" : "err";
+      } else {
+        badge.textContent = `${catalogue.length} IP(s)`;
+        badge.className = "muted";
+      }
+
+      const catalogueRows = catalogue.slice(0, 5).map(ip => `
+        <div style="display:flex;justify-content:space-between;border-top:1px solid #1f232c;padding:5px 0;font-size:12px">
+          <span><b>${esc(ip.drug_name)}</b> · ${esc(ip.strength)}</span>
+          <span class="muted">${esc(ip.units)}</span>
+        </div>
+      `).join("") || `<div class="muted" style="font-size:12px">No IPs registered yet.</div>`;
+
+      let reconHtml = "";
+      if(recon && Object.keys(recon.by_lot).length > 0){
+        const lotRows = Object.entries(recon.by_lot).slice(0, 6).map(([key, b]) => {
+          const lot = key.split("|")[1] || key;
+          return `
+            <div style="display:flex;justify-content:space-between;border-top:1px solid #1f232c;padding:5px 0;font-size:12px">
+              <span>Lot <b>${esc(lot)}</b></span>
+              <span class="muted">stock=${b.current_inventory} · disp=${b.dispensed} · ret=${b.returned}</span>
+            </div>
+          `;
+        }).join("");
+        reconHtml = `
+          <div class="sec-title" style="margin:10px 0 4px">Per-lot inventory</div>
+          ${lotRows}
+        `;
+      } else if(reconAvailable){
+        reconHtml = `<div class="muted" style="margin-top:8px;font-size:12px">No lots tracked yet.</div>`;
+      } else {
+        reconHtml = `<div class="muted" style="margin-top:8px;font-size:12px">Reconciliation rollup requires ip.reconcile.</div>`;
+      }
+
+      root.className="";
+      root.innerHTML = `
+        <div class="sec-title" style="margin:0 0 4px">IP catalogue</div>
+        ${catalogueRows}
+        <div class="row" style="margin-top:6px">
+          <input type="text" id="da-ip-drug" placeholder="drug name" style="flex:1;min-width:120px" />
+          <input type="text" id="da-ip-strength" placeholder="strength (e.g. 10 mg)" style="width:140px" />
+          <input type="text" id="da-ip-units" placeholder="units (tablet)" style="width:110px" />
+          <button class="btn secondary" onclick="registerIp()">Register</button>
+        </div>
+        ${reconHtml}
+        <div id="da-status" class="status"></div>
+      `;
+    } catch (e) { root.className="muted"; root.textContent="Drug accountability unavailable."; badge.textContent=""; }
+  }
+
+  async function registerIp(){
+    const drug = document.getElementById("da-ip-drug").value.trim();
+    const strength = document.getElementById("da-ip-strength").value.trim();
+    const units = document.getElementById("da-ip-units").value.trim() || "tablet";
+    if(!drug || !strength){ return; }
+    const body = { drug_name: drug, strength, units };
+    const r = await api(`/api/edc/deployments/${depId}/ip-catalogue`, {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify(body),
+    });
+    const status = document.getElementById("da-status");
+    if(r.ok){
+      status.className="status ok";
+      status.textContent=`Registered ${esc(drug)} ${esc(strength)}.`;
+      await loadDrugAccountability();
+    } else {
+      const err = await r.json().catch(()=>({detail:r.statusText}));
+      status.className="status err";
+      status.textContent=`Failed: ${err.detail || r.statusText}`;
+    }
+  }
+
+  /* Reload the CDISC + lock + randomisation + recruitment + calendar + source-extraction + drug-accountability panels when the user picks a different deployment. */
   const originalSelectDeployment = selectDeployment;
   selectDeployment = async function(id){
     await originalSelectDeployment(id);
@@ -893,6 +993,7 @@
     await loadRecruitment();
     await loadVisitCalendar();
     await loadSourceExtraction();
+    await loadDrugAccountability();
   };
 
   loadDeployments();

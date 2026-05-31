@@ -17,7 +17,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...domain.ecrf import FormDefinition
@@ -29,10 +29,14 @@ from .models import (
     CapaAction,
     CodeBreakEvent,
     DeployedForm,
+    DrugDispensation,
+    DrugReceipt,
+    DrugReturn,
     EventInstance,
     ExtractionFill,
     ExtractionMapping,
     FormInstance,
+    InvestigationalProduct,
     ItemData,
     ParticipantAccess,
     ParticipantContact,
@@ -974,9 +978,7 @@ class ClinicalRepository:
 
     # ── IRT / Randomisation (E8) ────────────────────────────────────────
 
-    async def get_active_schedule(
-        self, deployment_id: str
-    ) -> RandomizationSchedule | None:
+    async def get_active_schedule(self, deployment_id: str) -> RandomizationSchedule | None:
         rows = await self._s.scalars(
             select(RandomizationSchedule)
             .where(RandomizationSchedule.deployment_id == deployment_id)
@@ -1058,12 +1060,8 @@ class ClinicalRepository:
         )
         return schedule
 
-    async def get_allocation_for_subject(
-        self, subject_id: str
-    ) -> Allocation | None:
-        rows = await self._s.scalars(
-            select(Allocation).where(Allocation.subject_id == subject_id)
-        )
+    async def get_allocation_for_subject(self, subject_id: str) -> Allocation | None:
+        rows = await self._s.scalars(select(Allocation).where(Allocation.subject_id == subject_id))
         return rows.first()
 
     async def persist_allocation(
@@ -1081,9 +1079,7 @@ class ClinicalRepository:
         """Persist an allocation row + update the schedule's minimisation
         state when present. Refuses 409 on a double-allocation attempt."""
         if await self.get_allocation_for_subject(subject.id) is not None:
-            raise ClinicalError(
-                f"Subject {subject.subject_code!r} is already randomised."
-            )
+            raise ClinicalError(f"Subject {subject.subject_code!r} is already randomised.")
         unblinded = schedule.blinding == "open_label"
         allocation = Allocation(
             deployment_id=schedule.deployment_id,
@@ -1133,13 +1129,9 @@ class ClinicalRepository:
         + creates a CodeBreakEvent row + audits."""
         allocation = await self.get_allocation_for_subject(subject_id)
         if allocation is None:
-            raise ClinicalError(
-                f"Subject {subject_id!r} has no allocation to break."
-            )
+            raise ClinicalError(f"Subject {subject_id!r} has no allocation to break.")
         if allocation.unblinded:
-            raise ClinicalError(
-                f"Subject {subject_id!r} is already unblinded."
-            )
+            raise ClinicalError(f"Subject {subject_id!r} is already unblinded.")
         now = datetime.now(UTC)
         event = CodeBreakEvent(
             deployment_id=allocation.deployment_id,
@@ -1163,9 +1155,7 @@ class ClinicalRepository:
         )
         return event
 
-    async def list_code_break_events(
-        self, deployment_id: str
-    ) -> list[CodeBreakEvent]:
+    async def list_code_break_events(self, deployment_id: str) -> list[CodeBreakEvent]:
         rows = await self._s.scalars(
             select(CodeBreakEvent)
             .where(CodeBreakEvent.deployment_id == deployment_id)
@@ -1595,9 +1585,7 @@ class ClinicalRepository:
         if site_id is not None:
             site = await self._s.get(Site, site_id)
             if site is None or site.deployment_id != deployment_id:
-                raise ClinicalError(
-                    f"Site {site_id!r} not found in deployment {deployment_id!r}."
-                )
+                raise ClinicalError(f"Site {site_id!r} not found in deployment {deployment_id!r}.")
         # Enforce unique screening_code per deployment at the app layer too —
         # gives a clear error message instead of an IntegrityError.
         existing_stmt = select(ScreeningLog).where(
@@ -1681,9 +1669,7 @@ class ClinicalRepository:
             raise ClinicalError(f"Screening log {log_id!r} not found.")
         if eligibility_status == "screen_failure":
             if not exclusion_reason_code:
-                raise ClinicalError(
-                    "exclusion_reason_code required when marking screen_failure."
-                )
+                raise ClinicalError("exclusion_reason_code required when marking screen_failure.")
             if exclusion_reason_code not in CONSORT_EXCLUSION_REASONS:
                 raise ClinicalError(
                     f"Unknown exclusion_reason_code {exclusion_reason_code!r}; choose one of "
@@ -1726,13 +1712,11 @@ class ClinicalRepository:
         if log is None:
             raise ClinicalError(f"Screening log {log_id!r} not found.")
         if log.eligibility_status != "eligible" and consent_status == "consented":
-            raise ClinicalError(
-                "Cannot mark consented before eligibility=eligible."
-            )
+            raise ClinicalError("Cannot mark consented before eligibility=eligible.")
         old = log.consent_status
         log.consent_status = consent_status
-        log.consent_date = (
-            consent_date or (datetime.now(UTC) if consent_status == "consented" else None)
+        log.consent_date = consent_date or (
+            datetime.now(UTC) if consent_status == "consented" else None
         )
         log.updated_by_sub = actor_sub
         await self._s.flush()
@@ -1765,29 +1749,19 @@ class ClinicalRepository:
             raise ClinicalError(f"Screening log {log_id!r} not found.")
         if enrolment_status == "enrolled":
             if log.consent_status != "consented":
-                raise ClinicalError(
-                    "Cannot mark enrolled before consent_status=consented."
-                )
+                raise ClinicalError("Cannot mark enrolled before consent_status=consented.")
             if enrolled_subject_id is None:
-                raise ClinicalError(
-                    "enrolled_subject_id required when marking enrolled."
-                )
+                raise ClinicalError("enrolled_subject_id required when marking enrolled.")
             subject = await self._s.get(Subject, enrolled_subject_id)
             if subject is None:
-                raise ClinicalError(
-                    f"Subject {enrolled_subject_id!r} not found."
-                )
+                raise ClinicalError(f"Subject {enrolled_subject_id!r} not found.")
             if subject.deployment_id != log.deployment_id:
-                raise ClinicalError(
-                    "Subject and screening log belong to different deployments."
-                )
+                raise ClinicalError("Subject and screening log belong to different deployments.")
         old = log.enrolment_status
         log.enrolment_status = enrolment_status
-        log.enrolled_subject_id = (
-            enrolled_subject_id if enrolment_status == "enrolled" else None
-        )
-        log.enrolment_date = (
-            enrolment_date or (datetime.now(UTC) if enrolment_status == "enrolled" else None)
+        log.enrolled_subject_id = enrolled_subject_id if enrolment_status == "enrolled" else None
+        log.enrolment_date = enrolment_date or (
+            datetime.now(UTC) if enrolment_status == "enrolled" else None
         )
         log.updated_by_sub = actor_sub
         await self._s.flush()
@@ -1816,9 +1790,7 @@ class ClinicalRepository:
         per-deployment lifetime screening volume, which is small enough
         (≤ low thousands) that a single fetch + dict aggregation is fine.
         """
-        logs = await self.list_screening_logs(
-            deployment_id=deployment_id, site_id=site_id
-        )
+        logs = await self.list_screening_logs(deployment_id=deployment_id, site_id=site_id)
         screened = len(logs)
         eligible = sum(1 for log in logs if log.eligibility_status == "eligible")
         consented = sum(1 for log in logs if log.consent_status == "consented")
@@ -1884,9 +1856,7 @@ class ClinicalRepository:
             )
         )
         if existing is not None:
-            raise ClinicalError(
-                f"Visit schedule named {name!r} already exists in this deployment."
-            )
+            raise ClinicalError(f"Visit schedule named {name!r} already exists in this deployment.")
         schedule = VisitSchedule(
             deployment_id=deployment_id,
             name=name,
@@ -1935,9 +1905,7 @@ class ClinicalRepository:
         )
         return schedule
 
-    async def list_visit_schedules(
-        self, deployment_id: str
-    ) -> list[VisitSchedule]:
+    async def list_visit_schedules(self, deployment_id: str) -> list[VisitSchedule]:
         rows = await self._s.scalars(
             select(VisitSchedule)
             .where(VisitSchedule.deployment_id == deployment_id)
@@ -1945,9 +1913,7 @@ class ClinicalRepository:
         )
         return list(rows)
 
-    async def get_active_visit_schedule(
-        self, deployment_id: str
-    ) -> VisitSchedule | None:
+    async def get_active_visit_schedule(self, deployment_id: str) -> VisitSchedule | None:
         result: VisitSchedule | None = await self._s.scalar(
             select(VisitSchedule).where(
                 VisitSchedule.deployment_id == deployment_id,
@@ -1972,9 +1938,7 @@ class ClinicalRepository:
         if schedule is None:
             raise ClinicalError(f"Visit schedule {schedule_id!r} not found.")
         if window_before_days < 0 or window_after_days < 0:
-            raise ClinicalError(
-                "window_before_days and window_after_days must be non-negative."
-            )
+            raise ClinicalError("window_before_days and window_after_days must be non-negative.")
         offsets = reminder_offsets if reminder_offsets is not None else [-7, -1, 0]
         for offset in offsets:
             if offset > 0:
@@ -1988,9 +1952,7 @@ class ClinicalRepository:
             )
         )
         if existing is not None:
-            raise ClinicalError(
-                f"Visit named {visit_name!r} already exists in this schedule."
-            )
+            raise ClinicalError(f"Visit named {visit_name!r} already exists in this schedule.")
         visit = ScheduledVisit(
             schedule_id=schedule_id,
             visit_name=visit_name,
@@ -2011,9 +1973,7 @@ class ClinicalRepository:
         )
         return visit
 
-    async def list_scheduled_visits(
-        self, schedule_id: str
-    ) -> list[ScheduledVisit]:
+    async def list_scheduled_visits(self, schedule_id: str) -> list[ScheduledVisit]:
         rows = await self._s.scalars(
             select(ScheduledVisit)
             .where(ScheduledVisit.schedule_id == schedule_id)
@@ -2094,9 +2054,7 @@ class ClinicalRepository:
         if subject_id is not None:
             stmt = stmt.where(PlannedVisit.subject_id == subject_id)
         elif deployment_id is not None:
-            subject_ids_stmt = select(Subject.id).where(
-                Subject.deployment_id == deployment_id
-            )
+            subject_ids_stmt = select(Subject.id).where(Subject.deployment_id == deployment_id)
             stmt = stmt.where(PlannedVisit.subject_id.in_(subject_ids_stmt))
         if status is not None:
             stmt = stmt.where(PlannedVisit.status == status)
@@ -2125,9 +2083,7 @@ class ClinicalRepository:
             )
         if planned_date is not None and planned_date != row.planned_date:
             if not override_reason:
-                raise ClinicalError(
-                    "override_reason required when shifting planned_date."
-                )
+                raise ClinicalError("override_reason required when shifting planned_date.")
             from datetime import timedelta
 
             sv = await self._s.get(ScheduledVisit, row.scheduled_visit_id)
@@ -2173,13 +2129,9 @@ class ClinicalRepository:
     ) -> ParticipantContact:
         access = await self._s.get(ParticipantAccess, participant_access_id)
         if access is None:
-            raise ClinicalError(
-                f"Participant access {participant_access_id!r} not found."
-            )
+            raise ClinicalError(f"Participant access {participant_access_id!r} not found.")
         if preferred_channel not in ("email", "sms", "none"):
-            raise ClinicalError(
-                f"Invalid preferred_channel {preferred_channel!r}."
-            )
+            raise ClinicalError(f"Invalid preferred_channel {preferred_channel!r}.")
         for ch in opt_in_channels or []:
             if ch not in self._ALLOWED_REMINDER_CHANNELS:
                 raise ClinicalError(
@@ -2215,13 +2167,9 @@ class ClinicalRepository:
         )
         return contact
 
-    async def get_participant_contact(
-        self, subject_id: str
-    ) -> ParticipantContact | None:
+    async def get_participant_contact(self, subject_id: str) -> ParticipantContact | None:
         result: ParticipantContact | None = await self._s.scalar(
-            select(ParticipantContact).where(
-                ParticipantContact.subject_id == subject_id
-            )
+            select(ParticipantContact).where(ParticipantContact.subject_id == subject_id)
         )
         return result
 
@@ -2251,18 +2199,14 @@ class ClinicalRepository:
             .where(PlannedVisit.status == "pending")
             .order_by(PlannedVisit.planned_date)
         )
-        subject_ids_stmt = select(Subject.id).where(
-            Subject.deployment_id == deployment_id
-        )
+        subject_ids_stmt = select(Subject.id).where(Subject.deployment_id == deployment_id)
         stmt = stmt.where(PlannedVisit.subject_id.in_(subject_ids_stmt))
         planned_visits = list((await self._s.scalars(stmt)).all())
         if not planned_visits:
             return []
         # Bulk-load scheduled visit metadata.
         sv_ids = {pv.scheduled_visit_id for pv in planned_visits}
-        sv_rows = await self._s.scalars(
-            select(ScheduledVisit).where(ScheduledVisit.id.in_(sv_ids))
-        )
+        sv_rows = await self._s.scalars(select(ScheduledVisit).where(ScheduledVisit.id.in_(sv_ids)))
         sv_by_id = {sv.id: sv for sv in sv_rows}
         # Bulk-load already-sent reminders for these planned visits.
         sent_rows = await self._s.scalars(
@@ -2270,19 +2214,13 @@ class ClinicalRepository:
                 SentReminder.planned_visit_id.in_(pv.id for pv in planned_visits)
             )
         )
-        sent_keys = {
-            (sr.planned_visit_id, sr.offset_days, sr.channel) for sr in sent_rows
-        }
+        sent_keys = {(sr.planned_visit_id, sr.offset_days, sr.channel) for sr in sent_rows}
         # Bulk-load participant contacts.
         subject_ids = {pv.subject_id for pv in planned_visits}
         contact_rows = await self._s.scalars(
-            select(ParticipantContact).where(
-                ParticipantContact.subject_id.in_(subject_ids)
-            )
+            select(ParticipantContact).where(ParticipantContact.subject_id.in_(subject_ids))
         )
-        contact_by_subject: dict[str, ParticipantContact] = {
-            c.subject_id: c for c in contact_rows
-        }
+        contact_by_subject: dict[str, ParticipantContact] = {c.subject_id: c for c in contact_rows}
         out: list[dict[str, object]] = []
         for pv in planned_visits:
             contact = contact_by_subject.get(pv.subject_id)
@@ -2319,9 +2257,7 @@ class ClinicalRepository:
                 for channel in channels:
                     if (pv.id, offset, channel) in sent_keys:
                         continue
-                    recipient = (
-                        contact.email if channel == "email" else contact.phone
-                    )
+                    recipient = contact.email if channel == "email" else contact.phone
                     if not recipient:
                         continue
                     out.append(
@@ -2388,9 +2324,7 @@ class ClinicalRepository:
         if subject_id is not None:
             stmt = stmt.where(SentReminder.subject_id == subject_id)
         elif deployment_id is not None:
-            subject_ids_stmt = select(Subject.id).where(
-                Subject.deployment_id == deployment_id
-            )
+            subject_ids_stmt = select(Subject.id).where(Subject.deployment_id == deployment_id)
             stmt = stmt.where(SentReminder.subject_id.in_(subject_ids_stmt))
         if since is not None:
             stmt = stmt.where(SentReminder.queued_at >= since)
@@ -2437,9 +2371,7 @@ class ClinicalRepository:
         reader = csv.DictReader(io.StringIO(text))
         headers = list(reader.fieldnames or [])
         if not headers:
-            raise ClinicalError(
-                "CSV must have a header row (first line of column names)."
-            )
+            raise ClinicalError("CSV must have a header row (first line of column names).")
         if subject_code_field is not None and subject_code_field not in headers:
             raise ClinicalError(
                 f"subject_code_field {subject_code_field!r} not in CSV headers "
@@ -2464,9 +2396,7 @@ class ClinicalRepository:
                     row_index=idx,
                     payload_json=json.dumps(payload),
                     subject_code_hint=(
-                        payload.get(subject_code_field)
-                        if subject_code_field
-                        else None
+                        payload.get(subject_code_field) if subject_code_field else None
                     ),
                 )
             )
@@ -2485,9 +2415,7 @@ class ClinicalRepository:
     async def get_source_document(self, doc_id: str) -> SourceDocument | None:
         return await self._s.get(SourceDocument, doc_id)
 
-    async def list_source_documents(
-        self, deployment_id: str
-    ) -> list[SourceDocument]:
+    async def list_source_documents(self, deployment_id: str) -> list[SourceDocument]:
         rows = await self._s.scalars(
             select(SourceDocument)
             .where(SourceDocument.deployment_id == deployment_id)
@@ -2524,9 +2452,7 @@ class ClinicalRepository:
         """
         df = await self._s.get(DeployedForm, deployed_form_id)
         if df is None or df.deployment_id != deployment_id:
-            raise ClinicalError(
-                f"Deployed form {deployed_form_id!r} not found in this deployment."
-            )
+            raise ClinicalError(f"Deployed form {deployed_form_id!r} not found in this deployment.")
         prior = await self._s.scalars(
             select(ExtractionMapping).where(
                 ExtractionMapping.deployment_id == deployment_id,
@@ -2534,9 +2460,7 @@ class ClinicalRepository:
             )
         )
         prior_rows = list(prior)
-        next_version = (
-            max((m.version for m in prior_rows), default=0) + 1
-        )
+        next_version = max((m.version for m in prior_rows), default=0) + 1
         # Deactivate prior active versions.
         for m in prior_rows:
             if m.is_active:
@@ -2578,16 +2502,10 @@ class ClinicalRepository:
     async def list_extraction_mappings(
         self, deployment_id: str, deployed_form_id: str | None = None
     ) -> list[ExtractionMapping]:
-        stmt = select(ExtractionMapping).where(
-            ExtractionMapping.deployment_id == deployment_id
-        )
+        stmt = select(ExtractionMapping).where(ExtractionMapping.deployment_id == deployment_id)
         if deployed_form_id is not None:
-            stmt = stmt.where(
-                ExtractionMapping.deployed_form_id == deployed_form_id
-            )
-        stmt = stmt.order_by(
-            ExtractionMapping.deployed_form_id, ExtractionMapping.version.desc()
-        )
+            stmt = stmt.where(ExtractionMapping.deployed_form_id == deployed_form_id)
+        stmt = stmt.order_by(ExtractionMapping.deployed_form_id, ExtractionMapping.version.desc())
         return list((await self._s.scalars(stmt)).all())
 
     async def dry_run_extraction(
@@ -2606,9 +2524,7 @@ class ClinicalRepository:
         try:
             spec: dict[str, str] = json.loads(mapping.mapping_json) or {}
         except json.JSONDecodeError as e:
-            raise ClinicalError(
-                f"Mapping {mapping_id!r} has malformed mapping_json: {e}"
-            ) from e
+            raise ClinicalError(f"Mapping {mapping_id!r} has malformed mapping_json: {e}") from e
         rows = await self.list_source_rows(source_document_id)
         out: list[dict[str, object]] = []
         for row in rows:
@@ -2616,9 +2532,7 @@ class ClinicalRepository:
                 payload: dict[str, object] = json.loads(row.payload_json) or {}
             except json.JSONDecodeError:
                 continue
-            subject_code = (
-                payload.get(mapping.subject_code_field) or row.subject_code_hint
-            )
+            subject_code = payload.get(mapping.subject_code_field) or row.subject_code_hint
             items: list[dict[str, object]] = []
             for source_field, item_id in spec.items():
                 if source_field not in payload:
@@ -2665,16 +2579,11 @@ class ClinicalRepository:
         try:
             spec: dict[str, str] = json.loads(mapping.mapping_json) or {}
         except json.JSONDecodeError as e:
-            raise ClinicalError(
-                f"Mapping has malformed mapping_json: {e}"
-            ) from e
+            raise ClinicalError(f"Mapping has malformed mapping_json: {e}") from e
         rows = await self.list_source_rows(source_document_id)
 
         subject_codes = {
-            (
-                json.loads(r.payload_json).get(mapping.subject_code_field)
-                or r.subject_code_hint
-            )
+            (json.loads(r.payload_json).get(mapping.subject_code_field) or r.subject_code_hint)
             for r in rows
         }
         subject_codes.discard(None)
@@ -2723,11 +2632,7 @@ class ClinicalRepository:
             for source_field, item_id in spec.items():
                 if source_field not in payload:
                     continue
-                value = (
-                    str(payload[source_field])
-                    if payload[source_field] is not None
-                    else None
-                )
+                value = str(payload[source_field]) if payload[source_field] is not None else None
                 existing_item = await self._s.scalar(
                     select(ItemData).where(
                         ItemData.form_instance_id == fi.id,
@@ -2767,8 +2672,7 @@ class ClinicalRepository:
             action="apply",
             actor_sub=actor_sub,
             new_value=(
-                f"subjects={len(subjects_filled)},items={items_written},"
-                f"unmatched={unmatched}"
+                f"subjects={len(subjects_filled)},items={items_written},unmatched={unmatched}"
             ),
         )
         return {
@@ -2798,9 +2702,7 @@ class ClinicalRepository:
         try:
             spec: dict[str, str] = json.loads(mapping.mapping_json) or {}
         except json.JSONDecodeError as e:
-            raise ClinicalError(
-                f"Mapping has malformed mapping_json: {e}"
-            ) from e
+            raise ClinicalError(f"Mapping has malformed mapping_json: {e}") from e
         rows = await self.list_source_rows(source_document_id)
         out: list[dict[str, object]] = []
         for row in rows:
@@ -2853,9 +2755,7 @@ class ClinicalRepository:
         target_id: str | None = None,
         source_document_id: str | None = None,
     ) -> list[ExtractionFill]:
-        stmt = select(ExtractionFill).order_by(
-            ExtractionFill.applied_at.desc()
-        )
+        stmt = select(ExtractionFill).order_by(ExtractionFill.applied_at.desc())
         if target_id is not None:
             stmt = stmt.where(ExtractionFill.target_id == target_id)
         elif source_document_id is not None:
@@ -2869,3 +2769,412 @@ class ClinicalRepository:
             )
             stmt = stmt.where(ExtractionFill.mapping_id.in_(mapping_ids_stmt))
         return list((await self._s.scalars(stmt)).all())
+
+    # ── Drug accountability (P2 #3) ────────────────────────────────────
+
+    _ALLOWED_RETURN_REASONS = (
+        "end_of_visit",
+        "end_of_treatment",
+        "early_termination",
+        "adverse_event",
+        "other",
+    )
+
+    async def register_investigational_product(
+        self,
+        deployment_id: str,
+        *,
+        drug_name: str,
+        strength: str,
+        units: str = "tablet",
+        kit_id_pattern: str | None = None,
+        notes: str = "",
+        actor_sub: str | None = None,
+    ) -> InvestigationalProduct:
+        deployment = await self._s.get(StudyDeployment, deployment_id)
+        if deployment is None:
+            raise ClinicalError(f"Deployment {deployment_id!r} not found.")
+        existing = await self._s.scalar(
+            select(InvestigationalProduct).where(
+                InvestigationalProduct.deployment_id == deployment_id,
+                InvestigationalProduct.drug_name == drug_name,
+                InvestigationalProduct.strength == strength,
+            )
+        )
+        if existing is not None:
+            raise ClinicalError(
+                f"IP {drug_name!r} at {strength!r} already registered in this deployment."
+            )
+        ip = InvestigationalProduct(
+            deployment_id=deployment_id,
+            drug_name=drug_name,
+            strength=strength,
+            units=units,
+            kit_id_pattern=kit_id_pattern,
+            notes=notes,
+            created_by_sub=actor_sub,
+        )
+        self._s.add(ip)
+        await self._s.flush()
+        self._audit(
+            entity_type="investigational_product",
+            entity_id=ip.id,
+            action="create",
+            actor_sub=actor_sub,
+            new_value=f"{drug_name} {strength}",
+        )
+        return ip
+
+    async def list_investigational_products(
+        self, deployment_id: str
+    ) -> list[InvestigationalProduct]:
+        rows = await self._s.scalars(
+            select(InvestigationalProduct)
+            .where(InvestigationalProduct.deployment_id == deployment_id)
+            .order_by(InvestigationalProduct.created_at)
+        )
+        return list(rows)
+
+    async def record_drug_receipt(
+        self,
+        deployment_id: str,
+        *,
+        ip_id: str,
+        lot_number: str,
+        quantity_received: int,
+        site_id: str | None = None,
+        expiry_date: datetime | None = None,
+        packing_slip_ref: str | None = None,
+        temp_excursion_flag: bool = False,
+        notes: str = "",
+        actor_sub: str | None = None,
+    ) -> DrugReceipt:
+        if quantity_received <= 0:
+            raise ClinicalError("quantity_received must be positive.")
+        ip = await self._s.get(InvestigationalProduct, ip_id)
+        if ip is None or ip.deployment_id != deployment_id:
+            raise ClinicalError(
+                f"Investigational product {ip_id!r} not registered in this deployment."
+            )
+        if site_id is not None:
+            site = await self._s.get(Site, site_id)
+            if site is None or site.deployment_id != deployment_id:
+                raise ClinicalError(f"Site {site_id!r} not in deployment {deployment_id!r}.")
+        receipt = DrugReceipt(
+            deployment_id=deployment_id,
+            site_id=site_id,
+            ip_id=ip_id,
+            lot_number=lot_number,
+            expiry_date=expiry_date,
+            quantity_received=quantity_received,
+            packing_slip_ref=packing_slip_ref,
+            temp_excursion_flag=temp_excursion_flag,
+            notes=notes,
+            received_by_sub=actor_sub,
+        )
+        self._s.add(receipt)
+        await self._s.flush()
+        self._audit(
+            entity_type="drug_receipt",
+            entity_id=receipt.id,
+            action="create",
+            actor_sub=actor_sub,
+            new_value=(
+                f"lot={lot_number},qty={quantity_received}"
+                f"{',temp_excursion' if temp_excursion_flag else ''}"
+            ),
+        )
+        return receipt
+
+    async def list_drug_receipts(
+        self,
+        *,
+        deployment_id: str,
+        ip_id: str | None = None,
+        lot_number: str | None = None,
+    ) -> list[DrugReceipt]:
+        stmt = (
+            select(DrugReceipt)
+            .where(DrugReceipt.deployment_id == deployment_id)
+            .order_by(DrugReceipt.received_at.desc())
+        )
+        if ip_id is not None:
+            stmt = stmt.where(DrugReceipt.ip_id == ip_id)
+        if lot_number is not None:
+            stmt = stmt.where(DrugReceipt.lot_number == lot_number)
+        return list((await self._s.scalars(stmt)).all())
+
+    async def _lot_inventory(
+        self,
+        deployment_id: str,
+        ip_id: str,
+        lot_number: str,
+    ) -> int:
+        """Running inventory for a (deployment, IP, lot): received +
+        returned - dispensed - lost - used."""
+        received_stmt = select(func.coalesce(func.sum(DrugReceipt.quantity_received), 0)).where(
+            DrugReceipt.deployment_id == deployment_id,
+            DrugReceipt.ip_id == ip_id,
+            DrugReceipt.lot_number == lot_number,
+        )
+        dispensed_stmt = select(
+            func.coalesce(func.sum(DrugDispensation.quantity_dispensed), 0)
+        ).where(
+            DrugDispensation.deployment_id == deployment_id,
+            DrugDispensation.ip_id == ip_id,
+            DrugDispensation.lot_number == lot_number,
+        )
+        # Returns are joined back into inventory ONLY for the unused +
+        # unlost remainder (the bottle came back full enough to redispense).
+        return_remainder_stmt = (
+            select(
+                func.coalesce(
+                    func.sum(
+                        DrugReturn.quantity_returned
+                        - DrugReturn.quantity_used
+                        - DrugReturn.quantity_lost
+                    ),
+                    0,
+                )
+            )
+            .join(
+                DrugDispensation,
+                DrugReturn.dispensation_id == DrugDispensation.id,
+            )
+            .where(
+                DrugDispensation.deployment_id == deployment_id,
+                DrugDispensation.ip_id == ip_id,
+                DrugDispensation.lot_number == lot_number,
+            )
+        )
+        received = int(await self._s.scalar(received_stmt) or 0)
+        dispensed = int(await self._s.scalar(dispensed_stmt) or 0)
+        return_remainder = int(await self._s.scalar(return_remainder_stmt) or 0)
+        return received + return_remainder - dispensed
+
+    async def record_drug_dispensation(
+        self,
+        deployment_id: str,
+        *,
+        subject_id: str,
+        ip_id: str,
+        lot_number: str,
+        kit_id: str,
+        quantity_dispensed: int,
+        planned_visit_id: str | None = None,
+        notes: str = "",
+        actor_sub: str | None = None,
+    ) -> DrugDispensation:
+        if quantity_dispensed <= 0:
+            raise ClinicalError("quantity_dispensed must be positive.")
+        subject = await self._s.get(Subject, subject_id)
+        if subject is None or subject.deployment_id != deployment_id:
+            raise ClinicalError(
+                f"Subject {subject_id!r} not found in deployment {deployment_id!r}."
+            )
+        ip = await self._s.get(InvestigationalProduct, ip_id)
+        if ip is None or ip.deployment_id != deployment_id:
+            raise ClinicalError(
+                f"Investigational product {ip_id!r} not registered in this deployment."
+            )
+        available = await self._lot_inventory(deployment_id, ip_id, lot_number)
+        if available < quantity_dispensed:
+            raise ClinicalError(
+                f"Cannot dispense {quantity_dispensed} — only {available} "
+                f"{ip.units}(s) of lot {lot_number} in inventory."
+            )
+        dispensation = DrugDispensation(
+            deployment_id=deployment_id,
+            subject_id=subject_id,
+            ip_id=ip_id,
+            lot_number=lot_number,
+            kit_id=kit_id,
+            quantity_dispensed=quantity_dispensed,
+            planned_visit_id=planned_visit_id,
+            notes=notes,
+            dispensed_by_sub=actor_sub,
+        )
+        self._s.add(dispensation)
+        await self._s.flush()
+        self._audit(
+            entity_type="drug_dispensation",
+            entity_id=dispensation.id,
+            action="create",
+            actor_sub=actor_sub,
+            new_value=f"kit={kit_id},qty={quantity_dispensed}",
+        )
+        return dispensation
+
+    async def list_drug_dispensations(
+        self,
+        *,
+        deployment_id: str | None = None,
+        subject_id: str | None = None,
+    ) -> list[DrugDispensation]:
+        stmt = select(DrugDispensation).order_by(DrugDispensation.dispensed_at.desc())
+        if subject_id is not None:
+            stmt = stmt.where(DrugDispensation.subject_id == subject_id)
+        elif deployment_id is not None:
+            stmt = stmt.where(DrugDispensation.deployment_id == deployment_id)
+        return list((await self._s.scalars(stmt)).all())
+
+    async def record_drug_return(
+        self,
+        dispensation_id: str,
+        *,
+        quantity_returned: int,
+        quantity_used: int = 0,
+        quantity_lost: int = 0,
+        return_reason: str = "end_of_visit",
+        notes: str = "",
+        actor_sub: str | None = None,
+    ) -> DrugReturn:
+        if return_reason not in self._ALLOWED_RETURN_REASONS:
+            raise ClinicalError(
+                f"Invalid return_reason {return_reason!r}; choose from "
+                f"{', '.join(self._ALLOWED_RETURN_REASONS)}."
+            )
+        if quantity_returned < 0 or quantity_used < 0 or quantity_lost < 0:
+            raise ClinicalError("Quantities must be non-negative.")
+        dispensation = await self._s.get(DrugDispensation, dispensation_id)
+        if dispensation is None:
+            raise ClinicalError(f"Dispensation {dispensation_id!r} not found.")
+        # The used + lost + returned-unopened must not exceed what was
+        # dispensed. "returned" is the count the subject brought back at
+        # all (full + partial + empty); "used" is the consumed count;
+        # "lost" is the missing count; the unopened remainder is
+        # `returned - used - lost`.
+        if quantity_used + quantity_lost > quantity_returned:
+            raise ClinicalError("quantity_used + quantity_lost cannot exceed quantity_returned.")
+        if quantity_returned > dispensation.quantity_dispensed:
+            raise ClinicalError(
+                f"quantity_returned ({quantity_returned}) exceeds dispensed "
+                f"quantity ({dispensation.quantity_dispensed})."
+            )
+        ret = DrugReturn(
+            deployment_id=dispensation.deployment_id,
+            subject_id=dispensation.subject_id,
+            dispensation_id=dispensation_id,
+            kit_id=dispensation.kit_id,
+            quantity_returned=quantity_returned,
+            quantity_used=quantity_used,
+            quantity_lost=quantity_lost,
+            return_reason=return_reason,
+            notes=notes,
+            returned_by_sub=actor_sub,
+        )
+        self._s.add(ret)
+        await self._s.flush()
+        self._audit(
+            entity_type="drug_return",
+            entity_id=ret.id,
+            action="create",
+            actor_sub=actor_sub,
+            new_value=(
+                f"kit={dispensation.kit_id},"
+                f"ret={quantity_returned},used={quantity_used},lost={quantity_lost}"
+            ),
+        )
+        return ret
+
+    async def list_drug_returns(
+        self,
+        *,
+        deployment_id: str | None = None,
+        subject_id: str | None = None,
+    ) -> list[DrugReturn]:
+        stmt = select(DrugReturn).order_by(DrugReturn.returned_at.desc())
+        if subject_id is not None:
+            stmt = stmt.where(DrugReturn.subject_id == subject_id)
+        elif deployment_id is not None:
+            stmt = stmt.where(DrugReturn.deployment_id == deployment_id)
+        return list((await self._s.scalars(stmt)).all())
+
+    async def drug_reconciliation(
+        self,
+        deployment_id: str,
+    ) -> dict[str, object]:
+        """Per (IP, lot) running inventory + activity rollup.
+
+        Returns: {by_lot: {f"{ip_id}|{lot}": {received, dispensed,
+        returned, used, lost, current_inventory}}, totals: {...}}.
+        Computed in-Python from the receipt/dispensation/return tables
+        — portable across SQLite (test fixtures) and Postgres
+        (runtime).
+        """
+        receipts = await self.list_drug_receipts(deployment_id=deployment_id)
+        dispensations = await self.list_drug_dispensations(deployment_id=deployment_id)
+        returns_with_dispensation = await self._s.execute(
+            select(DrugReturn, DrugDispensation)
+            .join(
+                DrugDispensation,
+                DrugReturn.dispensation_id == DrugDispensation.id,
+            )
+            .where(DrugDispensation.deployment_id == deployment_id)
+        )
+        by_lot: dict[str, dict[str, int]] = {}
+
+        def _key(ip_id: str, lot: str) -> str:
+            return f"{ip_id}|{lot}"
+
+        for r in receipts:
+            bucket = by_lot.setdefault(
+                _key(r.ip_id, r.lot_number),
+                {
+                    "received": 0,
+                    "dispensed": 0,
+                    "returned": 0,
+                    "used": 0,
+                    "lost": 0,
+                    "current_inventory": 0,
+                },
+            )
+            bucket["received"] += int(r.quantity_received)
+        for d in dispensations:
+            bucket = by_lot.setdefault(
+                _key(d.ip_id, d.lot_number),
+                {
+                    "received": 0,
+                    "dispensed": 0,
+                    "returned": 0,
+                    "used": 0,
+                    "lost": 0,
+                    "current_inventory": 0,
+                },
+            )
+            bucket["dispensed"] += int(d.quantity_dispensed)
+        for ret, disp in returns_with_dispensation.all():
+            bucket = by_lot.setdefault(
+                _key(disp.ip_id, disp.lot_number),
+                {
+                    "received": 0,
+                    "dispensed": 0,
+                    "returned": 0,
+                    "used": 0,
+                    "lost": 0,
+                    "current_inventory": 0,
+                },
+            )
+            bucket["returned"] += int(ret.quantity_returned)
+            bucket["used"] += int(ret.quantity_used)
+            bucket["lost"] += int(ret.quantity_lost)
+        # current_inventory = received + (returned - used - lost) - dispensed
+        for bucket in by_lot.values():
+            bucket["current_inventory"] = (
+                bucket["received"]
+                + (bucket["returned"] - bucket["used"] - bucket["lost"])
+                - bucket["dispensed"]
+            )
+        totals = {
+            "received": sum(b["received"] for b in by_lot.values()),
+            "dispensed": sum(b["dispensed"] for b in by_lot.values()),
+            "returned": sum(b["returned"] for b in by_lot.values()),
+            "used": sum(b["used"] for b in by_lot.values()),
+            "lost": sum(b["lost"] for b in by_lot.values()),
+            "current_inventory": sum(b["current_inventory"] for b in by_lot.values()),
+        }
+        return {
+            "deployment_id": deployment_id,
+            "totals": totals,
+            "by_lot": by_lot,
+        }

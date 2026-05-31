@@ -769,6 +769,117 @@ class ExtractionFillOut(BaseModel):
     applied_at: datetime
 
 
+# ── Drug accountability DTOs (P2 #3) ─────────────────────────────────────
+
+
+class InvestigationalProductIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    drug_name: str
+    strength: str
+    units: str = "tablet"
+    kit_id_pattern: str | None = None
+    notes: str = ""
+
+
+class InvestigationalProductOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    deployment_id: str
+    drug_name: str
+    strength: str
+    units: str
+    kit_id_pattern: str | None
+    status: str
+    created_by_sub: str | None
+    created_at: datetime
+    notes: str
+
+
+class DrugReceiptIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    ip_id: str
+    lot_number: str
+    quantity_received: int
+    site_id: str | None = None
+    expiry_date: datetime | None = None
+    packing_slip_ref: str | None = None
+    temp_excursion_flag: bool = False
+    notes: str = ""
+
+
+class DrugReceiptOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    deployment_id: str
+    site_id: str | None
+    ip_id: str
+    lot_number: str
+    expiry_date: datetime | None
+    quantity_received: int
+    packing_slip_ref: str | None
+    temp_excursion_flag: bool
+    received_at: datetime
+    received_by_sub: str | None
+    notes: str
+
+
+class DrugDispensationIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    subject_id: str
+    ip_id: str
+    lot_number: str
+    kit_id: str
+    quantity_dispensed: int
+    planned_visit_id: str | None = None
+    notes: str = ""
+
+
+class DrugDispensationOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    deployment_id: str
+    subject_id: str
+    ip_id: str
+    lot_number: str
+    kit_id: str
+    quantity_dispensed: int
+    planned_visit_id: str | None
+    dispensed_at: datetime
+    dispensed_by_sub: str | None
+    notes: str
+
+
+class DrugReturnIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    quantity_returned: int
+    quantity_used: int = 0
+    quantity_lost: int = 0
+    return_reason: str = "end_of_visit"
+    notes: str = ""
+
+
+class DrugReturnOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    deployment_id: str
+    subject_id: str
+    dispensation_id: str
+    kit_id: str
+    quantity_returned: int
+    quantity_used: int
+    quantity_lost: int
+    return_reason: str
+    returned_at: datetime
+    returned_by_sub: str | None
+    notes: str
+
+
+class DrugReconciliationOut(BaseModel):
+    deployment_id: str
+    totals: dict[str, int]
+    by_lot: dict[str, dict[str, int]]
+
+
 class CapaOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: str
@@ -1666,9 +1777,7 @@ def create_edc_router() -> APIRouter:
 
         async with get_clinical_session() as s:
             try:
-                result = await run_derivation(
-                    s, deployment_id=deployment_id, triggered_by=user.sub
-                )
+                result = await run_derivation(s, deployment_id=deployment_id, triggered_by=user.sub)
             except ValueError as e:
                 raise HTTPException(404, str(e)) from e
             return {
@@ -1749,10 +1858,7 @@ def create_edc_router() -> APIRouter:
                     }
                     for r in adtte
                 ],
-                "adsl": [
-                    {"USUBJID": r.USUBJID, "TRT01A": r.TRT01A}
-                    for r in adsl
-                ],
+                "adsl": [{"USUBJID": r.USUBJID, "TRT01A": r.TRT01A} for r in adsl],
             }
 
         result = await _sandbox_impl(
@@ -1800,7 +1906,10 @@ def create_edc_router() -> APIRouter:
                             [
                                 param.get("paramcd", "?"),
                                 param.get("skip_reason", "not fitted"),
-                                "—", "—", "—", "—",
+                                "—",
+                                "—",
+                                "—",
+                                "—",
                             ]
                         )
                         continue
@@ -1848,8 +1957,7 @@ def create_edc_router() -> APIRouter:
                 _delete(_TlfArtefact)
                 .where(_TlfArtefact.deployment_id == deployment_id)
                 .where(
-                    (_TlfArtefact.tlf_id == "t-cox-ph-summary")
-                    | _TlfArtefact.tlf_id.like("f-km-%")
+                    (_TlfArtefact.tlf_id == "t-cox-ph-summary") | _TlfArtefact.tlf_id.like("f-km-%")
                 )
             )
             for tlf in new_tlfs:
@@ -1997,9 +2105,7 @@ def create_edc_router() -> APIRouter:
             content=payload,
             media_type="text/csv",
             headers={
-                "Content-Disposition": (
-                    f'attachment; filename="{domain_upper.lower()}.csv"'
-                ),
+                "Content-Disposition": (f'attachment; filename="{domain_upper.lower()}.csv"'),
             },
         )
 
@@ -2179,9 +2285,7 @@ def create_edc_router() -> APIRouter:
 
     # ── IRT / Randomisation (E8) ─────────────────────────────────────────
 
-    def _mask_allocation_for_caller(
-        allocation: Any, schedule_blinding: str
-    ) -> AllocationOut:
+    def _mask_allocation_for_caller(allocation: Any, schedule_blinding: str) -> AllocationOut:
         """Blinded deployments hide the arm until a code-break.
 
         The Allocation row's `arm` is the source of truth; this helper
@@ -2270,9 +2374,7 @@ def create_edc_router() -> APIRouter:
                 }
                 minimisation_state_json = json.dumps({"counts": empty})
             else:
-                raise HTTPException(
-                    422, f"Unknown algorithm {body.algorithm!r}."
-                )
+                raise HTTPException(422, f"Unknown algorithm {body.algorithm!r}.")
         except ValueError as e:
             raise HTTPException(422, str(e)) from e
 
@@ -2364,9 +2466,7 @@ def create_edc_router() -> APIRouter:
 
             arms: list[str] = json.loads(schedule.arms_json)
             strata_factors: list[str] | None = (
-                json.loads(schedule.strata_factors_json)
-                if schedule.strata_factors_json
-                else None
+                json.loads(schedule.strata_factors_json) if schedule.strata_factors_json else None
             )
 
             arm: str
@@ -2402,9 +2502,7 @@ def create_edc_router() -> APIRouter:
                         )
                     relevant = {f: body.factor_values[f] for f in strata_factors}
                     stratum_label = canonical_stratum_label(relevant)
-                    by_stratum: dict[str, list[str]] = json.loads(
-                        schedule.sequence_json or "{}"
-                    )
+                    by_stratum: dict[str, list[str]] = json.loads(schedule.sequence_json or "{}")
                     stratum_seq = by_stratum.get(stratum_label, [])
                     used_in_stratum = await s.scalar(
                         select(func.count(Allocation.id))
@@ -2431,11 +2529,7 @@ def create_edc_router() -> APIRouter:
                         )
                     relevant = {f: body.factor_values[f] for f in strata_factors}
                     stratum_label = canonical_stratum_label(relevant)
-                    weights = (
-                        json.loads(schedule.weights_json)
-                        if schedule.weights_json
-                        else None
-                    )
+                    weights = json.loads(schedule.weights_json) if schedule.weights_json else None
                     current_state = (
                         json.loads(schedule.minimisation_state_json)
                         if schedule.minimisation_state_json
@@ -2446,15 +2540,12 @@ def create_edc_router() -> APIRouter:
                         relevant,
                         arms,
                         weights=weights,
-                        seed=schedule.seed + len(
-                            await repo.list_allocations(subject.deployment_id)
-                        ),
+                        seed=schedule.seed
+                        + len(await repo.list_allocations(subject.deployment_id)),
                     )
                     updated_state_json = json.dumps(new_state)
                 else:
-                    raise HTTPException(
-                        500, f"Unsupported algorithm {schedule.algorithm!r}."
-                    )
+                    raise HTTPException(500, f"Unsupported algorithm {schedule.algorithm!r}.")
 
                 allocation = await repo.persist_allocation(
                     schedule=schedule,
@@ -2682,9 +2773,7 @@ def create_edc_router() -> APIRouter:
         site_id: str | None = None,
     ) -> RecruitmentFunnelOut:
         async with get_clinical_session() as s:
-            payload = await ClinicalRepository(s).recruitment_funnel(
-                deployment_id, site_id=site_id
-            )
+            payload = await ClinicalRepository(s).recruitment_funnel(deployment_id, site_id=site_id)
             return RecruitmentFunnelOut.model_validate(payload)
 
     # ── Visit scheduling + reminders (P1 #4) ─────────────────────────────
@@ -2905,9 +2994,7 @@ def create_edc_router() -> APIRouter:
         ),
     ) -> list[SentReminderOut]:
         async with get_clinical_session() as s:
-            rows = await ClinicalRepository(s).list_sent_reminders(
-                deployment_id=deployment_id
-            )
+            rows = await ClinicalRepository(s).list_sent_reminders(deployment_id=deployment_id)
             return [SentReminderOut.model_validate(r) for r in rows]
 
     @router.post(
@@ -3125,5 +3212,217 @@ def create_edc_router() -> APIRouter:
                 source_document_id=source_document_id,
             )
             return [ExtractionFillOut.model_validate(r) for r in rows]
+
+    # ── Drug accountability (P2 #3) ────────────────────────────────────
+
+    @router.post(
+        "/deployments/{deployment_id}/ip-catalogue",
+        response_model=InvestigationalProductOut,
+        status_code=201,
+    )
+    async def register_investigational_product(
+        deployment_id: str,
+        body: InvestigationalProductIn,
+        user: SessionPayload = require_permission_scoped(
+            Permission.IP_CATALOGUE, resource_param="deployment_id"
+        ),
+    ) -> InvestigationalProductOut:
+        """Register an investigational product against this deployment.
+        Authored by the study_designer at study-design time; data_manager
+        can add mid-study additions when a new lot is introduced."""
+        async with get_clinical_session() as s:
+            await _require_deployment_unlocked(s, deployment_id)
+            try:
+                ip = await ClinicalRepository(s).register_investigational_product(
+                    deployment_id,
+                    drug_name=body.drug_name,
+                    strength=body.strength,
+                    units=body.units,
+                    kit_id_pattern=body.kit_id_pattern,
+                    notes=body.notes,
+                    actor_sub=user.sub,
+                )
+            except ClinicalError as e:
+                raise HTTPException(422, str(e)) from e
+            return InvestigationalProductOut.model_validate(ip)
+
+    @router.get(
+        "/deployments/{deployment_id}/ip-catalogue",
+        response_model=list[InvestigationalProductOut],
+    )
+    async def list_investigational_products(
+        deployment_id: str,
+        user: SessionPayload = require_permission_scoped(
+            Permission.STUDY_READ, resource_param="deployment_id"
+        ),
+    ) -> list[InvestigationalProductOut]:
+        async with get_clinical_session() as s:
+            rows = await ClinicalRepository(s).list_investigational_products(deployment_id)
+            return [InvestigationalProductOut.model_validate(r) for r in rows]
+
+    @router.post(
+        "/deployments/{deployment_id}/drug-receipts",
+        response_model=DrugReceiptOut,
+        status_code=201,
+    )
+    async def record_drug_receipt(
+        deployment_id: str,
+        body: DrugReceiptIn,
+        user: SessionPayload = require_permission_scoped(
+            Permission.IP_RECEIVE, resource_param="deployment_id"
+        ),
+    ) -> DrugReceiptOut:
+        """Log a shipment of IP arriving at the site / central depot."""
+        async with get_clinical_session() as s:
+            await _require_deployment_unlocked(s, deployment_id)
+            try:
+                receipt = await ClinicalRepository(s).record_drug_receipt(
+                    deployment_id,
+                    ip_id=body.ip_id,
+                    lot_number=body.lot_number,
+                    quantity_received=body.quantity_received,
+                    site_id=body.site_id,
+                    expiry_date=body.expiry_date,
+                    packing_slip_ref=body.packing_slip_ref,
+                    temp_excursion_flag=body.temp_excursion_flag,
+                    notes=body.notes,
+                    actor_sub=user.sub,
+                )
+            except ClinicalError as e:
+                raise HTTPException(422, str(e)) from e
+            return DrugReceiptOut.model_validate(receipt)
+
+    @router.get(
+        "/deployments/{deployment_id}/drug-receipts",
+        response_model=list[DrugReceiptOut],
+    )
+    async def list_drug_receipts(
+        deployment_id: str,
+        user: SessionPayload = require_permission_scoped(
+            Permission.STUDY_READ, resource_param="deployment_id"
+        ),
+        ip_id: str | None = None,
+        lot_number: str | None = None,
+    ) -> list[DrugReceiptOut]:
+        async with get_clinical_session() as s:
+            rows = await ClinicalRepository(s).list_drug_receipts(
+                deployment_id=deployment_id,
+                ip_id=ip_id,
+                lot_number=lot_number,
+            )
+            return [DrugReceiptOut.model_validate(r) for r in rows]
+
+    @router.post(
+        "/deployments/{deployment_id}/drug-dispensations",
+        response_model=DrugDispensationOut,
+        status_code=201,
+    )
+    async def record_drug_dispensation(
+        deployment_id: str,
+        body: DrugDispensationIn,
+        user: SessionPayload = require_permission_scoped(
+            Permission.IP_DISPENSE, resource_param="deployment_id"
+        ),
+    ) -> DrugDispensationOut:
+        """Hand a kit from site to subject. Refuses if the requested
+        quantity would drive lot inventory negative."""
+        async with get_clinical_session() as s:
+            await _require_deployment_unlocked(s, deployment_id)
+            try:
+                disp = await ClinicalRepository(s).record_drug_dispensation(
+                    deployment_id,
+                    subject_id=body.subject_id,
+                    ip_id=body.ip_id,
+                    lot_number=body.lot_number,
+                    kit_id=body.kit_id,
+                    quantity_dispensed=body.quantity_dispensed,
+                    planned_visit_id=body.planned_visit_id,
+                    notes=body.notes,
+                    actor_sub=user.sub,
+                )
+            except ClinicalError as e:
+                raise HTTPException(422, str(e)) from e
+            return DrugDispensationOut.model_validate(disp)
+
+    @router.get(
+        "/deployments/{deployment_id}/drug-dispensations",
+        response_model=list[DrugDispensationOut],
+    )
+    async def list_drug_dispensations(
+        deployment_id: str,
+        user: SessionPayload = require_permission_scoped(
+            Permission.STUDY_READ, resource_param="deployment_id"
+        ),
+    ) -> list[DrugDispensationOut]:
+        async with get_clinical_session() as s:
+            rows = await ClinicalRepository(s).list_drug_dispensations(deployment_id=deployment_id)
+            return [DrugDispensationOut.model_validate(r) for r in rows]
+
+    @router.post(
+        "/drug-dispensations/{dispensation_id}/return",
+        response_model=DrugReturnOut,
+        status_code=201,
+    )
+    async def record_drug_return(
+        dispensation_id: str,
+        body: DrugReturnIn,
+        user: SessionPayload = require_permission_scoped(
+            Permission.IP_RETURN, resource_param="dispensation_id"
+        ),
+    ) -> DrugReturnOut:
+        """Log a return event against a prior dispensation. The
+        repository enforces quantity_used + quantity_lost <=
+        quantity_returned <= quantity_dispensed."""
+        async with get_clinical_session() as s:
+            from ..persistence.clinical.models import DrugDispensation
+
+            parent = await s.get(DrugDispensation, dispensation_id)
+            if parent is None:
+                raise HTTPException(404, "Dispensation not found.")
+            await _require_deployment_unlocked(s, parent.deployment_id)
+            try:
+                ret = await ClinicalRepository(s).record_drug_return(
+                    dispensation_id,
+                    quantity_returned=body.quantity_returned,
+                    quantity_used=body.quantity_used,
+                    quantity_lost=body.quantity_lost,
+                    return_reason=body.return_reason,
+                    notes=body.notes,
+                    actor_sub=user.sub,
+                )
+            except ClinicalError as e:
+                raise HTTPException(422, str(e)) from e
+            return DrugReturnOut.model_validate(ret)
+
+    @router.get(
+        "/deployments/{deployment_id}/drug-returns",
+        response_model=list[DrugReturnOut],
+    )
+    async def list_drug_returns(
+        deployment_id: str,
+        user: SessionPayload = require_permission_scoped(
+            Permission.STUDY_READ, resource_param="deployment_id"
+        ),
+    ) -> list[DrugReturnOut]:
+        async with get_clinical_session() as s:
+            rows = await ClinicalRepository(s).list_drug_returns(deployment_id=deployment_id)
+            return [DrugReturnOut.model_validate(r) for r in rows]
+
+    @router.get(
+        "/deployments/{deployment_id}/drug-reconciliation",
+        response_model=DrugReconciliationOut,
+    )
+    async def drug_reconciliation(
+        deployment_id: str,
+        user: SessionPayload = require_permission_scoped(
+            Permission.IP_RECONCILE, resource_param="deployment_id"
+        ),
+    ) -> DrugReconciliationOut:
+        """Per-lot inventory + activity rollup. Gated on ip.reconcile so
+        coordinators don't see the cross-site rollup unless they also hold
+        DM / monitor / auditor / PI."""
+        async with get_clinical_session() as s:
+            rollup = await ClinicalRepository(s).drug_reconciliation(deployment_id)
+            return DrugReconciliationOut.model_validate(rollup)
 
     return router

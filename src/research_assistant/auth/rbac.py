@@ -111,6 +111,18 @@ class Permission(StrEnum):
     EXTRACTION_MAPPING_APPLY = "extraction_mapping.apply"
     EXTRACTION_AUDIT_READ = "extraction.audit_read"
 
+    # ── Drug accountability (P2 #3) ──────────────────────────────────────
+    # ip.catalogue: register an investigational product against a study.
+    # ip.receive: log a shipment arriving at a site.
+    # ip.dispense: hand a kit to a subject.
+    # ip.return: log a returning kit (used + lost + unopened remainder).
+    # ip.reconcile: read per-lot inventory rollup (data-manager / monitor / auditor).
+    IP_CATALOGUE = "ip.catalogue"
+    IP_RECEIVE = "ip.receive"
+    IP_DISPENSE = "ip.dispense"
+    IP_RETURN = "ip.return"
+    IP_RECONCILE = "ip.reconcile"
+
     # ── CDISC submission pipeline (SDTM → ADaM → TLF) ────────────────────
     CDISC_DERIVE = "cdisc.derive"
     CDISC_READ = "cdisc.read"
@@ -273,6 +285,10 @@ ROLE_PERMISSIONS: Final[dict[Role, frozenset[Permission]]] = {
             # extraction-fill provenance chain.
             Permission.SOURCE_DOCUMENT_READ,
             Permission.EXTRACTION_AUDIT_READ,
+            # Drug accountability: auditor reads the per-lot reconciliation
+            # rollup as part of GCP source-data review. Mutating events are
+            # closed off.
+            Permission.IP_RECONCILE,
         }
     ),
     Role.STUDY_DESIGNER: frozenset(
@@ -292,6 +308,9 @@ ROLE_PERMISSIONS: Final[dict[Role, frozenset[Permission]]] = {
             # alongside the form definitions.
             Permission.EXTRACTION_MAPPING_AUTHOR,
             Permission.SOURCE_DOCUMENT_READ,
+            # Drug accountability: designer registers the IP catalogue at
+            # study-design time (drug name + strength + units + lot pattern).
+            Permission.IP_CATALOGUE,
         }
     ),
     Role.PRINCIPAL_INVESTIGATOR: frozenset(
@@ -332,6 +351,11 @@ ROLE_PERMISSIONS: Final[dict[Role, frozenset[Permission]]] = {
             # extraction-fill provenance for source data verification.
             Permission.SOURCE_DOCUMENT_READ,
             Permission.EXTRACTION_AUDIT_READ,
+            # Drug accountability: PI co-dispenses (some sites require PI
+            # countersignature on each kit handover) and reads the
+            # reconciliation rollup.
+            Permission.IP_DISPENSE,
+            Permission.IP_RECONCILE,
         }
     ),
     Role.COORDINATOR: frozenset(
@@ -367,6 +391,13 @@ ROLE_PERMISSIONS: Final[dict[Role, frozenset[Permission]]] = {
             Permission.SOURCE_DOCUMENT_UPLOAD,
             Permission.SOURCE_DOCUMENT_READ,
             Permission.EXTRACTION_MAPPING_APPLY,
+            # Drug accountability: coordinator is the point-of-care actor
+            # — receives shipments at site, hands kits to subjects, logs
+            # returns at end-of-visit. Does not read the reconciliation
+            # rollup (DM / monitor / auditor view).
+            Permission.IP_RECEIVE,
+            Permission.IP_DISPENSE,
+            Permission.IP_RETURN,
         }
     ),
     Role.DATA_MANAGER: frozenset(
@@ -420,6 +451,12 @@ ROLE_PERMISSIONS: Final[dict[Role, frozenset[Permission]]] = {
             # by other roles.
             Permission.RANDOMIZATION_GENERATE,
             Permission.RANDOMIZATION_READ,
+            # Drug accountability: DM also extends the IP catalogue
+            # (mid-study lot additions), receives stock at the central
+            # depot, and reads the reconciliation rollup.
+            Permission.IP_CATALOGUE,
+            Permission.IP_RECEIVE,
+            Permission.IP_RECONCILE,
         }
     ),
     Role.MONITOR: frozenset(
@@ -447,6 +484,9 @@ ROLE_PERMISSIONS: Final[dict[Role, frozenset[Permission]]] = {
             # against the audit trail — read-only.
             Permission.SOURCE_DOCUMENT_READ,
             Permission.EXTRACTION_AUDIT_READ,
+            # Drug accountability: monitor verifies the reconciliation
+            # rollup against source records during site visits — read-only.
+            Permission.IP_RECONCILE,
         }
     ),
     # SR screening roles — always granted at sr_review scope, never global.
