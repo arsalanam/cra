@@ -131,7 +131,7 @@ skill.risk_of_bias · skill.general_qa · skill.ecrf_design ·
 skill.sap_drafter · skill.manuscript_drafter ·
 skill.registration_drafter · skill.irb_drafter ·
 skill.csr_drafter · skill.grade_drafter · skill.trial_stats ·
-skill.nma
+skill.nma · skill.ipd
 ae.record · ae.classify · sae.report
 deviation.record · deviation.classify · capa.author · capa.close
 screening.record · screening.update · screening.read
