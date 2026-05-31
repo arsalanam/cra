@@ -880,6 +880,18 @@ class DrugReconciliationOut(BaseModel):
     by_lot: dict[str, dict[str, int]]
 
 
+class MultiSiteRollupOut(BaseModel):
+    """Per-site rollup within one deployment (P2 #5)."""
+
+    deployment_id: str
+    deployment_name: str
+    status: str
+    n_sites: int
+    n_subjects: int
+    site_totals: dict[str, object]
+    sites: list[dict[str, object]]
+
+
 class CapaOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: str
@@ -3424,5 +3436,38 @@ def create_edc_router() -> APIRouter:
         async with get_clinical_session() as s:
             rollup = await ClinicalRepository(s).drug_reconciliation(deployment_id)
             return DrugReconciliationOut.model_validate(rollup)
+
+    # ── Multi-site rollup (P2 #5) ──────────────────────────────────────
+
+    @router.get(
+        "/deployments/{deployment_id}/multisite",
+        response_model=MultiSiteRollupOut,
+    )
+    async def multisite_per_deployment_rollup(
+        deployment_id: str,
+        low_ip_threshold: int = 10,
+        user: SessionPayload = require_permission_scoped(
+            Permission.STUDY_READ, resource_param="deployment_id"
+        ),
+    ) -> MultiSiteRollupOut:
+        """Per-site rollup across every site in the deployment.
+
+        Returns four KPI groups per site: enrolment funnel, query
+        backlog, safety load, and operational health. Gated on
+        study.read at deployment scope — same threshold as every
+        other 'see this trial' endpoint.
+        """
+        from ..services.multisite import site_rollup
+
+        async with get_clinical_session() as s:
+            try:
+                card = await site_rollup(
+                    s,
+                    deployment_id=deployment_id,
+                    low_ip_threshold=low_ip_threshold,
+                )
+            except ValueError as e:
+                raise HTTPException(404, str(e)) from e
+            return MultiSiteRollupOut.model_validate(card.as_dict())
 
     return router

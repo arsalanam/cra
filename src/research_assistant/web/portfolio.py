@@ -117,6 +117,20 @@ class OrgCostRollupOut(BaseModel):
     users: list[dict[str, object]]  # [{user_id, email, cost: CostRollupOut.as_dict()}]
 
 
+class OrgMultisiteRollupOut(BaseModel):
+    """Admin-only cross-deployment multi-site rollup (P2 #5).
+
+    Free-shape `org_totals` + `deployments` are passed through from
+    `services.multisite.org_rollup` — the dashboard binds to the
+    dictionaries directly so adding a KPI to the service doesn't
+    require a DTO bump.
+    """
+
+    n_deployments: int
+    org_totals: dict[str, object]
+    deployments: list[dict[str, object]]
+
+
 # ── Helpers ────────────────────────────────────────────────────────────
 
 
@@ -461,6 +475,27 @@ def create_portfolio_router() -> APIRouter:
             org_totals=CostRollupOut.model_validate(org_rollup.as_dict()),
             users=rows,
         )
+
+    # ── Multi-site org rollup (P2 #5) ─────────────────────────────────
+
+    @router.get("/org/multisite", response_model=OrgMultisiteRollupOut)
+    async def get_org_multisite(
+        low_ip_threshold: int = 10,
+        user: SessionPayload = require_permission_scoped(Permission.PORTFOLIO_READ_ORG),
+    ) -> OrgMultisiteRollupOut:
+        """Admin-only cross-deployment multi-site rollup.
+
+        Returns one DeploymentCard per deployment + an org-wide
+        totals row. Each DeploymentCard embeds the same SiteCard
+        structure the per-deployment endpoint serves, so the
+        dashboard can drill in without an additional round-trip.
+        """
+        from ..persistence.clinical.database import get_clinical_session
+        from ..services.multisite import org_rollup
+
+        async with get_clinical_session() as session:
+            rollup = await org_rollup(session, low_ip_threshold=low_ip_threshold)
+        return OrgMultisiteRollupOut.model_validate(rollup)
 
     return router
 

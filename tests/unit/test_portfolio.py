@@ -59,6 +59,35 @@ def test_portfolio_cost_dtos_round_trip() -> None:
     assert org.users[0]["email"] == "a@b.com"
 
 
+def test_portfolio_multisite_dto_round_trip() -> None:
+    """OrgMultisiteRollupOut validates against shaped data (P2 #5)."""
+    from research_assistant.web.portfolio import OrgMultisiteRollupOut
+
+    rollup = OrgMultisiteRollupOut(
+        n_deployments=2,
+        org_totals={
+            "n_subjects": 42,
+            "enrolment": {"screened": 50, "eligible": 45, "consented": 42, "enrolled": 42},
+            "queries": {"open": 3, "answered": 1, "closed": 12},
+            "safety": {"open_aes": 1, "open_serious_aes": 0, "open_deviations": 0, "open_capas": 0},
+            "operational": {"overdue_visits": 2, "low_ip_lots": [], "last_sdv_at": None},
+        },
+        deployments=[
+            {
+                "deployment_id": "d1",
+                "deployment_name": "Trial A",
+                "status": "active",
+                "n_sites": 2,
+                "n_subjects": 20,
+                "site_totals": {},
+                "sites": [],
+            }
+        ],
+    )
+    assert rollup.n_deployments == 2
+    assert rollup.deployments[0]["deployment_name"] == "Trial A"
+
+
 def test_portfolio_router_factory_smoke() -> None:
     """Importing + instantiating the router smoke-tests the endpoint
     registrations and DTO definitions."""
@@ -74,6 +103,8 @@ def test_portfolio_router_factory_smoke() -> None:
     # P2 #6 budget rollup endpoints
     assert "/portfolio/costs" in paths
     assert "/portfolio/org/costs" in paths
+    # P2 #5 multi-site rollup (admin-only org tier)
+    assert "/portfolio/org/multisite" in paths
 
 
 def test_portfolio_dtos_round_trip() -> None:

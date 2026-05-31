@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Multi-site rollup · Clinical Research Assistant</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, Segoe UI, Roboto, sans-serif; background: #0f1115; color: #e6e6e6; }
+  .header { padding: 14px 24px; border-bottom: 1px solid #262a33; display: flex; justify-content: space-between; align-items: center; background: #171a21; }
+  .header h1 { margin: 0; font-size: 16px; }
+  .header a { color: #8b93a7; text-decoration: none; font-size: 13px; }
+  .header a:hover { color: #e6e6e6; }
+  .container { max-width: 1280px; margin: 22px auto; padding: 0 24px; }
+  .lead { color: #8b93a7; font-size: 13px; margin: 0 0 18px; line-height: 1.5; }
+  .section { background: #171a21; border: 1px solid #262a33; border-radius: 8px; padding: 18px 20px; margin-bottom: 18px; }
+  h2 { font-size: 13px; text-transform: uppercase; color: #8b93a7; letter-spacing: .6px; margin: 0 0 12px; font-weight: 700; }
+  h3 { font-size: 14px; color: #e6e6e6; margin: 0 0 6px; }
+
+  .picker { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+  .picker label { font-size: 11px; text-transform: uppercase; color: #8b93a7; letter-spacing: .4px; }
+  .picker select, .picker input {
+    background: #0f1115; color: #e6e6e6; border: 1px solid #2a2f3a;
+    padding: 6px 10px; border-radius: 4px; font-size: 13px;
+  }
+
+  .site-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 12px; }
+  .site-card { background: #0f1115; border: 1px solid #1f232c; border-radius: 6px; padding: 14px 16px; }
+  .site-card.totals { border-color: #28492c; background: #0d1812; }
+  .site-card .name { font-size: 14px; font-weight: 700; color: #e6e6e6; }
+  .site-card .code { font-size: 11px; color: #5a6070; margin-left: 6px; font-family: 'Consolas', monospace; }
+  .site-card .n-subj { font-size: 11px; color: #7aa7d9; margin-top: 2px; }
+
+  .kpi-block { margin-top: 10px; padding-top: 10px; border-top: 1px solid #1f232c; }
+  .kpi-block .heading { font-size: 10px; text-transform: uppercase; color: #5a6070; letter-spacing: .4px; margin-bottom: 4px; font-weight: 700; }
+  .kpi-block .row { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; }
+  .kpi-block .row span b { color: #e6e6e6; }
+  .kpi-block .warn b { color: #d97a7a; }
+  .kpi-block .good b { color: #6bcf7f; }
+
+  .empty { color: #5a6070; font-size: 13px; padding: 30px; text-align: center; }
+  .err { color: #d97a7a; padding: 20px; text-align: center; }
+  .loading { color: #8b93a7; padding: 30px; text-align: center; font-size: 13px; }
+
+  .org-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; }
+  .org-card { background: #0f1115; border: 1px solid #1f232c; border-radius: 6px; padding: 10px 14px; cursor: pointer; }
+  .org-card:hover { border-color: #4a7fd9; }
+  .org-card .dep-name { font-size: 13px; font-weight: 700; color: #e6e6e6; }
+  .org-card .dep-meta { font-size: 11px; color: #8b93a7; margin-top: 4px; }
+  .badge-pill { display: inline-block; padding: 1px 6px; border-radius: 10px; font-size: 10px; background: #1f232c; color: #cdd3df; margin-left: 4px; }
+  .badge-pill.warn { background: #2a1010; color: #d97a7a; }
+  .badge-pill.good { background: #102a15; color: #6bcf7f; }
+</style>
+</head>
+<body>
+  <div class="header"><h1>Multi-site rollup</h1><a href="/">← Back to assistant</a></div>
+  <div class="container">
+    <p class="lead">
+      Central-coordinator view of per-site KPIs across every site of a trial. Pick a deployment to see its sites with enrolment funnel, query backlog, safety load, and operational health.
+      Admins additionally see the cross-deployment org rollup at the top.
+    </p>
+
+    <div id="org-section" class="section" style="display:none">
+      <h2>Organisation rollup <span style="color:#5a6070;font-size:11px;text-transform:none">— admin-only · click a card to drill in</span></h2>
+      <div id="org-body" class="loading">Loading…</div>
+    </div>
+
+    <div class="section">
+      <div class="picker">
+        <label for="deployment">Deployment</label>
+        <select id="deployment" onchange="loadDeployment(this.value)"><option value="">— select —</option></select>
+        <label for="low-ip">Low-IP threshold</label>
+        <input type="number" id="low-ip" value="10" min="0" style="width: 80px" onchange="reloadCurrent()" />
+      </div>
+      <div id="content" class="empty">Pick a deployment to see its per-site rollup.</div>
+    </div>
+  </div>
+
+<script>
+"use strict";
+
+function $(id){ return document.getElementById(id); }
+function esc(s){ return (s==null?"":String(s)).replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function fmtDate(s){ if (!s) return "—"; try { return new Date(s).toLocaleDateString(); } catch(e){ return esc(s); } }
+
+let currentDeploymentId = null;
+
+async function api(p){
+  const r = await fetch(p);
+  if (r.status === 401) { window.location.href = "/auth/login"; throw new Error("unauth"); }
+  return r;
+}
+
+async function loadDeployments() {
+  try {
+    const r = await api("/api/edc/deployments");
+    if (!r.ok) throw new Error(await r.text());
+    const ds = await r.json();
+    const sel = $("deployment");
+    sel.innerHTML = `<option value="">— select —</option>` + ds.map(d =>
+      `<option value="${d.id}">${esc(d.name)}</option>`
+    ).join("");
+  } catch (e) {
+    $("content").className = "err";
+    $("content").textContent = "Failed to load deployments: " + (e.message || e);
+  }
+}
+
+async function loadOrg() {
+  const section = $("org-section");
+  const body = $("org-body");
+  try {
+    const r = await fetch("/api/portfolio/org/multisite?low_ip_threshold=" + ($("low-ip").value || 10));
+    if (r.status === 403) {
+      // Non-admin — hide the section.
+      section.style.display = "none";
+      return;
+    }
+    if (!r.ok) throw new Error(await r.text());
+    const data = await r.json();
+    section.style.display = "block";
+    if (data.n_deployments === 0) {
+      body.className = "empty";
+      body.textContent = "No deployments in the org yet.";
+      return;
+    }
+    const t = data.org_totals;
+    const header = `
+      <div style="display:flex;gap:18px;flex-wrap:wrap;margin-bottom:14px;font-size:12px;color:#8b93a7">
+        <span>${data.n_deployments} deployment(s)</span>
+        <span>${t.n_subjects} subjects</span>
+        <span>enrolled: <b style='color:#e6e6e6'>${t.enrolment.enrolled}</b></span>
+        <span>open queries: <b style='color:${t.queries.open > 0 ? "#d97a7a" : "#6bcf7f"}'>${t.queries.open}</b></span>
+        <span>open AEs: <b style='color:${t.safety.open_aes > 0 ? "#d97a7a" : "#6bcf7f"}'>${t.safety.open_aes}</b></span>
+        <span>overdue visits: <b style='color:${t.operational.overdue_visits > 0 ? "#d97a7a" : "#6bcf7f"}'>${t.operational.overdue_visits}</b></span>
+      </div>
+    `;
+    const grid = data.deployments.map(d => {
+      const dt = d.site_totals;
+      const warnQ = dt.queries.open > 0 ? "warn" : "good";
+      const warnAE = dt.safety.open_aes > 0 ? "warn" : "good";
+      const warnVisit = dt.operational.overdue_visits > 0 ? "warn" : "good";
+      return `
+        <div class="org-card" onclick="document.getElementById('deployment').value='${d.deployment_id}';loadDeployment('${d.deployment_id}')">
+          <div class="dep-name">${esc(d.deployment_name)}</div>
+          <div class="dep-meta">
+            ${d.n_sites} site(s) · ${dt.n_subjects} subjects
+            <span class="badge-pill ${warnQ}">Q:${dt.queries.open}</span>
+            <span class="badge-pill ${warnAE}">AE:${dt.safety.open_aes}</span>
+            <span class="badge-pill ${warnVisit}">V:${dt.operational.overdue_visits}</span>
+          </div>
+        </div>
+      `;
+    }).join("");
+    body.className = "";
+    body.innerHTML = header + `<div class="org-grid">${grid}</div>`;
+  } catch (e) {
+    body.className = "err";
+    body.textContent = "Failed to load org rollup: " + (e.message || e);
+  }
+}
+
+async function loadDeployment(depId) {
+  if (!depId) {
+    $("content").className = "empty";
+    $("content").textContent = "Pick a deployment to see its per-site rollup.";
+    currentDeploymentId = null;
+    return;
+  }
+  currentDeploymentId = depId;
+  const root = $("content");
+  root.className = "loading";
+  root.textContent = "Loading per-site rollup…";
+  try {
+    const lowIp = $("low-ip").value || 10;
+    const r = await fetch(`/api/edc/deployments/${depId}/multisite?low_ip_threshold=${lowIp}`);
+    if (r.status === 403) {
+      root.className = "err";
+      root.textContent = "You don't have read access to this deployment.";
+      return;
+    }
+    if (!r.ok) throw new Error(await r.text());
+    const data = await r.json();
+    root.className = "";
+    root.innerHTML = renderDeployment(data);
+  } catch (e) {
+    root.className = "err";
+    root.textContent = "Failed to load deployment: " + (e.message || e);
+  }
+}
+
+function renderDeployment(d) {
+  const cards = [renderSiteCard(d.site_totals, true), ...d.sites.map(s => renderSiteCard(s, false))];
+  return `
+    <div style="margin-bottom:10px;font-size:13px;color:#8b93a7">
+      <b style="color:#e6e6e6">${esc(d.deployment_name)}</b> ·
+      ${d.n_sites} site(s) · ${d.n_subjects} subjects · status <span class="badge-pill">${d.status}</span>
+    </div>
+    <div class="site-grid">${cards.join("")}</div>
+  `;
+}
+
+function renderSiteCard(s, isTotals) {
+  const code = s.site_code ? `<span class="code">${esc(s.site_code)}</span>` : "";
+  const en = s.enrolment, q = s.queries, sa = s.safety, op = s.operational;
+  const cls = isTotals ? "site-card totals" : "site-card";
+  const qWarnCls = q.open > 0 ? "warn" : "";
+  const aeWarnCls = sa.open_aes > 0 ? "warn" : "";
+  const visitWarnCls = op.overdue_visits > 0 ? "warn" : "";
+  const ipBlock = (op.low_ip_lots && op.low_ip_lots.length > 0)
+    ? `<div class="row warn"><span><b>${op.low_ip_lots.length}</b> low-stock lot(s)</span></div>`
+    : "";
+  return `
+    <div class="${cls}">
+      <div class="name">${esc(s.site_name)}${code}</div>
+      <div class="n-subj">${s.n_subjects} subject(s)</div>
+
+      <div class="kpi-block">
+        <div class="heading">Enrolment funnel</div>
+        <div class="row">
+          <span>screened <b>${en.screened}</b></span>
+          <span>eligible <b>${en.eligible}</b></span>
+          <span>consented <b>${en.consented}</b></span>
+          <span>enrolled <b>${en.enrolled}</b></span>
+        </div>
+      </div>
+
+      <div class="kpi-block ${qWarnCls}">
+        <div class="heading">Query backlog</div>
+        <div class="row">
+          <span>open <b>${q.open}</b></span>
+          <span>answered <b>${q.answered}</b></span>
+          <span>closed <b>${q.closed}</b></span>
+        </div>
+      </div>
+
+      <div class="kpi-block ${aeWarnCls}">
+        <div class="heading">Safety</div>
+        <div class="row">
+          <span>open AEs <b>${sa.open_aes}</b> <span class="badge-pill">${sa.open_serious_aes} serious</span></span>
+          <span>open deviations <b>${sa.open_deviations}</b></span>
+          <span>open CAPAs <b>${sa.open_capas}</b></span>
+        </div>
+      </div>
+
+      <div class="kpi-block ${visitWarnCls}">
+        <div class="heading">Operational</div>
+        <div class="row">
+          <span>overdue visits <b>${op.overdue_visits}</b></span>
+          <span>last SDV ${fmtDate(op.last_sdv_at)}</span>
+        </div>
+        ${ipBlock}
+      </div>
+    </div>
+  `;
+}
+
+function reloadCurrent() {
+  if (currentDeploymentId) loadDeployment(currentDeploymentId);
+  loadOrg();
+}
+
+loadDeployments();
+loadOrg();
+</script>
+</body>
+</html>
