@@ -19,12 +19,9 @@ def load_script(kind: NmaScriptKind) -> str:
     """Return the canonical NMA Python script for `kind` as text."""
     if kind not in AVAILABLE_NMA_SCRIPTS:
         raise FileNotFoundError(
-            f"Unknown NMA script {kind!r}. Available: "
-            f"{', '.join(AVAILABLE_NMA_SCRIPTS)}."
+            f"Unknown NMA script {kind!r}. Available: {', '.join(AVAILABLE_NMA_SCRIPTS)}."
         )
-    script_path = resources.files(__package__).joinpath(
-        "sandbox_scripts", f"{kind}.py"
-    )
+    script_path = resources.files(__package__).joinpath("sandbox_scripts", f"{kind}.py")
     return script_path.read_text(encoding="utf-8")
 
 

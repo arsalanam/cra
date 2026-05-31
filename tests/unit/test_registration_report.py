@@ -69,7 +69,12 @@ def _core() -> CoreFields:
         arms=[Arm(label="Drug X", role="experimental", description="200mg")],
         interventions=[Intervention(type="drug", name="Drug X", description="200mg")],
         primary_outcomes=[
-            Outcome(role="primary", measure="Change in symptom score", description="x", time_frame="12 weeks"),
+            Outcome(
+                role="primary",
+                measure="Change in symptom score",
+                description="x",
+                time_frame="12 weeks",
+            ),
         ],
         eligibility=_eligibility(),
         target_enrollment=128,

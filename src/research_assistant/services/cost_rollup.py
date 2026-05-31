@@ -45,9 +45,7 @@ class CostRollup:
             "input_tokens": self.input_tokens,
             "output_tokens": self.output_tokens,
             "by_workflow": {k: round(v, 6) for k, v in self.by_workflow.items()},
-            "by_model_family": {
-                k: round(v, 6) for k, v in self.by_model_family.items()
-            },
+            "by_model_family": {k: round(v, 6) for k, v in self.by_model_family.items()},
             "n_turns": self.n_turns,
         }
 
@@ -73,11 +71,7 @@ def _parse_done_event(evt: StreamEvent) -> tuple[int, int, str | None, str | Non
     output_tokens = int(usage.get("output_tokens") or 0)
     workflow = data.get("workflow")
     # model_id may live under usage.model_id (new) or be absent (legacy).
-    model_id = (
-        usage.get("model_id")
-        or usage.get("model")
-        or data.get("model_id")
-    )
+    model_id = usage.get("model_id") or usage.get("model") or data.get("model_id")
     return (
         input_tokens,
         output_tokens,
@@ -196,9 +190,7 @@ async def rollup_for_org(
         if evt.created_at >= month_start:
             user_rollup.usd_this_month += cost
         if workflow:
-            user_rollup.by_workflow[workflow] = (
-                user_rollup.by_workflow.get(workflow, 0.0) + cost
-            )
+            user_rollup.by_workflow[workflow] = user_rollup.by_workflow.get(workflow, 0.0) + cost
         user_rollup.by_model_family[pricing.family] = (
             user_rollup.by_model_family.get(pricing.family, 0.0) + cost
         )
@@ -210,9 +202,7 @@ async def rollup_for_org(
             org.usd_this_month += cost
         if workflow:
             org_by_workflow[workflow] = org_by_workflow.get(workflow, 0.0) + cost
-        org_by_family[pricing.family] = (
-            org_by_family.get(pricing.family, 0.0) + cost
-        )
+        org_by_family[pricing.family] = org_by_family.get(pricing.family, 0.0) + cost
     org.by_workflow = org_by_workflow
     org.by_model_family = org_by_family
     return org, per_user

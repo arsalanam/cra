@@ -176,26 +176,20 @@ def test_efficacy_secondary_endpoints_parallel_arrays() -> None:
     renders them in parallel — confirm zip behaviour doesn't crash on
     unbalanced inputs (the report code handles None / empty cases)."""
     ds = _data_sections()
-    assert len(ds.efficacy.secondary_endpoints) == len(
-        ds.efficacy.secondary_endpoints_derived_from
-    )
+    assert len(ds.efficacy.secondary_endpoints) == len(ds.efficacy.secondary_endpoints_derived_from)
 
 
 # ── Document ────────────────────────────────────────────────────────────
 
 
 def test_document_kind_discriminator() -> None:
-    doc = CsrDocument(
-        intake=_intake(), synopsis=_synopsis(), data_sections=_data_sections()
-    )
+    doc = CsrDocument(intake=_intake(), synopsis=_synopsis(), data_sections=_data_sections())
     assert doc.kind == "csr_document"
     assert doc.is_final is False
 
 
 def test_document_narrative_sections_default_to_operator_placeholders() -> None:
-    doc = CsrDocument(
-        intake=_intake(), synopsis=_synopsis(), data_sections=_data_sections()
-    )
+    doc = CsrDocument(intake=_intake(), synopsis=_synopsis(), data_sections=_data_sections())
     assert "Operator to complete" in doc.background_text
     assert "Operator to complete" in doc.discussion_text
     assert "Operator to complete" in doc.conclusions_text

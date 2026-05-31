@@ -72,18 +72,14 @@ def test_lookup_empty_string_falls_back() -> None:
 
 
 def test_compute_message_cost_zero_tokens_is_zero() -> None:
-    assert compute_message_cost(
-        input_tokens=0, output_tokens=0, model_id="claude-haiku-4-5"
-    ) == 0.0
+    assert compute_message_cost(input_tokens=0, output_tokens=0, model_id="claude-haiku-4-5") == 0.0
 
 
 def test_compute_message_cost_input_and_output_add() -> None:
     """1000 input tokens + 500 output tokens at Haiku rates."""
     p = lookup("claude-haiku-4-5")
     expected = p.input_per_1k_usd * 1.0 + p.output_per_1k_usd * 0.5
-    actual = compute_message_cost(
-        input_tokens=1000, output_tokens=500, model_id="claude-haiku-4-5"
-    )
+    actual = compute_message_cost(input_tokens=1000, output_tokens=500, model_id="claude-haiku-4-5")
     assert actual == pytest.approx(expected, rel=1e-9)
 
 

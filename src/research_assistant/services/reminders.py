@@ -93,9 +93,7 @@ def _build_email_body(reminder: dict[str, object]) -> tuple[str, str]:
     return subject, body
 
 
-def _send_email_via_ses(
-    *, recipient: str, subject: str, body: str
-) -> tuple[str, str | None]:
+def _send_email_via_ses(*, recipient: str, subject: str, body: str) -> tuple[str, str | None]:
     """Send via boto3 SES. Returns (status, error|None).
 
     Wrapped to keep the import lazy — boto3 is pinned but not loaded
@@ -194,9 +192,7 @@ async def fire_due_reminders(deployment_id: str) -> ReminderBatchResult:
                 continue
             subject, body = _build_email_body(reminder)
             if not ses_on:
-                logger.info(
-                    "[reminders] dry-run email to %s: %r", recipient, subject
-                )
+                logger.info("[reminders] dry-run email to %s: %r", recipient, subject)
                 await _record_one(
                     session,
                     reminder,
@@ -206,9 +202,7 @@ async def fire_due_reminders(deployment_id: str) -> ReminderBatchResult:
                 )
                 sent += 1
                 continue
-            status, error = _send_email_via_ses(
-                recipient=recipient, subject=subject, body=body
-            )
+            status, error = _send_email_via_ses(recipient=recipient, subject=subject, body=body)
             await _record_one(
                 session,
                 reminder,
@@ -238,9 +232,7 @@ async def fire_due_reminders_all_deployments() -> list[ReminderBatchResult]:
     from ..persistence.clinical.models import StudyDeployment
 
     async with get_clinical_session() as session:
-        deployments = list(
-            (await session.scalars(select(StudyDeployment.id))).all()
-        )
+        deployments = list((await session.scalars(select(StudyDeployment.id))).all())
     results: list[ReminderBatchResult] = []
     for deployment_id in deployments:
         try:

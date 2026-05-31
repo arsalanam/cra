@@ -43,8 +43,7 @@ def _read_trial_df(trial: dict) -> pd.DataFrame | None:
         return None
     df["__trial_id__"] = str(trial.get("trial_id"))
     df["__treatment__"] = (
-        df[trial["treatment_column"]].astype(str)
-        == str(trial["treatment_active_value"])
+        df[trial["treatment_column"]].astype(str) == str(trial["treatment_active_value"])
     ).astype(int)
     return df
 
@@ -142,9 +141,7 @@ def _dl_pool(rows: list[dict]) -> dict:
         "ci_lower_log": pooled_log - z * se_pooled,
         "ci_upper_log": pooled_log + z * se_pooled,
         "p_value": (
-            float(2 * (1 - norm.cdf(abs(pooled_log) / se_pooled)))
-            if se_pooled > 0
-            else None
+            float(2 * (1 - norm.cdf(abs(pooled_log) / se_pooled))) if se_pooled > 0 else None
         ),
         "i_squared": float(i_squared),
         "tau_squared": float(tau2),
@@ -207,9 +204,7 @@ def main() -> None:
         "per_trial": [],
     }
     if pool.get("fitted"):
-        out["effect"] = (
-            float(math.exp(pool["log_effect"])) if log_scale else pool["log_effect"]
-        )
+        out["effect"] = float(math.exp(pool["log_effect"])) if log_scale else pool["log_effect"]
         out["ci_lower"] = (
             float(math.exp(pool["ci_lower_log"])) if log_scale else pool["ci_lower_log"]
         )
@@ -226,9 +221,7 @@ def main() -> None:
         out.update(pool)
     z = float(norm.ppf(0.975))
     for r in per_trial_raw:
-        eff = (
-            float(math.exp(r["log_effect"])) if log_scale else float(r["log_effect"])
-        )
+        eff = float(math.exp(r["log_effect"])) if log_scale else float(r["log_effect"])
         se = float(math.sqrt(r["var"]))
         lo = (
             float(math.exp(r["log_effect"] - z * se))
@@ -250,9 +243,7 @@ def main() -> None:
                 "se": se,
             }
         )
-    (_OUTPUT_DIR / "ipd-two-stage.json").write_text(
-        json.dumps(out, indent=2), encoding="utf-8"
-    )
+    (_OUTPUT_DIR / "ipd-two-stage.json").write_text(json.dumps(out, indent=2), encoding="utf-8")
     print(
         f"[ipd_two_stage] measure={effect_measure} trials={out['n_trials']} "
         f"subjects={out['n_subjects']} fitted={out.get('fitted', False)}"

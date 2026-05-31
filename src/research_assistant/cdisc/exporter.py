@@ -56,57 +56,139 @@ from .xpt_writer import write_xpt
 # attribute lookup; the EXPORT_COLUMNS lists below pin the column order
 # for the regulator.
 _DM_COLUMNS = [
-    "STUDYID", "DOMAIN", "USUBJID", "SUBJID", "SITEID",
-    "AGE", "AGEU", "SEX", "RACE", "ETHNIC",
-    "RFSTDTC", "RFENDTC", "ARM", "ARMCD", "COUNTRY",
+    "STUDYID",
+    "DOMAIN",
+    "USUBJID",
+    "SUBJID",
+    "SITEID",
+    "AGE",
+    "AGEU",
+    "SEX",
+    "RACE",
+    "ETHNIC",
+    "RFSTDTC",
+    "RFENDTC",
+    "ARM",
+    "ARMCD",
+    "COUNTRY",
 ]
 _AE_COLUMNS = [
-    "STUDYID", "DOMAIN", "USUBJID", "AESEQ",
-    "AETERM", "AEDECOD", "AEBODSYS",
-    "AESTDTC", "AEENDTC",
-    "AESEV", "AESER", "AEREL", "AEOUT",
+    "STUDYID",
+    "DOMAIN",
+    "USUBJID",
+    "AESEQ",
+    "AETERM",
+    "AEDECOD",
+    "AEBODSYS",
+    "AESTDTC",
+    "AEENDTC",
+    "AESEV",
+    "AESER",
+    "AEREL",
+    "AEOUT",
 ]
 _VS_COLUMNS = [
-    "STUDYID", "DOMAIN", "USUBJID", "VSSEQ",
-    "VSTESTCD", "VSTEST", "VSORRES", "VSORRESU", "VSDTC",
+    "STUDYID",
+    "DOMAIN",
+    "USUBJID",
+    "VSSEQ",
+    "VSTESTCD",
+    "VSTEST",
+    "VSORRES",
+    "VSORRESU",
+    "VSDTC",
 ]
 _ADSL_COLUMNS = [
-    "STUDYID", "USUBJID", "SUBJID", "SITEID",
-    "AGE", "AGEU", "AGEGR1",
-    "SEX", "RACE", "ETHNIC",
-    "SAFFL", "ITTFL", "DTHFL",
-    "RFSTDTC", "RFENDTC",
-    "TRT01P", "TRT01A", "COUNTRY",
+    "STUDYID",
+    "USUBJID",
+    "SUBJID",
+    "SITEID",
+    "AGE",
+    "AGEU",
+    "AGEGR1",
+    "SEX",
+    "RACE",
+    "ETHNIC",
+    "SAFFL",
+    "ITTFL",
+    "DTHFL",
+    "RFSTDTC",
+    "RFENDTC",
+    "TRT01P",
+    "TRT01A",
+    "COUNTRY",
 ]
 _LB_COLUMNS = [
-    "STUDYID", "DOMAIN", "USUBJID", "LBSEQ",
-    "LBTESTCD", "LBTEST",
-    "LBORRES", "LBORRESU", "LBSTRESC", "LBSTRESN", "LBSTRESU",
-    "LBORNRLO", "LBORNRHI", "LBSTNRLO", "LBSTNRHI", "LBNRIND",
+    "STUDYID",
+    "DOMAIN",
+    "USUBJID",
+    "LBSEQ",
+    "LBTESTCD",
+    "LBTEST",
+    "LBORRES",
+    "LBORRESU",
+    "LBSTRESC",
+    "LBSTRESN",
+    "LBSTRESU",
+    "LBORNRLO",
+    "LBORNRHI",
+    "LBSTNRLO",
+    "LBSTNRHI",
+    "LBNRIND",
     "LBDTC",
 ]
 _EX_COLUMNS = [
-    "STUDYID", "DOMAIN", "USUBJID", "EXSEQ",
-    "EXTRT", "EXDOSE", "EXDOSU", "EXROUTE",
-    "EXSTDTC", "EXENDTC",
+    "STUDYID",
+    "DOMAIN",
+    "USUBJID",
+    "EXSEQ",
+    "EXTRT",
+    "EXDOSE",
+    "EXDOSU",
+    "EXROUTE",
+    "EXSTDTC",
+    "EXENDTC",
 ]
 _CM_COLUMNS = [
-    "STUDYID", "DOMAIN", "USUBJID", "CMSEQ",
-    "CMTRT", "CMDECOD", "CMINDC",
-    "CMDOSE", "CMDOSU",
-    "CMSTDTC", "CMENDTC",
+    "STUDYID",
+    "DOMAIN",
+    "USUBJID",
+    "CMSEQ",
+    "CMTRT",
+    "CMDECOD",
+    "CMINDC",
+    "CMDOSE",
+    "CMDOSU",
+    "CMSTDTC",
+    "CMENDTC",
 ]
 _MH_COLUMNS = [
-    "STUDYID", "DOMAIN", "USUBJID", "MHSEQ",
-    "MHTERM", "MHDECOD", "MHCAT",
-    "MHSTDTC", "MHENDTC", "MHONGO",
+    "STUDYID",
+    "DOMAIN",
+    "USUBJID",
+    "MHSEQ",
+    "MHTERM",
+    "MHDECOD",
+    "MHCAT",
+    "MHSTDTC",
+    "MHENDTC",
+    "MHONGO",
 ]
 _ADTTE_COLUMNS = [
-    "STUDYID", "USUBJID", "PARAMCD", "PARAM",
-    "AVAL", "AVALU", "CNSR",
-    "STARTDT", "ADT",
-    "EVNTDESC", "SRCDOM", "SRCVAR",
-    "TRT01P", "TRT01A",
+    "STUDYID",
+    "USUBJID",
+    "PARAMCD",
+    "PARAM",
+    "AVAL",
+    "AVALU",
+    "CNSR",
+    "STARTDT",
+    "ADT",
+    "EVNTDESC",
+    "SRCDOM",
+    "SRCVAR",
+    "TRT01P",
+    "TRT01A",
 ]
 
 
@@ -116,12 +198,7 @@ def _records_to_csv(columns: list[str], rows: Iterable[Any]) -> bytes:
     writer = csv.writer(buf, lineterminator="\n")
     writer.writerow(columns)
     for row in rows:
-        writer.writerow(
-            [
-                "" if (v := getattr(row, c, None)) is None else str(v)
-                for c in columns
-            ]
-        )
+        writer.writerow(["" if (v := getattr(row, c, None)) is None else str(v) for c in columns])
     return buf.getvalue().encode("utf-8")
 
 
@@ -203,9 +280,7 @@ def adtte_to_xpt(records: Iterable[AdamAdtte]) -> bytes:
 def tlf_table_to_csv(tlf: TlfArtefact) -> bytes:
     """Serialise a TlfArtefact (kind='table' or 'listing') as CSV."""
     if tlf.kind not in ("table", "listing"):
-        raise ValueError(
-            f"Only table/listing TLFs serialise as CSV — got kind={tlf.kind!r}."
-        )
+        raise ValueError(f"Only table/listing TLFs serialise as CSV — got kind={tlf.kind!r}.")
     payload = json.loads(tlf.content_json or '{"columns": [], "rows": []}')
     columns = payload.get("columns") or []
     rows = payload.get("rows") or []

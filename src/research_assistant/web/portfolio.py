@@ -170,12 +170,8 @@ def create_portfolio_router() -> APIRouter:
                     .order_by(Message.created_at.desc())
                     .limit(1)
                 )
-                last_assistant = (
-                    await session.scalars(last_assistant_stmt)
-                ).first()
-                kind = _last_turn_kind(
-                    last_assistant.final_answer if last_assistant else None
-                )
+                last_assistant = (await session.scalars(last_assistant_stmt)).first()
+                kind = _last_turn_kind(last_assistant.final_answer if last_assistant else None)
                 from ..services.cost_rollup import rollup_for_thread
 
                 cost = await rollup_for_thread(session, thread_id=t.id)
@@ -213,9 +209,7 @@ def create_portfolio_router() -> APIRouter:
                 RoleAssignment.user_id == owner_id,
                 RoleAssignment.scope_type == ScopeType.SR_REVIEW.value,
             )
-            member_ids = [
-                r for r in (await session.scalars(member_stmt)).all() if r is not None
-            ]
+            member_ids = [r for r in (await session.scalars(member_stmt)).all() if r is not None]
             if member_ids:
                 member_stmt2 = (
                     select(SrReview)
@@ -247,9 +241,7 @@ def create_portfolio_router() -> APIRouter:
                 n_candidates = sum(status_counts.values())
                 n_included = status_counts.get("included", 0)
                 n_excluded = status_counts.get("excluded", 0)
-                n_pending = (
-                    n_candidates - n_included - n_excluded
-                )
+                n_pending = n_candidates - n_included - n_excluded
                 out.append(
                     PortfolioSrReviewOut(
                         id=p.id,
@@ -272,28 +264,19 @@ def create_portfolio_router() -> APIRouter:
         from ..persistence.models import RoleAssignment
 
         async with get_db_session() as session:
-            asgn_stmt = select(RoleAssignment).where(
-                RoleAssignment.user_id == owner_id
-            )
+            asgn_stmt = select(RoleAssignment).where(RoleAssignment.user_id == owner_id)
             assignments = list((await session.scalars(asgn_stmt)).all())
         global_admin = any(
-            a.scope_type == ScopeType.GLOBAL.value and a.role == "admin"
-            for a in assignments
+            a.scope_type == ScopeType.GLOBAL.value and a.role == "admin" for a in assignments
         )
         scoped_study_ids = {
-            a.scope_id
-            for a in assignments
-            if a.scope_type == ScopeType.STUDY.value and a.scope_id
+            a.scope_id for a in assignments if a.scope_type == ScopeType.STUDY.value and a.scope_id
         }
         site_scope_ids = {
-            a.scope_id
-            for a in assignments
-            if a.scope_type == ScopeType.SITE.value and a.scope_id
+            a.scope_id for a in assignments if a.scope_type == ScopeType.SITE.value and a.scope_id
         }
         async with get_clinical_session() as cs:
-            stmt = select(StudyDeployment).order_by(
-                StudyDeployment.created_at.desc()
-            )
+            stmt = select(StudyDeployment).order_by(StudyDeployment.created_at.desc())
             deployments = list((await cs.scalars(stmt)).all())
             out: list[PortfolioDeploymentOut] = []
             for d in deployments:
@@ -308,9 +291,7 @@ def create_portfolio_router() -> APIRouter:
                         visible = True
                 if not visible:
                     continue
-                subj_count_stmt = select(func.count()).where(
-                    Subject.deployment_id == d.id
-                )
+                subj_count_stmt = select(func.count()).where(Subject.deployment_id == d.id)
                 n_subjects = int(await cs.scalar(subj_count_stmt) or 0)
                 lock_stmt = (
                     select(StudyLock)
@@ -357,9 +338,7 @@ def create_portfolio_router() -> APIRouter:
                 .group_by(Thread.workflow)
             )
             by_workflow_raw = (await session.execute(workflow_stmt)).all()
-            by_workflow = {
-                (row[0] or "unrouted"): int(row[1]) for row in by_workflow_raw
-            }
+            by_workflow = {(row[0] or "unrouted"): int(row[1]) for row in by_workflow_raw}
             threads_total = int(sum(by_workflow.values()))
             sr_stmt = select(func.count()).where(SrReview.created_by == owner_id)
             sr_total = int(await session.scalar(sr_stmt) or 0)
@@ -373,26 +352,18 @@ def create_portfolio_router() -> APIRouter:
 
     @router.get("/org", response_model=OrgRolloutOut)
     async def get_org_rollup(
-        user: SessionPayload = require_permission_scoped(
-            Permission.PORTFOLIO_READ_ORG
-        ),
+        user: SessionPayload = require_permission_scoped(Permission.PORTFOLIO_READ_ORG),
     ) -> OrgRolloutOut:
         """Admin-only org rollup. Per-user totals (no row-level data
         beyond the user's name + sub)."""
         async with get_db_session() as session:
             users = list((await session.scalars(select(User))).all())
-            thread_counts_stmt = (
-                select(Thread.user_id, func.count())
-                .group_by(Thread.user_id)
-            )
+            thread_counts_stmt = select(Thread.user_id, func.count()).group_by(Thread.user_id)
             thread_counts: dict[str, int] = {
                 (row[0] or DEFAULT_USER_ID): int(row[1])
                 for row in (await session.execute(thread_counts_stmt)).all()
             }
-            sr_counts_stmt = (
-                select(SrReview.created_by, func.count())
-                .group_by(SrReview.created_by)
-            )
+            sr_counts_stmt = select(SrReview.created_by, func.count()).group_by(SrReview.created_by)
             sr_counts: dict[str, int] = {
                 (row[0] or DEFAULT_USER_ID): int(row[1])
                 for row in (await session.execute(sr_counts_stmt)).all()
@@ -405,9 +376,8 @@ def create_portfolio_router() -> APIRouter:
                 if a.user_id is None:
                     continue
                 role_counts_per_user.setdefault(a.user_id, Counter())[a.role] += 1
-            last_activity_stmt = (
-                select(Thread.user_id, func.max(Thread.updated_at))
-                .group_by(Thread.user_id)
+            last_activity_stmt = select(Thread.user_id, func.max(Thread.updated_at)).group_by(
+                Thread.user_id
             )
             last_activity_map: dict[str, datetime] = {
                 (row[0] or DEFAULT_USER_ID): row[1]
@@ -457,9 +427,7 @@ def create_portfolio_router() -> APIRouter:
 
     @router.get("/org/costs", response_model=OrgCostRollupOut)
     async def get_org_costs(
-        user: SessionPayload = require_permission_scoped(
-            Permission.PORTFOLIO_READ_ORG
-        ),
+        user: SessionPayload = require_permission_scoped(Permission.PORTFOLIO_READ_ORG),
     ) -> OrgCostRollupOut:
         """Admin-only org-wide cost rollup. Returns the organisation
         total + per-user cost rollups (the per-user list carries
@@ -485,9 +453,7 @@ def create_portfolio_router() -> APIRouter:
         # naturally lands at the top.
         rows.sort(
             key=lambda r: (
-                float(r["cost"].get("usd_total", 0.0))
-                if isinstance(r["cost"], dict)
-                else 0.0
+                float(r["cost"].get("usd_total", 0.0)) if isinstance(r["cost"], dict) else 0.0
             ),
             reverse=True,
         )

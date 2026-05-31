@@ -251,9 +251,7 @@ async def test_code_break_refused_when_no_allocation(
     repo = ClinicalRepository(clinical_session)
     _dep_id, subj_id, _ = await _seed_deployment_with_two_subjects(repo)
     with pytest.raises(ClinicalError, match="no allocation"):
-        await repo.code_break(
-            subj_id, reason="reason placeholder text", actor_sub="pi"
-        )
+        await repo.code_break(subj_id, reason="reason placeholder text", actor_sub="pi")
 
 
 async def test_double_code_break_refused(
@@ -283,10 +281,6 @@ async def test_double_code_break_refused(
         sequence_position=0,
         actor_sub="coord",
     )
-    await repo.code_break(
-        subj_id, reason="First emergency event description.", actor_sub="pi"
-    )
+    await repo.code_break(subj_id, reason="First emergency event description.", actor_sub="pi")
     with pytest.raises(ClinicalError, match="already unblinded"):
-        await repo.code_break(
-            subj_id, reason="Second attempt.", actor_sub="pi"
-        )
+        await repo.code_break(subj_id, reason="Second attempt.", actor_sub="pi")

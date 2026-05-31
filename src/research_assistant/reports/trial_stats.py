@@ -462,9 +462,7 @@ def _resolve_image(images_dir: Path | None, url_or_filename: str) -> Path | None
 # ── PDF builder ─────────────────────────────────────────────────────────
 
 
-def build_pdf(
-    data: TrialStatsReportData, images_dir: Path | None = None
-) -> bytes:
+def build_pdf(data: TrialStatsReportData, images_dir: Path | None = None) -> bytes:
     buf = io.BytesIO()
     styles = make_pdf_styles()
     decor = make_page_decorations(footer_label="Trial-stats analysis")
@@ -556,8 +554,7 @@ def build_pdf(
         for sg in data.subgroup:
             flow.append(Spacer(1, 6))
             heading = (
-                f"<b>{sg.parent_paramcd} — {sg.parent_param_label} "
-                f"by {sg.subgroup_variable}</b>"
+                f"<b>{sg.parent_paramcd} — {sg.parent_param_label} by {sg.subgroup_variable}</b>"
             )
             flow.append(Paragraph(heading, styles["H3"]))
             flow.append(
@@ -573,16 +570,12 @@ def build_pdf(
         flow.append(Paragraph("Waterfall — per-subject best response", styles["H2"]))
         for w in data.waterfall:
             flow.append(Spacer(1, 6))
-            flow.append(
-                Paragraph(f"<b>{w.outcome_label}</b> (n={w.n_subjects})", styles["H3"])
-            )
+            flow.append(Paragraph(f"<b>{w.outcome_label}</b> (n={w.n_subjects})", styles["H3"]))
             if w.waterfall_image_url:
                 resolved = _resolve_image(images_dir, w.waterfall_image_url)
                 if resolved is not None:
                     flow.append(Image(str(resolved), width=8.5 * inch, height=4.5 * inch))
-            counts_text = ", ".join(
-                f"{k}: {v}" for k, v in (w.response_counts or {}).items()
-            )
+            counts_text = ", ".join(f"{k}: {v}" for k, v in (w.response_counts or {}).items())
             if counts_text:
                 flow.append(
                     Paragraph(
@@ -596,9 +589,7 @@ def build_pdf(
         flow.append(Paragraph("Swimmer — treatment timeline", styles["H2"]))
         for s in data.swimmer:
             flow.append(Spacer(1, 6))
-            flow.append(
-                Paragraph(f"<b>{s.outcome_label}</b> (n={s.n_subjects})", styles["H3"])
-            )
+            flow.append(Paragraph(f"<b>{s.outcome_label}</b> (n={s.n_subjects})", styles["H3"]))
             if s.swimmer_image_url:
                 resolved = _resolve_image(images_dir, s.swimmer_image_url)
                 if resolved is not None:
@@ -634,15 +625,11 @@ def build_pdf(
 # ── DOCX builder ────────────────────────────────────────────────────────
 
 
-def build_docx(
-    data: TrialStatsReportData, images_dir: Path | None = None
-) -> bytes:
+def build_docx(data: TrialStatsReportData, images_dir: Path | None = None) -> bytes:
     docx = Document()
     docx.core_properties.title = data.title
     docx.add_heading(data.title, level=0)
-    runs = docx.add_paragraph(
-        f"Generated {data.generated_at.strftime('%Y-%m-%d %H:%M UTC')}"
-    ).runs
+    runs = docx.add_paragraph(f"Generated {data.generated_at.strftime('%Y-%m-%d %H:%M UTC')}").runs
     if runs:
         runs[0].font.color.rgb = DOCX_MUTED
 
@@ -798,9 +785,7 @@ def build_docx(
                 resolved = _resolve_image(images_dir, w.waterfall_image_url)
                 if resolved is not None:
                     docx.add_picture(str(resolved), width=Inches(6.5))
-            counts_text = ", ".join(
-                f"{k}: {v}" for k, v in (w.response_counts or {}).items()
-            )
+            counts_text = ", ".join(f"{k}: {v}" for k, v in (w.response_counts or {}).items())
             if counts_text:
                 wp = docx.add_paragraph(f"RECIST 1.1 counts — {counts_text}")
                 for run in wp.runs:

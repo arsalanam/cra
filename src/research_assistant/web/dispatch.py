@@ -336,9 +336,7 @@ def create_dispatch_router() -> APIRouter:
             # cost-rollup service (P2 #6) can attribute USD per-model.
             # Falls back gracefully when model_id is absent.
             usage_with_model = dict(meta.get("usage", {}))
-            usage_with_model.setdefault(
-                "model_id", get_settings().bedrock_model_id
-            )
+            usage_with_model.setdefault("model_id", get_settings().bedrock_model_id)
             await repo.add_stream_event(
                 message_id=assistant_msg_id,
                 event_type="done",

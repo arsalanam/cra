@@ -259,8 +259,7 @@ def build_pdf(data: CsrReportData, images_dir: Path | None = None) -> bytes:
                     ("Lock date", data.intake.lock_date or "[SPONSOR INPUT]"),
                     (
                         "Target jurisdictions",
-                        ", ".join(data.intake.target_jurisdictions)
-                        or "[SPONSOR INPUT]",
+                        ", ".join(data.intake.target_jurisdictions) or "[SPONSOR INPUT]",
                     ),
                 ],
                 styles,
@@ -314,9 +313,7 @@ def build_pdf(data: CsrReportData, images_dir: Path | None = None) -> bytes:
     ):
         flow.append(Spacer(1, 12))
         flow.append(Paragraph(f"{num}. {name}", styles["H2"]))
-        flow.append(
-            Paragraph(f"[Operator to complete — {name}]", styles["Body"])
-        )
+        flow.append(Paragraph(f"[Operator to complete — {name}]", styles["Body"]))
 
     # Section 10 — Disposition + Demographics (data-driven)
     ds = data.data_sections
@@ -350,10 +347,7 @@ def build_pdf(data: CsrReportData, images_dir: Path | None = None) -> bytes:
         flow.append(
             _data_table(
                 ["Characteristic", "Value", "Detail"],
-                [
-                    [r.characteristic, r.value, r.detail or "—"]
-                    for r in ds.demographics.rows
-                ],
+                [[r.characteristic, r.value, r.detail or "—"] for r in ds.demographics.rows],
                 styles,
             )
         )
@@ -389,8 +383,7 @@ def build_pdf(data: CsrReportData, images_dir: Path | None = None) -> bytes:
                     ),
                     (
                         "Secondary sources",
-                        "; ".join(ds.efficacy.secondary_endpoints_derived_from)
-                        or "—",
+                        "; ".join(ds.efficacy.secondary_endpoints_derived_from) or "—",
                     ),
                     (
                         "Populations analysed",
@@ -570,9 +563,7 @@ def build_docx(data: CsrReportData, images_dir: Path | None = None) -> bytes:
             t.cell(i, 2).text = r.pct
         docx.add_paragraph(f"Source: {ds.disposition.derived_from}").runs[0].italic = True
     else:
-        docx.add_paragraph(
-            "[Operator to complete — paste from TLF t-disposition]"
-        )
+        docx.add_paragraph("[Operator to complete — paste from TLF t-disposition]")
 
     docx.add_heading("10.2 Demographics + Baseline Characteristics", level=2)
     if ds:
@@ -587,9 +578,7 @@ def build_docx(data: CsrReportData, images_dir: Path | None = None) -> bytes:
             t.cell(i, 2).text = demo_row.detail or "—"
         docx.add_paragraph(f"Source: {ds.demographics.derived_from}").runs[0].italic = True
     else:
-        docx.add_paragraph(
-            "[Operator to complete — paste from TLF t-demographics]"
-        )
+        docx.add_paragraph("[Operator to complete — paste from TLF t-demographics]")
 
     # Section 11 — Efficacy
     docx.add_heading("11. Efficacy Evaluation", level=1)
@@ -609,9 +598,7 @@ def build_docx(data: CsrReportData, images_dir: Path | None = None) -> bytes:
             p.add_run("Populations analysed: ").bold = True
             p.add_run(", ".join(ds.efficacy.populations_analysed))
     else:
-        docx.add_paragraph(
-            "[Operator to complete — efficacy from ADTTE + TLF references]"
-        )
+        docx.add_paragraph("[Operator to complete — efficacy from ADTTE + TLF references]")
 
     # Section 12 — Safety
     docx.add_heading("12. Safety Evaluation", level=1)
@@ -630,9 +617,7 @@ def build_docx(data: CsrReportData, images_dir: Path | None = None) -> bytes:
             p.add_run(label + ": ").bold = True
             p.add_run(value)
     else:
-        docx.add_paragraph(
-            "[Operator to complete — paste from TLF t-ae-summary + f-ae-frequency]"
-        )
+        docx.add_paragraph("[Operator to complete — paste from TLF t-ae-summary + f-ae-frequency]")
 
     # Sections 13-16
     for num, name, body in (

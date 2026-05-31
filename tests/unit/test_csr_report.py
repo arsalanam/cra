@@ -139,9 +139,7 @@ def test_assembler_prefers_final_document_when_present() -> None:
 
 
 def test_build_pdf_emits_pdf_signature() -> None:
-    doc = CsrDocument(
-        intake=_intake(), synopsis=_synopsis(), data_sections=_data()
-    )
+    doc = CsrDocument(intake=_intake(), synopsis=_synopsis(), data_sections=_data())
     messages = [_msg(role="assistant", final_answer=doc.model_dump_json())]
     out = assemble_report_data("thread-1", messages)
     assert out is not None
@@ -150,9 +148,7 @@ def test_build_pdf_emits_pdf_signature() -> None:
 
 
 def test_build_docx_emits_zip_signature() -> None:
-    doc = CsrDocument(
-        intake=_intake(), synopsis=_synopsis(), data_sections=_data()
-    )
+    doc = CsrDocument(intake=_intake(), synopsis=_synopsis(), data_sections=_data())
     messages = [_msg(role="assistant", final_answer=doc.model_dump_json())]
     out = assemble_report_data("thread-1", messages)
     assert out is not None

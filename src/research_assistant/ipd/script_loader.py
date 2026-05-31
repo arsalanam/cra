@@ -19,12 +19,9 @@ def load_script(kind: IpdScriptKind) -> str:
     """Return the canonical IPD analysis script for `kind` as text."""
     if kind not in AVAILABLE_IPD_SCRIPTS:
         raise FileNotFoundError(
-            f"Unknown IPD script {kind!r}. Available: "
-            f"{', '.join(AVAILABLE_IPD_SCRIPTS)}."
+            f"Unknown IPD script {kind!r}. Available: {', '.join(AVAILABLE_IPD_SCRIPTS)}."
         )
-    script_path = resources.files(__package__).joinpath(
-        "sandbox_scripts", f"{kind}.py"
-    )
+    script_path = resources.files(__package__).joinpath("sandbox_scripts", f"{kind}.py")
     return script_path.read_text(encoding="utf-8")
 
 

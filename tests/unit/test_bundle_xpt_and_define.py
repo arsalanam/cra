@@ -31,9 +31,7 @@ def test_define_xml_is_well_formed_and_carries_study_id() -> None:
     define_bytes = z.read("define.xml")
     root = ET.fromstring(define_bytes)
     # Study name is the study_id we passed.
-    study_name = root.find(
-        ".//{http://www.cdisc.org/ns/odm/v1.3}StudyName"
-    )
+    study_name = root.find(".//{http://www.cdisc.org/ns/odm/v1.3}StudyName")
     assert study_name is not None
     assert study_name.text == "RS-1"
 

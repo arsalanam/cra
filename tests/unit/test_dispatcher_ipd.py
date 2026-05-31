@@ -49,9 +49,7 @@ def test_slash_commands_route_to_ipd() -> None:
 
 def test_aggregate_meta_analysis_still_routes_to_meta_analysis() -> None:
     """Pairwise meta-analysis ask should NOT route to IPD."""
-    assert classify(
-        "Does aspirin reduce stroke vs placebo", None
-    ) == "meta_analysis"
+    assert classify("Does aspirin reduce stroke vs placebo", None) == "meta_analysis"
 
 
 def test_nma_three_arm_compare_still_routes_to_nma() -> None:

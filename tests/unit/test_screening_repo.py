@@ -115,9 +115,7 @@ async def test_update_screen_failure_requires_reason_code(
     repo = ClinicalRepository(clinical_session)
     log = await repo.record_screening(deployment_id=dep.id, screening_code="X")
     with pytest.raises(ClinicalError, match="exclusion_reason_code required"):
-        await repo.update_screening_eligibility(
-            log.id, eligibility_status="screen_failure"
-        )
+        await repo.update_screening_eligibility(log.id, eligibility_status="screen_failure")
 
 
 async def test_update_screen_failure_rejects_unknown_code(
@@ -158,9 +156,7 @@ async def test_eligibility_invalid_status_rejected(
     repo = ClinicalRepository(clinical_session)
     log = await repo.record_screening(deployment_id=dep.id, screening_code="X")
     with pytest.raises(ClinicalError, match="Invalid eligibility_status"):
-        await repo.update_screening_eligibility(
-            log.id, eligibility_status="wrong"
-        )
+        await repo.update_screening_eligibility(log.id, eligibility_status="wrong")
 
 
 # ── update_screening_consent ────────────────────────────────────────────
@@ -173,9 +169,7 @@ async def test_consent_blocked_before_eligible(
     repo = ClinicalRepository(clinical_session)
     log = await repo.record_screening(deployment_id=dep.id, screening_code="X")
     with pytest.raises(ClinicalError, match="before eligibility"):
-        await repo.update_screening_consent(
-            log.id, consent_status="consented"
-        )
+        await repo.update_screening_consent(log.id, consent_status="consented")
 
 
 async def test_consent_consented_sets_date(
@@ -185,9 +179,7 @@ async def test_consent_consented_sets_date(
     repo = ClinicalRepository(clinical_session)
     log = await repo.record_screening(deployment_id=dep.id, screening_code="X")
     await repo.update_screening_eligibility(log.id, eligibility_status="eligible")
-    consented = await repo.update_screening_consent(
-        log.id, consent_status="consented"
-    )
+    consented = await repo.update_screening_consent(log.id, consent_status="consented")
     assert consented.consent_status == "consented"
     assert consented.consent_date is not None
 
@@ -202,9 +194,7 @@ async def test_enrolment_blocked_before_consent(
     repo = ClinicalRepository(clinical_session)
     log = await repo.record_screening(deployment_id=dep.id, screening_code="X")
     await repo.update_screening_eligibility(log.id, eligibility_status="eligible")
-    subj = Subject(
-        deployment_id=dep.id, site_id=site.id, subject_code="S-001"
-    )
+    subj = Subject(deployment_id=dep.id, site_id=site.id, subject_code="S-001")
     clinical_session.add(subj)
     await clinical_session.flush()
     with pytest.raises(ClinicalError, match="before consent"):
@@ -224,9 +214,7 @@ async def test_enrolment_requires_subject_id(
     await repo.update_screening_eligibility(log.id, eligibility_status="eligible")
     await repo.update_screening_consent(log.id, consent_status="consented")
     with pytest.raises(ClinicalError, match="enrolled_subject_id required"):
-        await repo.update_screening_enrolment(
-            log.id, enrolment_status="enrolled"
-        )
+        await repo.update_screening_enrolment(log.id, enrolment_status="enrolled")
 
 
 async def test_enrolment_rejects_cross_deployment_subject(
@@ -238,9 +226,7 @@ async def test_enrolment_rejects_cross_deployment_subject(
     log = await repo.record_screening(deployment_id=dep1.id, screening_code="X")
     await repo.update_screening_eligibility(log.id, eligibility_status="eligible")
     await repo.update_screening_consent(log.id, consent_status="consented")
-    other_subject = Subject(
-        deployment_id=dep2.id, site_id=site2.id, subject_code="OTHER"
-    )
+    other_subject = Subject(deployment_id=dep2.id, site_id=site2.id, subject_code="OTHER")
     clinical_session.add(other_subject)
     await clinical_session.flush()
     with pytest.raises(ClinicalError, match="different deployments"):
@@ -259,9 +245,7 @@ async def test_enrolment_happy_path(
     log = await repo.record_screening(deployment_id=dep.id, screening_code="X")
     await repo.update_screening_eligibility(log.id, eligibility_status="eligible")
     await repo.update_screening_consent(log.id, consent_status="consented")
-    subj = Subject(
-        deployment_id=dep.id, site_id=site.id, subject_code="S-001"
-    )
+    subj = Subject(deployment_id=dep.id, site_id=site.id, subject_code="S-001")
     clinical_session.add(subj)
     await clinical_session.flush()
     enrolled = await repo.update_screening_enrolment(
@@ -314,7 +298,8 @@ async def test_funnel_counts_each_stage_independently(
     consented = await repo.record_screening(deployment_id=dep.id, screening_code="C")
     enrolled = await repo.record_screening(deployment_id=dep.id, screening_code="N")
     await repo.update_screening_eligibility(
-        fail.id, eligibility_status="screen_failure",
+        fail.id,
+        eligibility_status="screen_failure",
         exclusion_reason_code="age_out_of_range",
     )
     for log in (elig_only, consented, enrolled):
@@ -345,12 +330,8 @@ async def test_funnel_screen_failures_by_reason(
 ) -> None:
     dep, _ = await _seed_deployment(clinical_session)
     repo = ClinicalRepository(clinical_session)
-    for i, reason in enumerate(
-        ["age_out_of_range", "age_out_of_range", "pregnancy"]
-    ):
-        log = await repo.record_screening(
-            deployment_id=dep.id, screening_code=f"SCR-{i}"
-        )
+    for i, reason in enumerate(["age_out_of_range", "age_out_of_range", "pregnancy"]):
+        log = await repo.record_screening(deployment_id=dep.id, screening_code=f"SCR-{i}")
         await repo.update_screening_eligibility(
             log.id,
             eligibility_status="screen_failure",
@@ -402,15 +383,9 @@ async def test_funnel_site_filter_isolates(
     clinical_session.add(site_b)
     await clinical_session.flush()
     repo = ClinicalRepository(clinical_session)
-    await repo.record_screening(
-        deployment_id=dep.id, screening_code="A1", site_id=site_a.id
-    )
-    await repo.record_screening(
-        deployment_id=dep.id, screening_code="A2", site_id=site_a.id
-    )
-    await repo.record_screening(
-        deployment_id=dep.id, screening_code="B1", site_id=site_b.id
-    )
+    await repo.record_screening(deployment_id=dep.id, screening_code="A1", site_id=site_a.id)
+    await repo.record_screening(deployment_id=dep.id, screening_code="A2", site_id=site_a.id)
+    await repo.record_screening(deployment_id=dep.id, screening_code="B1", site_id=site_b.id)
     funnel_a = await repo.recruitment_funnel(dep.id, site_id=site_a.id)
     assert funnel_a["totals"]["screened"] == 2
     funnel_b = await repo.recruitment_funnel(dep.id, site_id=site_b.id)

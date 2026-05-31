@@ -123,9 +123,7 @@ class OutcomeAssessment(BaseModel):
     effect_estimate: str = Field(
         description="Pooled effect (e.g. 'RR 0.72'). Comes from the meta-analysis paste."
     )
-    confidence_interval: str = Field(
-        description="95% CI as a string (e.g. '0.58 to 0.89')."
-    )
+    confidence_interval: str = Field(description="95% CI as a string (e.g. '0.58 to 0.89').")
 
     # 5 downgrade domains.
     risk_of_bias: DowngradeReason
@@ -227,46 +225,198 @@ PRISMA_2020_ITEMS: list[tuple[str, str, str]] = [
     # (section, id, item text)
     ("Title", "1", "Identify the report as a systematic review."),
     ("Abstract", "2", "See PRISMA 2020 for Abstracts checklist."),
-    ("Introduction", "3", "Rationale: describe the rationale for the review in the context of existing knowledge."),
-    ("Introduction", "4", "Objectives: provide an explicit statement of the objective(s) or question(s) the review addresses."),
-    ("Methods", "5", "Eligibility criteria: specify the inclusion and exclusion criteria for the review."),
-    ("Methods", "6", "Information sources: specify all databases, registers, websites, organisations, reference lists and other sources searched."),
-    ("Methods", "7", "Search strategy: present the full search strategies for all databases, registers and websites, including any filters and limits used."),
-    ("Methods", "8", "Selection process: specify the methods used to decide whether a study met the inclusion criteria."),
-    ("Methods", "9", "Data collection process: specify the methods used to collect data from reports."),
+    (
+        "Introduction",
+        "3",
+        "Rationale: describe the rationale for the review in the context of existing knowledge.",
+    ),
+    (
+        "Introduction",
+        "4",
+        "Objectives: provide an explicit statement of the objective(s) or question(s) the review addresses.",
+    ),
+    (
+        "Methods",
+        "5",
+        "Eligibility criteria: specify the inclusion and exclusion criteria for the review.",
+    ),
+    (
+        "Methods",
+        "6",
+        "Information sources: specify all databases, registers, websites, organisations, reference lists and other sources searched.",
+    ),
+    (
+        "Methods",
+        "7",
+        "Search strategy: present the full search strategies for all databases, registers and websites, including any filters and limits used.",
+    ),
+    (
+        "Methods",
+        "8",
+        "Selection process: specify the methods used to decide whether a study met the inclusion criteria.",
+    ),
+    (
+        "Methods",
+        "9",
+        "Data collection process: specify the methods used to collect data from reports.",
+    ),
     ("Methods", "10a", "Data items: list and define all outcomes for which data were sought."),
-    ("Methods", "10b", "Data items: list and define all other variables for which data were sought."),
-    ("Methods", "11", "Study risk of bias assessment: specify the methods used to assess RoB in the included studies."),
-    ("Methods", "12", "Effect measures: specify for each outcome the effect measure(s) used in the synthesis or presentation of results."),
-    ("Methods", "13a", "Synthesis methods: describe the processes used to decide which studies were eligible for each synthesis."),
-    ("Methods", "13b", "Synthesis methods: describe any methods required to prepare the data for presentation or synthesis."),
-    ("Methods", "13c", "Synthesis methods: describe any methods used to tabulate or visually display results of individual studies and syntheses."),
-    ("Methods", "13d", "Synthesis methods: describe any methods used to synthesize results and provide a rationale for the choice(s)."),
-    ("Methods", "13e", "Synthesis methods: describe any methods used to explore possible causes of heterogeneity among study results."),
-    ("Methods", "13f", "Synthesis methods: describe any sensitivity analyses conducted to assess robustness of the synthesized results."),
-    ("Methods", "14", "Reporting bias assessment: describe any methods used to assess risk of bias due to missing results in a synthesis."),
-    ("Methods", "15", "Certainty assessment: describe any methods used to assess certainty (or confidence) in the body of evidence for an outcome (GRADE)."),
-    ("Results", "16a", "Study selection: describe the results of the search and selection process, from the number of records identified in the search to the number of studies included in the review."),
-    ("Results", "16b", "Study selection: cite studies that might appear to meet the inclusion criteria, but which were excluded, and explain why they were excluded."),
-    ("Results", "17", "Study characteristics: cite each included study and present its characteristics."),
-    ("Results", "18", "Risk of bias in studies: present assessments of risk of bias for each included study."),
-    ("Results", "19", "Results of individual studies: for all outcomes, present, for each study (a) summary statistics for each group and (b) an effect estimate and its precision."),
-    ("Results", "20a", "Results of syntheses: for each synthesis, briefly summarise the characteristics and risk of bias among contributing studies."),
-    ("Results", "20b", "Results of syntheses: present results of all statistical syntheses conducted."),
-    ("Results", "20c", "Results of syntheses: present results of all investigations of possible causes of heterogeneity among study results."),
-    ("Results", "20d", "Results of syntheses: present results of all sensitivity analyses conducted to assess robustness of the synthesized results."),
-    ("Results", "21", "Reporting biases: present assessments of risk of bias due to missing results for each synthesis assessed."),
-    ("Results", "22", "Certainty of evidence: present assessments of certainty (or confidence) in the body of evidence for each outcome assessed."),
-    ("Discussion", "23a", "Discussion: provide a general interpretation of the results in the context of other evidence."),
-    ("Discussion", "23b", "Discussion: discuss any limitations of the evidence included in the review."),
+    (
+        "Methods",
+        "10b",
+        "Data items: list and define all other variables for which data were sought.",
+    ),
+    (
+        "Methods",
+        "11",
+        "Study risk of bias assessment: specify the methods used to assess RoB in the included studies.",
+    ),
+    (
+        "Methods",
+        "12",
+        "Effect measures: specify for each outcome the effect measure(s) used in the synthesis or presentation of results.",
+    ),
+    (
+        "Methods",
+        "13a",
+        "Synthesis methods: describe the processes used to decide which studies were eligible for each synthesis.",
+    ),
+    (
+        "Methods",
+        "13b",
+        "Synthesis methods: describe any methods required to prepare the data for presentation or synthesis.",
+    ),
+    (
+        "Methods",
+        "13c",
+        "Synthesis methods: describe any methods used to tabulate or visually display results of individual studies and syntheses.",
+    ),
+    (
+        "Methods",
+        "13d",
+        "Synthesis methods: describe any methods used to synthesize results and provide a rationale for the choice(s).",
+    ),
+    (
+        "Methods",
+        "13e",
+        "Synthesis methods: describe any methods used to explore possible causes of heterogeneity among study results.",
+    ),
+    (
+        "Methods",
+        "13f",
+        "Synthesis methods: describe any sensitivity analyses conducted to assess robustness of the synthesized results.",
+    ),
+    (
+        "Methods",
+        "14",
+        "Reporting bias assessment: describe any methods used to assess risk of bias due to missing results in a synthesis.",
+    ),
+    (
+        "Methods",
+        "15",
+        "Certainty assessment: describe any methods used to assess certainty (or confidence) in the body of evidence for an outcome (GRADE).",
+    ),
+    (
+        "Results",
+        "16a",
+        "Study selection: describe the results of the search and selection process, from the number of records identified in the search to the number of studies included in the review.",
+    ),
+    (
+        "Results",
+        "16b",
+        "Study selection: cite studies that might appear to meet the inclusion criteria, but which were excluded, and explain why they were excluded.",
+    ),
+    (
+        "Results",
+        "17",
+        "Study characteristics: cite each included study and present its characteristics.",
+    ),
+    (
+        "Results",
+        "18",
+        "Risk of bias in studies: present assessments of risk of bias for each included study.",
+    ),
+    (
+        "Results",
+        "19",
+        "Results of individual studies: for all outcomes, present, for each study (a) summary statistics for each group and (b) an effect estimate and its precision.",
+    ),
+    (
+        "Results",
+        "20a",
+        "Results of syntheses: for each synthesis, briefly summarise the characteristics and risk of bias among contributing studies.",
+    ),
+    (
+        "Results",
+        "20b",
+        "Results of syntheses: present results of all statistical syntheses conducted.",
+    ),
+    (
+        "Results",
+        "20c",
+        "Results of syntheses: present results of all investigations of possible causes of heterogeneity among study results.",
+    ),
+    (
+        "Results",
+        "20d",
+        "Results of syntheses: present results of all sensitivity analyses conducted to assess robustness of the synthesized results.",
+    ),
+    (
+        "Results",
+        "21",
+        "Reporting biases: present assessments of risk of bias due to missing results for each synthesis assessed.",
+    ),
+    (
+        "Results",
+        "22",
+        "Certainty of evidence: present assessments of certainty (or confidence) in the body of evidence for each outcome assessed.",
+    ),
+    (
+        "Discussion",
+        "23a",
+        "Discussion: provide a general interpretation of the results in the context of other evidence.",
+    ),
+    (
+        "Discussion",
+        "23b",
+        "Discussion: discuss any limitations of the evidence included in the review.",
+    ),
     ("Discussion", "23c", "Discussion: discuss any limitations of the review processes used."),
-    ("Discussion", "23d", "Discussion: discuss implications of the results for practice, policy, and future research."),
-    ("Other information", "24a", "Registration and protocol: provide registration information for the review, including the register name and registration number, or state that the review was not registered."),
-    ("Other information", "24b", "Registration and protocol: indicate where the review protocol can be accessed, or state that a protocol was not prepared."),
-    ("Other information", "24c", "Registration and protocol: describe and explain any amendments to information provided at registration or in the protocol."),
-    ("Other information", "25", "Support: describe sources of financial or non-financial support for the review, and the role of the funders or sponsors in the review."),
-    ("Other information", "26", "Competing interests: declare any competing interests of review authors."),
-    ("Other information", "27", "Availability of data, code and other materials: report which of the following are publicly available and where they can be found."),
+    (
+        "Discussion",
+        "23d",
+        "Discussion: discuss implications of the results for practice, policy, and future research.",
+    ),
+    (
+        "Other information",
+        "24a",
+        "Registration and protocol: provide registration information for the review, including the register name and registration number, or state that the review was not registered.",
+    ),
+    (
+        "Other information",
+        "24b",
+        "Registration and protocol: indicate where the review protocol can be accessed, or state that a protocol was not prepared.",
+    ),
+    (
+        "Other information",
+        "24c",
+        "Registration and protocol: describe and explain any amendments to information provided at registration or in the protocol.",
+    ),
+    (
+        "Other information",
+        "25",
+        "Support: describe sources of financial or non-financial support for the review, and the role of the funders or sponsors in the review.",
+    ),
+    (
+        "Other information",
+        "26",
+        "Competing interests: declare any competing interests of review authors.",
+    ),
+    (
+        "Other information",
+        "27",
+        "Availability of data, code and other materials: report which of the following are publicly available and where they can be found.",
+    ),
 ]
 
 

@@ -55,9 +55,7 @@ _PAGE_KW = dict(
 )
 
 
-def _kv(
-    rows: Iterable[tuple[str, str]], styles: dict[str, ParagraphStyle]
-) -> Table:
+def _kv(rows: Iterable[tuple[str, str]], styles: dict[str, ParagraphStyle]) -> Table:
     table_rows = [
         [
             Paragraph(f"<b>{k}</b>", styles["Cell"]),
@@ -364,9 +362,7 @@ def render_pq_pdf(runbook: PerformanceRunbook) -> bytes:
 
     flow.append(Paragraph("Procedure", styles["H2"]))
     for step in runbook.steps:
-        flow.append(
-            Paragraph(f"<b>Step {step.ordinal} — {step.title}</b>", styles["H3"])
-        )
+        flow.append(Paragraph(f"<b>Step {step.ordinal} — {step.title}</b>", styles["H3"]))
         flow.append(
             _kv(
                 [

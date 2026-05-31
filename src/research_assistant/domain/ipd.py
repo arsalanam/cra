@@ -64,9 +64,7 @@ class IpdIntake(BaseModel):
             "statins vs placebo on LDL change in T2DM patients across 6 RCTs')."
         )
     )
-    primary_endpoint: str = Field(
-        description="The endpoint to pool. One per IPD pass."
-    )
+    primary_endpoint: str = Field(description="The endpoint to pool. One per IPD pass.")
     effect_measure: EffectMeasure
     notes: str = ""
 
@@ -235,9 +233,7 @@ class IpdDocument(BaseModel):
     intake: IpdIntake
     main_results: IpdMainResults
     subgroup_results: list[IpdSubgroupResults] = Field(default_factory=list)
-    studies_included: list[str] = Field(
-        description="trial_ids that contributed to the analysis."
-    )
+    studies_included: list[str] = Field(description="trial_ids that contributed to the analysis.")
     studies_excluded: list[dict[str, str]] = Field(default_factory=list)
     interpretation: str = Field(
         description=(

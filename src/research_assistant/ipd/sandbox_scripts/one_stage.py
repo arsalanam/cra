@@ -78,8 +78,7 @@ def _read_trial_df(trial: dict) -> pd.DataFrame | None:
         return None
     df["__trial_id__"] = str(trial.get("trial_id"))
     df["__treatment__"] = (
-        df[trial["treatment_column"]].astype(str)
-        == str(trial["treatment_active_value"])
+        df[trial["treatment_column"]].astype(str) == str(trial["treatment_active_value"])
     ).astype(int)
     return df
 
@@ -255,8 +254,7 @@ def _one_stage_binary(all_df: pd.DataFrame, outcome_col: str) -> dict:
             "i_squared": None,
             "tau_squared": None,
             "method": (
-                "GLM Binomial logit (trial dummies + treatment "
-                "— fixed-effects approximation)"
+                "GLM Binomial logit (trial dummies + treatment — fixed-effects approximation)"
             ),
         }
     except Exception as e:
@@ -342,9 +340,7 @@ def main() -> None:
             json.dumps(
                 {
                     "fitted": False,
-                    "skip_reason": (
-                        "Need ≥2 trials with parseable rows + the requested measure."
-                    ),
+                    "skip_reason": ("Need ≥2 trials with parseable rows + the requested measure."),
                     "n_trials_parsed": len(frames),
                     "n_per_trial_effects": len(per_trial),
                 },
@@ -379,9 +375,7 @@ def main() -> None:
         "per_trial": per_trial,
     }
     out.update(pooled)
-    (_OUTPUT_DIR / "ipd-one-stage.json").write_text(
-        json.dumps(out, indent=2), encoding="utf-8"
-    )
+    (_OUTPUT_DIR / "ipd-one-stage.json").write_text(json.dumps(out, indent=2), encoding="utf-8")
     print(
         f"[ipd_one_stage] measure={effect_measure} trials={out['n_trials']} "
         f"subjects={out['n_subjects']} fitted={out.get('fitted', False)}"

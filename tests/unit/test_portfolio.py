@@ -157,4 +157,4 @@ def test_last_turn_kind_helper() -> None:
     assert _last_turn_kind(None) is None
     assert _last_turn_kind("not-json") is None
     assert _last_turn_kind('{"kind": "meta_analysis"}') == "meta_analysis"
-    assert _last_turn_kind('{}') == "None"  # json.dumps(None) → "None"
+    assert _last_turn_kind("{}") == "None"  # json.dumps(None) → "None"

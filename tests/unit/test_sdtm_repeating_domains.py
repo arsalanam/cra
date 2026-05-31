@@ -128,7 +128,7 @@ def test_lb_skips_form_instance_without_test_or_result() -> None:
     subj = _subject()
     instances = [
         (_fi(), [_item("result", "14")]),  # no test
-        (_fi(), [_item("test", "hgb")]),    # no result
+        (_fi(), [_item("test", "hgb")]),  # no result
     ]
     rows = mapper.derive_lb(
         deployment_id="dep-1",

@@ -98,9 +98,7 @@ def _km_plot(df: pd.DataFrame, paramcd: str, param_label: str) -> Path:
     arms = sorted(a for a in df["TRT01A"].dropna().unique() if a not in ("TBD", ""))
     # Need ≥2 arms with ≥2 subjects each to stratify, otherwise plot
     # the pooled curve.
-    can_stratify = len(arms) >= 2 and all(
-        df[df["TRT01A"] == a].shape[0] >= 2 for a in arms
-    )
+    can_stratify = len(arms) >= 2 and all(df[df["TRT01A"] == a].shape[0] >= 2 for a in arms)
     if can_stratify:
         for arm in arms:
             sub = df[df["TRT01A"] == arm]

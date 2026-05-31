@@ -29,9 +29,7 @@ def _msg(
     msg_id: str = "m1",
     final_answer: str | None = None,
 ) -> Any:
-    return SimpleNamespace(
-        id=msg_id, role=role, input_text=None, final_answer=final_answer
-    )
+    return SimpleNamespace(id=msg_id, role=role, input_text=None, final_answer=final_answer)
 
 
 def _results() -> NmaResults:
@@ -89,8 +87,12 @@ def _results() -> NmaResults:
                 NetworkNode(intervention="Drug C", n_studies=1, n_participants=300),
             ],
             edges=[
-                NetworkEdge(source_intervention="Placebo", target_intervention="Drug A", n_trials=2),
-                NetworkEdge(source_intervention="Placebo", target_intervention="Drug B", n_trials=2),
+                NetworkEdge(
+                    source_intervention="Placebo", target_intervention="Drug A", n_trials=2
+                ),
+                NetworkEdge(
+                    source_intervention="Placebo", target_intervention="Drug B", n_trials=2
+                ),
                 NetworkEdge(source_intervention="Drug A", target_intervention="Drug C", n_trials=1),
             ],
         ),

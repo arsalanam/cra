@@ -177,9 +177,7 @@ _TOOL_GATES: dict[str, frozenset[str | None]] = {
             "ipd_document",
         }
     ),
-    "sandbox_exec": frozenset(
-        {"ipd_main_results", "ipd_subgroup_results", "ipd_document"}
-    ),
+    "sandbox_exec": frozenset({"ipd_main_results", "ipd_subgroup_results", "ipd_document"}),
     "web_search": frozenset({"ipd_document"}),
     "wikipedia": frozenset({"ipd_document"}),
 }
@@ -208,7 +206,8 @@ async def _gate_workflow_tools(
 
 
 _OUTPUT_TYPES: list[type] = [
-    type_ for type_ in IpdTurn.__args__[0].__args__  # discriminated union
+    type_
+    for type_ in IpdTurn.__args__[0].__args__  # discriminated union
 ]
 
 

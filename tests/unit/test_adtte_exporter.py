@@ -47,9 +47,7 @@ def test_adtte_csv_header_order_starts_with_studyid_usubjid_paramcd() -> None:
 
 
 def test_adtte_csv_carries_aval_cnsr_and_audit_anchor() -> None:
-    rows = list(
-        csv.DictReader(io.StringIO(adtte_to_csv([_adtte()]).decode("utf-8")))
-    )
+    rows = list(csv.DictReader(io.StringIO(adtte_to_csv([_adtte()]).decode("utf-8"))))
     assert rows[0]["AVAL"] == "14.0"
     assert rows[0]["CNSR"] == "0"
     assert rows[0]["SRCDOM"] == "AE"

@@ -89,9 +89,7 @@ def assemble_report_data(
     if results is None:
         return None
     title = (
-        f"NMA — {results.pico.outcome[:60]}"
-        if results.pico.outcome
-        else "Network meta-analysis"
+        f"NMA — {results.pico.outcome[:60]}" if results.pico.outcome else "Network meta-analysis"
     )
     return NmaReportData(
         thread_id=thread_id,
@@ -356,9 +354,7 @@ def build_docx(data: NmaReportData, images_dir: Path | None = None) -> bytes:
     docx = Document()
     docx.core_properties.title = data.title
     docx.add_heading(data.title, level=0)
-    runs = docx.add_paragraph(
-        f"Generated {data.generated_at.strftime('%Y-%m-%d %H:%M UTC')}"
-    ).runs
+    runs = docx.add_paragraph(f"Generated {data.generated_at.strftime('%Y-%m-%d %H:%M UTC')}").runs
     if runs:
         runs[0].font.color.rgb = DOCX_MUTED
 

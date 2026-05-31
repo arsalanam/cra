@@ -42,9 +42,7 @@ def _table(
     )
 
 
-def _disposition_table(
-    deployment_id: str, adsl: list[AdamAdsl]
-) -> TlfArtefact:
+def _disposition_table(deployment_id: str, adsl: list[AdamAdsl]) -> TlfArtefact:
     n_total = len(adsl)
     n_itt = sum(1 for r in adsl if r.ITTFL == "Y")
     n_saf = sum(1 for r in adsl if r.SAFFL == "Y")
@@ -67,9 +65,7 @@ def _disposition_table(
     )
 
 
-def _demographics_table(
-    deployment_id: str, adsl: list[AdamAdsl]
-) -> TlfArtefact:
+def _demographics_table(deployment_id: str, adsl: list[AdamAdsl]) -> TlfArtefact:
     ages = [r.AGE for r in adsl if r.AGE is not None]
     sexes = Counter(r.SEX or "Unknown" for r in adsl)
     races = Counter(r.RACE or "Unknown" for r in adsl)
@@ -80,11 +76,13 @@ def _demographics_table(
             mean_sd = f"mean {statistics.mean(ages):.1f}, sd {statistics.stdev(ages):.1f}"
         else:
             mean_sd = f"mean {ages[0]:.1f}"
-        rows.append([
-            "Age (years)",
-            mean_sd,
-            f"median {statistics.median(ages):.1f}, range {min(ages)}-{max(ages)}",
-        ])
+        rows.append(
+            [
+                "Age (years)",
+                mean_sd,
+                f"median {statistics.median(ages):.1f}, range {min(ages)}-{max(ages)}",
+            ]
+        )
     else:
         rows.append(["Age (years)", "(no data)", "—"])
     for sex, c in sorted(sexes.items()):
@@ -156,10 +154,7 @@ def _ae_frequency_svg(ae_records: list[SdtmAe]) -> str:
 
     def esc(s: str) -> str:
         return (
-            s.replace("&", "&amp;")
-            .replace("<", "&lt;")
-            .replace(">", "&gt;")
-            .replace('"', "&quot;")
+            s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
         )
 
     W, H = 720, max(280, 40 * len(top) + 60)
@@ -206,15 +201,11 @@ def _ae_frequency_svg(ae_records: list[SdtmAe]) -> str:
     return (
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" '
         f'viewBox="0 0 {W} {H}">'
-        f'<rect width="{W}" height="{H}" fill="#ffffff"/>'
-        + "".join(bars)
-        + "</svg>"
+        f'<rect width="{W}" height="{H}" fill="#ffffff"/>' + "".join(bars) + "</svg>"
     )
 
 
-def _ae_frequency_figure(
-    deployment_id: str, ae_records: list[SdtmAe]
-) -> TlfArtefact:
+def _ae_frequency_figure(deployment_id: str, ae_records: list[SdtmAe]) -> TlfArtefact:
     return TlfArtefact(
         deployment_id=deployment_id,
         kind="figure",
@@ -253,14 +244,12 @@ def _km_median(times: list[float], events: list[int]) -> float | None:
             if surv <= 0.5 and median is None:
                 median = t
                 break
-        n_at_risk -= (j - i)
+        n_at_risk -= j - i
         i = j
     return median
 
 
-def _tte_summary_table(
-    deployment_id: str, adtte_records: list[AdamAdtte]
-) -> TlfArtefact:
+def _tte_summary_table(deployment_id: str, adtte_records: list[AdamAdtte]) -> TlfArtefact:
     """Per-PARAMCD summary — n / events / censored / median TTE (days)."""
     by_param: dict[str, dict[str, Any]] = {}
     for r in adtte_records:

@@ -62,9 +62,7 @@ async def test_lock_refused_with_open_queries(clinical_session: AsyncSession) ->
     dep_id, _, fi_id = await _deploy_with_form_instance(repo)
     # Capture one item so we can raise a query against it.
     await repo.submit_item_data(fi_id, {"age": "30"}, actor_sub="u")
-    await repo.create_manual_query(
-        fi_id, item_id="age", text="please confirm", actor_sub="dm"
-    )
+    await repo.create_manual_query(fi_id, item_id="age", text="please confirm", actor_sub="dm")
     with pytest.raises(ClinicalError, match="open query"):
         await repo.lock_study(dep_id, reason="freeze", actor_sub="dm")
 

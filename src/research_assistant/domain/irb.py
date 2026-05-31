@@ -193,11 +193,7 @@ class IrbDocument(BaseModel):
 
 
 IrbTurn = Annotated[
-    ClarificationRequest
-    | IrbIntake
-    | ProtocolSynopsis
-    | InformedConsentForm
-    | IrbDocument,
+    ClarificationRequest | IrbIntake | ProtocolSynopsis | InformedConsentForm | IrbDocument,
     Field(discriminator="kind"),
 ]
 

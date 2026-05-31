@@ -89,13 +89,14 @@ def _fit_one(
     fixed = pd.DataFrame({"TRT_NONREF": df["TRT_NONREF"].astype(float)})
     fixed = pd.concat([fixed, visit_dummies], axis=1)
     if use_base:
-        fixed["BASE"] = pd.to_numeric(df["BASE"], errors="coerce").fillna(
-            df["BASE"].mean()
-        )
+        fixed["BASE"] = pd.to_numeric(df["BASE"], errors="coerce").fillna(df["BASE"].mean())
     # Interaction terms TRT × visit so LSMean diffs vary by visit.
     interactions = pd.DataFrame(
-        {f"TRTxV_{c.split('V_', 1)[1]}": fixed["TRT_NONREF"] * fixed[c]
-         for c in fixed.columns if c.startswith("V_")}
+        {
+            f"TRTxV_{c.split('V_', 1)[1]}": fixed["TRT_NONREF"] * fixed[c]
+            for c in fixed.columns
+            if c.startswith("V_")
+        }
     )
     fixed = pd.concat([fixed, interactions], axis=1)
     fixed = fixed.assign(_intercept=1.0)
@@ -129,9 +130,7 @@ def _fit_one(
     params = dict(zip(exog_names, fit.fe_params.tolist(), strict=False))
     bse_map = dict(zip(exog_names, fit.bse_fe.tolist(), strict=False))
     pvals_map = dict(zip(exog_names, fit.pvalues_fe.tolist(), strict=False))
-    visits_target = (
-        [v for v in visits if v in (target_visits or [])] or visits
-    )
+    visits_target = [v for v in visits if v in (target_visits or [])] or visits
     rows_out: list[dict] = []
     for v in visits_target:
         # LSMean diff at visit v = TRT_NONREF + TRTxV_{v}.
@@ -143,9 +142,7 @@ def _fit_one(
             diff_se_sq += bse_map.get(interaction_key, 0.0) ** 2
             # Approximate covariance ignored — gives slightly conservative CIs.
         se = float(np.sqrt(diff_se_sq))
-        p_lookup = pvals_map.get(
-            interaction_key, pvals_map.get("TRT_NONREF", float("nan"))
-        )
+        p_lookup = pvals_map.get(interaction_key, pvals_map.get("TRT_NONREF", float("nan")))
         rows_out.append(
             {
                 "visit": v,

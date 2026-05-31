@@ -88,9 +88,7 @@ def _tlf_table() -> TlfArtefact:
         kind="table",
         tlf_id="t-disposition",
         title="Subject Disposition",
-        content_json=json.dumps(
-            {"columns": ["Status", "n"], "rows": [["ITT", 100], ["SAF", 95]]}
-        ),
+        content_json=json.dumps({"columns": ["Status", "n"], "rows": [["ITT", 100], ["SAF", 95]]}),
     )
 
 

@@ -42,15 +42,11 @@ async def _setup(repo: ClinicalRepository, clinical_session: AsyncSession) -> di
     lab1 = await repo.open_form_instance(
         subj.id, deployed_form_id=by_name["lab_results"], actor_sub="u"
     )
-    await repo.submit_item_data(
-        lab1.id, {"test": "hgb", "result": "13.5"}, actor_sub="u"
-    )
+    await repo.submit_item_data(lab1.id, {"test": "hgb", "result": "13.5"}, actor_sub="u")
     lab2 = await repo.open_form_instance(
         subj.id, deployed_form_id=by_name["lab_results"], actor_sub="u"
     )
-    await repo.submit_item_data(
-        lab2.id, {"test": "glucose", "result": "180"}, actor_sub="u"
-    )
+    await repo.submit_item_data(lab2.id, {"test": "glucose", "result": "180"}, actor_sub="u")
     demo = await repo.open_form_instance(
         subj.id, deployed_form_id=by_name["demographics"], actor_sub="u"
     )
@@ -92,9 +88,7 @@ async def test_gather_with_empty_mapping_returns_empty(
 ) -> None:
     repo = ClinicalRepository(clinical_session)
     ids = await _setup(repo, clinical_session)
-    by_domain = await _gather_form_instances_by_domain(
-        clinical_session, ids["dep"], {}
-    )
+    by_domain = await _gather_form_instances_by_domain(clinical_session, ids["dep"], {})
     assert by_domain == {}
 
 

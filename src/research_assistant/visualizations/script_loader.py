@@ -24,12 +24,9 @@ def load_script(kind: VisualizationKind) -> str:
     """Return the canonical Python script for `kind` as text."""
     if kind not in AVAILABLE_VISUALIZATIONS:
         raise FileNotFoundError(
-            f"Unknown visualisation {kind!r}. Available: "
-            f"{', '.join(AVAILABLE_VISUALIZATIONS)}."
+            f"Unknown visualisation {kind!r}. Available: {', '.join(AVAILABLE_VISUALIZATIONS)}."
         )
-    script_path = resources.files(__package__).joinpath(
-        "sandbox_scripts", f"{kind}.py"
-    )
+    script_path = resources.files(__package__).joinpath("sandbox_scripts", f"{kind}.py")
     return script_path.read_text(encoding="utf-8")
 
 

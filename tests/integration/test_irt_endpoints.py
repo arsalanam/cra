@@ -59,16 +59,12 @@ async def _seed_user(sub: str, email: str, *, role: str) -> None:
     from research_assistant.persistence.user_repository import UserRepository
 
     async with get_db_session() as session:
-        if (
-            await session.scalars(select(User).where(User.cognito_sub == sub))
-        ).first() is not None:
+        if (await session.scalars(select(User).where(User.cognito_sub == sub))).first() is not None:
             return
         user = User(cognito_sub=sub, email=email)
         session.add(user)
         await session.flush()
-        await UserRepository(session).grant_role(
-            user.id, role, scope_type="global", scope_id=None
-        )
+        await UserRepository(session).grant_role(user.id, role, scope_type="global", scope_id=None)
 
 
 def _session_cookie(sub: str, email: str) -> str:
@@ -106,18 +102,14 @@ async def _setup_deployment_with_two_subjects(client: AsyncClient) -> dict[str, 
     _login(client, "sub-admin", "admin@example.com")
     study = await client.post("/api/ecrf/studies", json={"name": "IRT Trial"})
     study_id = study.json()["id"]
-    form = await client.post(
-        f"/api/ecrf/studies/{study_id}/forms", json=_form_body()
-    )
+    form = await client.post(f"/api/ecrf/studies/{study_id}/forms", json=_form_body())
     await client.post(f"/api/ecrf/forms/{form.json()['id']}/publish")
     dep = await client.post(
         "/api/edc/deployments",
         json={"research_study_id": study_id, "name": "IRT Dep"},
     )
     dep_id = dep.json()["id"]
-    site = await client.post(
-        f"/api/edc/deployments/{dep_id}/sites", json={"name": "S"}
-    )
+    site = await client.post(f"/api/edc/deployments/{dep_id}/sites", json={"name": "S"})
     site_id = site.json()["id"]
     s1 = await client.post(
         f"/api/edc/deployments/{dep_id}/subjects",
@@ -266,9 +258,7 @@ async def test_coordinator_cannot_codebreak(client: AsyncClient) -> None:
     await _build_open_label_schedule(client, ids["dep"])
     await _seed_user("sub-c", "c@example.com", role="coordinator")
     _login(client, "sub-c", "c@example.com")
-    await client.post(
-        f"/api/edc/subjects/{ids['s1']}/randomize", json={"factor_values": {}}
-    )
+    await client.post(f"/api/edc/subjects/{ids['s1']}/randomize", json={"factor_values": {}})
     cb = await client.post(
         f"/api/edc/subjects/{ids['s1']}/code-break",
         json={"reason": "should be refused for coordinator"},
@@ -280,9 +270,7 @@ async def test_randomize_refused_when_no_schedule(client: AsyncClient) -> None:
     ids = await _setup_deployment_with_two_subjects(client)
     await _seed_user("sub-c", "c@example.com", role="coordinator")
     _login(client, "sub-c", "c@example.com")
-    resp = await client.post(
-        f"/api/edc/subjects/{ids['s1']}/randomize", json={"factor_values": {}}
-    )
+    resp = await client.post(f"/api/edc/subjects/{ids['s1']}/randomize", json={"factor_values": {}})
     assert resp.status_code == 409
 
 

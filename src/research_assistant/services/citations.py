@@ -144,9 +144,7 @@ def _strip_bibtex_braces(value: str) -> str:
     v = value.strip()
     if v.endswith(","):
         v = v[:-1].rstrip()
-    if (v.startswith("{") and v.endswith("}")) or (
-        v.startswith('"') and v.endswith('"')
-    ):
+    if (v.startswith("{") and v.endswith("}")) or (v.startswith('"') and v.endswith('"')):
         v = v[1:-1]
     return v.strip()
 

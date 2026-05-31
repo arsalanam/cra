@@ -47,9 +47,7 @@ def _validated_ratio(arms: Sequence[str], ratio: Sequence[int] | None) -> list[i
     if ratio is None:
         return [1] * len(arms)
     if len(ratio) != len(arms):
-        raise ValueError(
-            f"Ratio length {len(ratio)} != arm count {len(arms)}: {list(ratio)!r}."
-        )
+        raise ValueError(f"Ratio length {len(ratio)} != arm count {len(arms)}: {list(ratio)!r}.")
     if any(r <= 0 for r in ratio):
         raise ValueError(f"All ratio entries must be positive; got {list(ratio)!r}.")
     return list(ratio)
@@ -137,18 +135,20 @@ def generate_permuted_block(
     arms_l = _validated_arms(arms)
     ratio_l = _validated_ratio(arms_l, ratio)
     ratio_sum = sum(ratio_l)
-    block_sizes_l: list[int] = list(block_sizes) if block_sizes else [
-        2 * ratio_sum,
-        4 * ratio_sum,
-        6 * ratio_sum,
-    ]
+    block_sizes_l: list[int] = (
+        list(block_sizes)
+        if block_sizes
+        else [
+            2 * ratio_sum,
+            4 * ratio_sum,
+            6 * ratio_sum,
+        ]
+    )
     if not block_sizes_l:
         raise ValueError("At least one block size is required.")
     for bs in block_sizes_l:
         if bs % ratio_sum != 0:
-            raise ValueError(
-                f"Block size {bs} not divisible by ratio sum {ratio_sum}."
-            )
+            raise ValueError(f"Block size {bs} not divisible by ratio sum {ratio_sum}.")
     if n < 0:
         raise ValueError(f"n must be >= 0; got {n}.")
 
@@ -274,8 +274,7 @@ def pocock_simon_choose_arm(
 
     # Update the new state with the allocation.
     new_counts: dict[str, dict[str, dict[str, int]]] = {
-        a: {f: dict(v) for f, v in state["counts"][a].items()}
-        for a in state["counts"]
+        a: {f: dict(v) for f, v in state["counts"][a].items()} for a in state["counts"]
     }
     for f, v in factor_values.items():
         new_counts[chosen].setdefault(f, {})

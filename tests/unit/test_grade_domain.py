@@ -92,9 +92,7 @@ def test_rct_with_one_serious_downgrade_drops_to_moderate() -> None:
 
 
 def test_rct_with_two_serious_downgrades_drops_to_low() -> None:
-    assessment = _assess(
-        study_design="rct", inc=_serious(), imp=_serious("CI crosses null")
-    )
+    assessment = _assess(study_design="rct", inc=_serious(), imp=_serious("CI crosses null"))
     assert assessment.certainty == "low"
 
 

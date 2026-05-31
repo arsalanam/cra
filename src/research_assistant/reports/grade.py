@@ -66,24 +66,24 @@ logger = logging.getLogger(__name__)
 
 _CERTAINTY_COLOURS: dict[str, tuple[colors.Color, colors.Color]] = {
     # (fill, text)
-    "high":     (colors.HexColor("#d4edda"), colors.HexColor("#155724")),
+    "high": (colors.HexColor("#d4edda"), colors.HexColor("#155724")),
     "moderate": (colors.HexColor("#fff3cd"), colors.HexColor("#856404")),
-    "low":      (colors.HexColor("#ffe0b3"), colors.HexColor("#7a3e00")),
+    "low": (colors.HexColor("#ffe0b3"), colors.HexColor("#7a3e00")),
     "very_low": (colors.HexColor("#f8d7da"), colors.HexColor("#721c24")),
 }
 
 
 _DOWNGRADE_PALETTE: dict[str, tuple[colors.Color, colors.Color, str]] = {
     # (fill, text, short label)
-    "none":         (colors.HexColor("#d4edda"), colors.HexColor("#155724"), "—"),
-    "serious":      (colors.HexColor("#fff3cd"), colors.HexColor("#856404"), "−1"),
+    "none": (colors.HexColor("#d4edda"), colors.HexColor("#155724"), "—"),
+    "serious": (colors.HexColor("#fff3cd"), colors.HexColor("#856404"), "−1"),
     "very_serious": (colors.HexColor("#f8d7da"), colors.HexColor("#721c24"), "−2"),
 }
 
 _UPGRADE_PALETTE: dict[str, tuple[colors.Color, colors.Color, str]] = {
-    "none":     (colors.HexColor("#e9ecef"), colors.HexColor("#495057"), "—"),
+    "none": (colors.HexColor("#e9ecef"), colors.HexColor("#495057"), "—"),
     "moderate": (colors.HexColor("#cfe2ff"), colors.HexColor("#084298"), "+1"),
-    "large":    (colors.HexColor("#9ec5fe"), colors.HexColor("#052c65"), "+2"),
+    "large": (colors.HexColor("#9ec5fe"), colors.HexColor("#052c65"), "+2"),
 }
 
 
@@ -126,15 +126,11 @@ def assemble_report_data(
             if kind == "grade_intake":
                 intake = GradeIntake.model_validate_json(msg.final_answer)
             elif kind == "outcome_assessment":
-                assessments.append(
-                    OutcomeAssessment.model_validate_json(msg.final_answer)
-                )
+                assessments.append(OutcomeAssessment.model_validate_json(msg.final_answer))
             elif kind == "sof_table":
                 sof_table = SofTable.model_validate_json(msg.final_answer)
             elif kind == "prisma_checklist":
-                prisma_checklist = PrismaChecklist.model_validate_json(
-                    msg.final_answer
-                )
+                prisma_checklist = PrismaChecklist.model_validate_json(msg.final_answer)
             elif kind == "grade_document":
                 document = GradeDocument.model_validate_json(msg.final_answer)
         except ValidationError:
@@ -156,11 +152,7 @@ def assemble_report_data(
     chip_svg: str | None = (
         document.chip_table_svg
         if document and document.chip_table_svg
-        else (
-            build_grade_chip_svg(final_assessments)
-            if final_assessments
-            else None
-        )
+        else (build_grade_chip_svg(final_assessments) if final_assessments else None)
     )
 
     return GradeReportData(
@@ -170,9 +162,7 @@ def assemble_report_data(
         intake=document.intake if document else intake,
         assessments=final_assessments,
         sof_table=document.sof_table if document else sof_table,
-        prisma_checklist=(
-            document.prisma_checklist if document else prisma_checklist
-        ),
+        prisma_checklist=(document.prisma_checklist if document else prisma_checklist),
         document=document,
         chip_table_svg=chip_svg,
     )
@@ -293,9 +283,7 @@ def _chip_table_pdf(
         "Residual conf.",
         "Certainty",
     )
-    header_row = [
-        Paragraph(f"<b>{h}</b>", styles["Cell"]) for h in downgrade_headers
-    ]
+    header_row = [Paragraph(f"<b>{h}</b>", styles["Cell"]) for h in downgrade_headers]
     rows: list[list[Paragraph]] = [header_row]
 
     chip_cells: list[tuple[int, int, colors.Color, colors.Color]] = []
@@ -342,11 +330,7 @@ def _chip_table_pdf(
         certainty_fill, certainty_text = _CERTAINTY_COLOURS.get(
             a.certainty, (colors.white, colors.black)
         )
-        cells.append(
-            Paragraph(
-                f"<b>{a.certainty.replace('_', ' ').upper()}</b>", styles["Cell"]
-            )
-        )
+        cells.append(Paragraph(f"<b>{a.certainty.replace('_', ' ').upper()}</b>", styles["Cell"]))
         chip_cells.append((row_idx, 9, certainty_fill, certainty_text))
 
         rows.append(cells)
@@ -445,8 +429,7 @@ def build_pdf(data: GradeReportData, images_dir: Path | None = None) -> bytes:
     else:
         flow.append(
             Paragraph(
-                "[Operator to complete — assemble the SoF after assessing "
-                "each outcome]",
+                "[Operator to complete — assemble the SoF after assessing each outcome]",
                 styles["Body"],
             )
         )
@@ -487,13 +470,9 @@ def build_pdf(data: GradeReportData, images_dir: Path | None = None) -> bytes:
             ]
             if assessment.study_design == "observational":
                 if assessment.large_effect is not None:
-                    rows.append(
-                        ("Large effect", _domain_summary(assessment.large_effect))
-                    )
+                    rows.append(("Large effect", _domain_summary(assessment.large_effect)))
                 if assessment.dose_response is not None:
-                    rows.append(
-                        ("Dose-response", _domain_summary(assessment.dose_response))
-                    )
+                    rows.append(("Dose-response", _domain_summary(assessment.dose_response)))
                 if assessment.residual_confounding is not None:
                     rows.append(
                         (
@@ -507,9 +486,7 @@ def build_pdf(data: GradeReportData, images_dir: Path | None = None) -> bytes:
     if data.prisma_checklist:
         flow.append(Spacer(1, 14))
         flow.append(Paragraph("PRISMA 2020 reporting checklist", styles["H2"]))
-        items_by_id: dict[str, Any] = {
-            it.item_id: it for it in data.prisma_checklist.items
-        }
+        items_by_id: dict[str, Any] = {it.item_id: it for it in data.prisma_checklist.items}
         prisma_rows: list[list[Paragraph]] = [
             [
                 Paragraph("<b>Section</b>", styles["Cell"]),
@@ -521,11 +498,7 @@ def build_pdf(data: GradeReportData, images_dir: Path | None = None) -> bytes:
         ]
         for section, item_id, item_text in PRISMA_2020_ITEMS:
             captured = items_by_id.get(item_id)
-            reported = (
-                captured.reported.replace("_", " ").title()
-                if captured
-                else "Not reported"
-            )
+            reported = captured.reported.replace("_", " ").title() if captured else "Not reported"
             location = captured.location if captured else "—"
             prisma_rows.append(
                 [
@@ -619,9 +592,7 @@ def build_docx(data: GradeReportData, images_dir: Path | None = None) -> bytes:
             t.cell(i, 4).text = r.certainty.replace("_", " ").upper()
             t.cell(i, 5).text = r.importance.replace("_", " ")
     else:
-        docx.add_paragraph(
-            "[Operator to complete — assemble the SoF after assessing each outcome]"
-        )
+        docx.add_paragraph("[Operator to complete — assemble the SoF after assessing each outcome]")
 
     # GRADE chip table (visual SoF)
     if data.assessments:
@@ -717,15 +688,9 @@ def build_docx(data: GradeReportData, images_dir: Path | None = None) -> bytes:
             cell = t.cell(0, j)
             cell.text = c
             cell.paragraphs[0].runs[0].bold = True
-        for i, (section, item_id, item_text) in enumerate(
-            PRISMA_2020_ITEMS, start=1
-        ):
+        for i, (section, item_id, item_text) in enumerate(PRISMA_2020_ITEMS, start=1):
             captured = items_by_id.get(item_id)
-            reported = (
-                captured.reported.replace("_", " ").title()
-                if captured
-                else "Not reported"
-            )
+            reported = captured.reported.replace("_", " ").title() if captured else "Not reported"
             location = (captured.location if captured else "") or "—"
             t.cell(i, 0).text = section
             t.cell(i, 1).text = item_id

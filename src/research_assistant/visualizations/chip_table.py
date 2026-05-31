@@ -41,8 +41,8 @@ if TYPE_CHECKING:
 
 
 _DOWNGRADE_FILL: dict[str, str] = {
-    "none": "#d4edda",          # green
-    "serious": "#fff3cd",       # amber
+    "none": "#d4edda",  # green
+    "serious": "#fff3cd",  # amber
     "very_serious": "#f8d7da",  # red
 }
 _DOWNGRADE_TEXT: dict[str, str] = {
@@ -57,9 +57,9 @@ _DOWNGRADE_LABEL: dict[str, str] = {
 }
 
 _UPGRADE_FILL: dict[str, str] = {
-    "none": "#e9ecef",         # gray
-    "moderate": "#cfe2ff",     # light blue
-    "large": "#9ec5fe",        # dark blue
+    "none": "#e9ecef",  # gray
+    "moderate": "#cfe2ff",  # light blue
+    "large": "#9ec5fe",  # dark blue
 }
 _UPGRADE_TEXT: dict[str, str] = {
     "none": "#495057",
@@ -125,14 +125,14 @@ def _chip_rect(
     safe_title = escape(title)
     safe_label = escape(label)
     return (
-        f'<g><title>{safe_title}</title>'
+        f"<g><title>{safe_title}</title>"
         f'<rect x="{x:.1f}" y="{y:.1f}" width="{_CHIP_WIDTH}" '
         f'height="{_CHIP_HEIGHT}" rx="{rx}" ry="{rx}" '
         f'fill="{fill}" stroke="#cccccc" stroke-width="0.5"/>'
         f'<text x="{cx:.1f}" y="{cy:.1f}" text-anchor="middle" '
         f'font-family="Helvetica,Arial,sans-serif" font-size="13" '
         f'font-weight="bold" fill="{text_color}">{safe_label}</text>'
-        f'</g>'
+        f"</g>"
     )
 
 
@@ -172,17 +172,9 @@ def build_grade_chip_svg(assessments: Iterable[OutcomeAssessment]) -> str:
     # Certainty column too.
     total_chip_cols = n_downgrades + n_upgrades + 1
     width = (
-        _PADDING
-        + _OUTCOME_COL_WIDTH
-        + total_chip_cols * (_CHIP_WIDTH + _CHIP_PADDING)
-        + _PADDING
+        _PADDING + _OUTCOME_COL_WIDTH + total_chip_cols * (_CHIP_WIDTH + _CHIP_PADDING) + _PADDING
     )
-    height = (
-        _PADDING
-        + _HEADER_HEIGHT
-        + n_rows * (_CHIP_HEIGHT + _CHIP_PADDING)
-        + _PADDING
-    )
+    height = _PADDING + _HEADER_HEIGHT + n_rows * (_CHIP_HEIGHT + _CHIP_PADDING) + _PADDING
 
     parts: list[str] = [
         '<?xml version="1.0" encoding="UTF-8" standalone="no"?>',
@@ -191,7 +183,7 @@ def build_grade_chip_svg(assessments: Iterable[OutcomeAssessment]) -> str:
             f'width="{width:.0f}" height="{height:.0f}" '
             f'viewBox="0 0 {width:.0f} {height:.0f}">'
         ),
-        '<style>text { dominant-baseline: middle; }</style>',
+        "<style>text { dominant-baseline: middle; }</style>",
     ]
 
     # Header row — column titles.
@@ -227,9 +219,7 @@ def build_grade_chip_svg(assessments: Iterable[OutcomeAssessment]) -> str:
             fill = _DOWNGRADE_FILL.get(domain.level, "#ffffff")
             text_color = _DOWNGRADE_TEXT.get(domain.level, "#000000")
             tooltip = f"{label}: {domain.level} — {domain.rationale}"
-            parts.append(
-                _chip_rect(x, row_y, fill, text_color, chip_label, title=tooltip)
-            )
+            parts.append(_chip_rect(x, row_y, fill, text_color, chip_label, title=tooltip))
             x += _CHIP_WIDTH + _CHIP_PADDING
 
         # Upgrade chips — observational only.
@@ -252,9 +242,7 @@ def build_grade_chip_svg(assessments: Iterable[OutcomeAssessment]) -> str:
                 fill = _UPGRADE_FILL.get(upgrade.level, "#ffffff")
                 text_color = _UPGRADE_TEXT.get(upgrade.level, "#000000")
                 tooltip = f"{label}: {upgrade.level} — {upgrade.rationale}"
-            parts.append(
-                _chip_rect(x, row_y, fill, text_color, chip_label, title=tooltip)
-            )
+            parts.append(_chip_rect(x, row_y, fill, text_color, chip_label, title=tooltip))
             x += _CHIP_WIDTH + _CHIP_PADDING
 
         # Certainty chip.

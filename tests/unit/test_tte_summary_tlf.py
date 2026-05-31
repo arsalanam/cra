@@ -74,9 +74,7 @@ def test_generate_tlfs_omits_tte_summary_when_adtte_none() -> None:
 
 
 def test_tte_summary_stub_when_no_rows() -> None:
-    tlfs = generate_tlfs(
-        deployment_id="dep-1", adsl=[], ae_records=[], adtte_records=[]
-    )
+    tlfs = generate_tlfs(deployment_id="dep-1", adsl=[], ae_records=[], adtte_records=[])
     tte = next(t for t in tlfs if t.tlf_id == "t-tte-summary")
     payload = json.loads(tte.content_json)
     assert payload["rows"] == [["(no ADTTE rows)", "—", "—", "—", "—"]]

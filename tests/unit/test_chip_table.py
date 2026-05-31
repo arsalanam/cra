@@ -108,9 +108,7 @@ def test_rct_design_renders_upgrade_columns_as_na() -> None:
 
 
 def test_observational_with_large_effect_upgrades_to_moderate() -> None:
-    svg = build_grade_chip_svg(
-        [_assessment(design="observational", large_effect="moderate")]
-    )
+    svg = build_grade_chip_svg([_assessment(design="observational", large_effect="moderate")])
     # Observational starts at low (2). +1 from moderate upgrade → 3 → moderate.
     assert "MODERATE" in svg
     assert "+1" in svg
@@ -167,9 +165,7 @@ def test_long_outcome_name_truncates_in_svg() -> None:
 
 
 def test_chip_text_uses_no_unescaped_xml() -> None:
-    svg = build_grade_chip_svg(
-        [_assessment(name="Outcome <with> special & chars")]
-    )
+    svg = build_grade_chip_svg([_assessment(name="Outcome <with> special & chars")])
     # Special characters in the outcome name should be XML-escaped.
     assert "&lt;with&gt;" in svg
     assert "&amp;" in svg

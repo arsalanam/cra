@@ -72,10 +72,7 @@ def test_codelist_for_sex_present() -> None:
     root = _doc()
     sex = root.find(f".//{{{_NS_ODM}}}CodeList[@OID='CL.SEX']")
     assert sex is not None
-    coded_values = {
-        item.get("CodedValue")
-        for item in sex.findall(f"./{{{_NS_ODM}}}CodeListItem")
-    }
+    coded_values = {item.get("CodedValue") for item in sex.findall(f"./{{{_NS_ODM}}}CodeListItem")}
     # dm_sex.json maps to F / M / U / I per CDISC controlled terms.
     assert "F" in coded_values
     assert "M" in coded_values
@@ -85,10 +82,7 @@ def test_codelist_for_ny_carries_yes_and_no() -> None:
     root = _doc()
     ny = root.find(f".//{{{_NS_ODM}}}CodeList[@OID='CL.NY']")
     assert ny is not None
-    coded_values = {
-        item.get("CodedValue")
-        for item in ny.findall(f"./{{{_NS_ODM}}}CodeListItem")
-    }
+    coded_values = {item.get("CodedValue") for item in ny.findall(f"./{{{_NS_ODM}}}CodeListItem")}
     assert coded_values == {"Y", "N"}
 
 
@@ -96,10 +90,7 @@ def test_codelist_for_paramcd_adtte_has_three_params() -> None:
     root = _doc()
     pc = root.find(f".//{{{_NS_ODM}}}CodeList[@OID='CL.PARAMCD.ADTTE']")
     assert pc is not None
-    coded_values = {
-        item.get("CodedValue")
-        for item in pc.findall(f"./{{{_NS_ODM}}}CodeListItem")
-    }
+    coded_values = {item.get("CodedValue") for item in pc.findall(f"./{{{_NS_ODM}}}CodeListItem")}
     assert coded_values == {"TTAE", "TTSAE", "DEATH"}
 
 
@@ -112,9 +103,7 @@ def test_codelist_for_cnsr_is_integer() -> None:
 
 def test_methoddef_covers_derived_columns() -> None:
     root = _doc()
-    method_oids = {
-        md.get("OID") for md in root.findall(f".//{{{_NS_ODM}}}MethodDef")
-    }
+    method_oids = {md.get("OID") for md in root.findall(f".//{{{_NS_ODM}}}MethodDef")}
     expected = {
         "M.AGEGR1",
         "M.LBNRIND",

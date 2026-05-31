@@ -79,9 +79,7 @@ class CsrSynopsis(BaseModel):
     title: str
     sponsor: str
     protocol_id: str | None = None
-    objectives_text: str = Field(
-        description="Primary + key secondary objectives, 2-4 sentences."
-    )
+    objectives_text: str = Field(description="Primary + key secondary objectives, 2-4 sentences.")
     methodology_text: str = Field(
         description="Design (allocation, blinding, masking), 3-6 sentences."
     )
@@ -102,9 +100,7 @@ class CsrSynopsis(BaseModel):
             "(e.g. 'TLF t-tte-summary' or 'ADTTE PARAMCD=TTAE row')."
         )
     )
-    safety_overview: str = Field(
-        description="2-4 sentences summarising AE / SAE / death counts."
-    )
+    safety_overview: str = Field(description="2-4 sentences summarising AE / SAE / death counts.")
     conclusions: str = Field(
         description="1-2 sentence headline; reuse `[Operator to complete]` if data is mid-clean."
     )
@@ -128,9 +124,7 @@ class DispositionTable(BaseModel):
     """
 
     rows: list[DispositionRow] = Field(min_length=1)
-    derived_from: str = Field(
-        description="Source artefact id, e.g. 'TLF t-disposition'."
-    )
+    derived_from: str = Field(description="Source artefact id, e.g. 'TLF t-disposition'.")
 
 
 class DemographicsRow(BaseModel):
@@ -143,9 +137,7 @@ class DemographicsTable(BaseModel):
     """ICH E3 §10.2 — demographics + baseline characteristics."""
 
     rows: list[DemographicsRow] = Field(min_length=1)
-    derived_from: str = Field(
-        description="Source artefact id, e.g. 'TLF t-demographics'."
-    )
+    derived_from: str = Field(description="Source artefact id, e.g. 'TLF t-demographics'.")
 
 
 class EfficacyResults(BaseModel):
@@ -186,9 +178,7 @@ class SafetyOverview(BaseModel):
             "with their counts. MUST cite the AE-frequency figure."
         )
     )
-    derived_from: str = Field(
-        description="Source artefact id, e.g. 'TLF t-ae-summary'."
-    )
+    derived_from: str = Field(description="Source artefact id, e.g. 'TLF t-ae-summary'.")
 
 
 class CsrDataSections(BaseModel):
@@ -240,11 +230,7 @@ class CsrDocument(BaseModel):
 
 
 CsrTurn = Annotated[
-    ClarificationRequest
-    | CsrIntake
-    | CsrSynopsis
-    | CsrDataSections
-    | CsrDocument,
+    ClarificationRequest | CsrIntake | CsrSynopsis | CsrDataSections | CsrDocument,
     Field(discriminator="kind"),
 ]
 

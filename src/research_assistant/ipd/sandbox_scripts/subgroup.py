@@ -59,16 +59,13 @@ def _read_trial_df(trial: dict, subgroup_variable: str) -> pd.DataFrame | None:
         return None
     df["__trial_id__"] = str(trial.get("trial_id"))
     df["__treatment__"] = (
-        df[trial["treatment_column"]].astype(str)
-        == str(trial["treatment_active_value"])
+        df[trial["treatment_column"]].astype(str) == str(trial["treatment_active_value"])
     ).astype(int)
     df["__subgroup__"] = df[subgroup_variable].astype(str)
     return df
 
 
-def _level_effect_continuous(
-    df: pd.DataFrame, outcome_col: str, level: str
-) -> dict | None:
+def _level_effect_continuous(df: pd.DataFrame, outcome_col: str, level: str) -> dict | None:
     sub = df[df["__subgroup__"] == level]
     trt = sub.loc[sub["__treatment__"] == 1, outcome_col].astype(float).dropna()
     ctl = sub.loc[sub["__treatment__"] == 0, outcome_col].astype(float).dropna()
@@ -87,9 +84,7 @@ def _level_effect_continuous(
     }
 
 
-def _level_effect_binary(
-    df: pd.DataFrame, outcome_col: str, level: str
-) -> dict | None:
+def _level_effect_binary(df: pd.DataFrame, outcome_col: str, level: str) -> dict | None:
     sub = df[df["__subgroup__"] == level]
     trt = sub.loc[sub["__treatment__"] == 1, outcome_col].astype(float).dropna()
     ctl = sub.loc[sub["__treatment__"] == 0, outcome_col].astype(float).dropna()
@@ -119,9 +114,7 @@ def _level_effect_tte(
         from statsmodels.duration.hazard_regression import PHReg
     except ImportError:
         return None
-    sub = df[df["__subgroup__"] == level][
-        [outcome_col, event_col, "__treatment__"]
-    ].dropna()
+    sub = df[df["__subgroup__"] == level][[outcome_col, event_col, "__treatment__"]].dropna()
     if sub["__treatment__"].nunique() < 2:
         return None
     n_events = int(sub[event_col].astype(int).sum())
@@ -166,9 +159,7 @@ def _interaction_p_continuous(all_df: pd.DataFrame, outcome_col: str) -> float |
             for c in sg_dummies.columns
         }
     )
-    exog = pd.concat(
-        [df[["__treatment__"]].astype(float), sg_dummies, interactions], axis=1
-    )
+    exog = pd.concat([df[["__treatment__"]].astype(float), sg_dummies, interactions], axis=1)
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
@@ -179,9 +170,7 @@ def _interaction_p_continuous(all_df: pd.DataFrame, outcome_col: str) -> float |
             ).fit(method=["lbfgs"], disp=False)
         names = list(exog.columns)
         p_vals = [
-            float(fit.pvalues_fe[i])
-            for i, name in enumerate(names)
-            if name.startswith("SGxTRT_")
+            float(fit.pvalues_fe[i]) for i, name in enumerate(names) if name.startswith("SGxTRT_")
         ]
         return min(p_vals) if p_vals else None
     except Exception:
@@ -226,8 +215,7 @@ def main() -> None:
                 {
                     "fitted": False,
                     "skip_reason": (
-                        "No trials have the subgroup_variable column or "
-                        "parseable rows."
+                        "No trials have the subgroup_variable column or parseable rows."
                     ),
                     "subgroup_variable": subgroup_variable,
                 },
@@ -238,9 +226,7 @@ def main() -> None:
         return
 
     all_df = pd.concat(frames, ignore_index=True)
-    levels = sorted(
-        s for s in all_df["__subgroup__"].dropna().unique() if str(s).strip()
-    )
+    levels = sorted(s for s in all_df["__subgroup__"].dropna().unique() if str(s).strip())
 
     per_level: list[dict] = []
     for level in levels:
@@ -254,9 +240,7 @@ def main() -> None:
             row = None
         if row is None:
             level_n_trials = int(
-                all_df.loc[
-                    all_df["__subgroup__"] == level, "__trial_id__"
-                ].nunique()
+                all_df.loc[all_df["__subgroup__"] == level, "__trial_id__"].nunique()
             )
             row = {
                 "level_label": level,
@@ -283,9 +267,7 @@ def main() -> None:
         "levels": per_level,
         "n_levels": len(per_level),
     }
-    (_OUTPUT_DIR / "ipd-subgroup.json").write_text(
-        json.dumps(out, indent=2), encoding="utf-8"
-    )
+    (_OUTPUT_DIR / "ipd-subgroup.json").write_text(json.dumps(out, indent=2), encoding="utf-8")
     print(
         f"[ipd_subgroup] measure={effect_measure} sg={subgroup_variable} "
         f"levels={len(per_level)} interaction_p={interaction_p}"

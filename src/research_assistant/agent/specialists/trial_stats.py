@@ -409,9 +409,7 @@ def build_agent() -> Agent[AgentDeps, TrialStatsTurn]:
     ]
     for mod in specialist_tools:
         mod.register(agent)
-    logger.info(
-        "trial_stats specialist built — %d tools registered", len(specialist_tools)
-    )
+    logger.info("trial_stats specialist built — %d tools registered", len(specialist_tools))
     return agent
 
 

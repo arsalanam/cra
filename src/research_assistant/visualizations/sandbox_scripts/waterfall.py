@@ -114,9 +114,7 @@ def main() -> None:
     palette = ["#4682B4", "#E76F51", "#2A9D8F", "#264653", "#F4A261"]
     if not treatments:
         treatments = sorted({r["treatment"] for r in cleaned if r["treatment"]})
-    colour_for: dict[str, str] = {
-        t: palette[i % len(palette)] for i, t in enumerate(treatments)
-    }
+    colour_for: dict[str, str] = {t: palette[i % len(palette)] for i, t in enumerate(treatments)}
     fallback = "#888888"
 
     values = np.array([r["best_change_pct"] for r in cleaned])
@@ -134,9 +132,7 @@ def main() -> None:
     ax.set_ylim(min(values.min() - 5, -100), max(values.max() + 5, 100))
 
     # Legend
-    handles = [
-        plt.Rectangle((0, 0), 1, 1, color=colour_for[t]) for t in treatments
-    ]
+    handles = [plt.Rectangle((0, 0), 1, 1, color=colour_for[t]) for t in treatments]
     handles += [
         plt.Line2D([0], [0], color="#2A9D8F", linestyle="--", linewidth=1),
         plt.Line2D([0], [0], color="#E76F51", linestyle="--", linewidth=1),

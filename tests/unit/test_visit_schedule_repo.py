@@ -47,9 +47,7 @@ async def test_create_visit_schedule_starts_inactive(
 ) -> None:
     dep, _, _ = await _seed_deployment(clinical_session)
     repo = ClinicalRepository(clinical_session)
-    sched = await repo.create_visit_schedule(
-        dep.id, name="Main", description="primary cohort"
-    )
+    sched = await repo.create_visit_schedule(dep.id, name="Main", description="primary cohort")
     assert sched.is_active is False
     assert sched.name == "Main"
 
@@ -189,9 +187,7 @@ async def test_generate_uses_baseline_override(
     await repo.add_scheduled_visit(sched.id, visit_name="V1", day_offset=14)
     await repo.set_active_visit_schedule(sched.id)
     new_baseline = datetime(2026, 6, 1, 12, 0, tzinfo=UTC)
-    created = await repo.generate_planned_visits(
-        subj.id, baseline_date=new_baseline
-    )
+    created = await repo.generate_planned_visits(subj.id, baseline_date=new_baseline)
     assert created[0].planned_date == new_baseline + timedelta(days=14)
     refreshed = await clinical_session.get(Subject, subj.id)
     assert refreshed is not None and refreshed.baseline_date == new_baseline
@@ -221,8 +217,11 @@ async def test_reschedule_shifts_window(
     repo = ClinicalRepository(clinical_session)
     sched = await repo.create_visit_schedule(dep.id, name="Main")
     await repo.add_scheduled_visit(
-        sched.id, visit_name="V1", day_offset=7,
-        window_before_days=3, window_after_days=3,
+        sched.id,
+        visit_name="V1",
+        day_offset=7,
+        window_before_days=3,
+        window_after_days=3,
     )
     await repo.set_active_visit_schedule(sched.id)
     [pv] = await repo.generate_planned_visits(subj.id)
@@ -284,9 +283,7 @@ async def test_queue_skips_subjects_without_contact(
     dep, _, subj = await _seed_deployment(clinical_session)
     repo = ClinicalRepository(clinical_session)
     sched = await repo.create_visit_schedule(dep.id, name="Main")
-    await repo.add_scheduled_visit(
-        sched.id, visit_name="V1", day_offset=0, reminder_offsets=[0]
-    )
+    await repo.add_scheduled_visit(sched.id, visit_name="V1", day_offset=0, reminder_offsets=[0])
     await repo.set_active_visit_schedule(sched.id)
     await repo.generate_planned_visits(subj.id)
     queue = await repo.compute_due_reminders(dep.id)
@@ -302,15 +299,15 @@ async def test_queue_picks_up_opted_in_contact(
     repo = ClinicalRepository(clinical_session)
     sched = await repo.create_visit_schedule(dep.id, name="Main")
     await repo.add_scheduled_visit(
-        sched.id, visit_name="Week 1", day_offset=0,
+        sched.id,
+        visit_name="Week 1",
+        day_offset=0,
         reminder_offsets=[0],  # day-of reminder
     )
     await repo.set_active_visit_schedule(sched.id)
     await repo.generate_planned_visits(subj.id)
     # Create participant access + contact.
-    access = ParticipantAccess(
-        subject_id=subj.id, deployment_id=dep.id, token_hash="hash-1"
-    )
+    access = ParticipantAccess(subject_id=subj.id, deployment_id=dep.id, token_hash="hash-1")
     clinical_session.add(access)
     await clinical_session.flush()
     await repo.upsert_participant_contact(
@@ -341,9 +338,7 @@ async def test_queue_respects_opt_out(
     )
     await repo.set_active_visit_schedule(sched.id)
     await repo.generate_planned_visits(subj.id)
-    access = ParticipantAccess(
-        subject_id=subj.id, deployment_id=dep.id, token_hash="hash-2"
-    )
+    access = ParticipantAccess(subject_id=subj.id, deployment_id=dep.id, token_hash="hash-2")
     clinical_session.add(access)
     await clinical_session.flush()
     await repo.upsert_participant_contact(
@@ -371,9 +366,7 @@ async def test_queue_dedupes_against_sent_reminders(
     )
     await repo.set_active_visit_schedule(sched.id)
     [pv] = await repo.generate_planned_visits(subj.id)
-    access = ParticipantAccess(
-        subject_id=subj.id, deployment_id=dep.id, token_hash="hash-3"
-    )
+    access = ParticipantAccess(subject_id=subj.id, deployment_id=dep.id, token_hash="hash-3")
     clinical_session.add(access)
     await clinical_session.flush()
     await repo.upsert_participant_contact(
@@ -405,9 +398,7 @@ async def test_record_sent_reminder_is_idempotent(
     await repo.add_scheduled_visit(sched.id, visit_name="V", day_offset=0)
     await repo.set_active_visit_schedule(sched.id)
     [pv] = await repo.generate_planned_visits(subj.id)
-    access = ParticipantAccess(
-        subject_id=subj.id, deployment_id=dep.id, token_hash="hash-4"
-    )
+    access = ParticipantAccess(subject_id=subj.id, deployment_id=dep.id, token_hash="hash-4")
     clinical_session.add(access)
     await clinical_session.flush()
     a = await repo.record_sent_reminder(

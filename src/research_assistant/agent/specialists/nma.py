@@ -185,12 +185,8 @@ _TOOL_GATES: dict[str, frozenset[str | None]] = {
     "search_papers": frozenset(
         {"nma_pico", "nma_search_results", "nma_data_extraction", "nma_results"}
     ),
-    "fetch_pmc_fulltext": frozenset(
-        {"nma_search_results", "nma_data_extraction", "nma_results"}
-    ),
-    "run_nma_analysis": frozenset(
-        {"nma_data_extraction", "nma_results"}
-    ),
+    "fetch_pmc_fulltext": frozenset({"nma_search_results", "nma_data_extraction", "nma_results"}),
+    "run_nma_analysis": frozenset({"nma_data_extraction", "nma_results"}),
     "sandbox_exec": frozenset({"nma_data_extraction", "nma_results"}),
     "web_search": frozenset({"nma_results"}),
     "wikipedia": frozenset({"nma_results"}),

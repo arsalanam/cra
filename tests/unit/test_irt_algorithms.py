@@ -18,14 +18,8 @@ from research_assistant.randomization.algorithms import (
 
 
 def test_canonical_stratum_label_is_alphabetical_by_factor() -> None:
-    assert (
-        canonical_stratum_label({"sex": "F", "site_id": "S01"})
-        == "sex=F|site_id=S01"
-    )
-    assert (
-        canonical_stratum_label({"site_id": "S01", "sex": "F"})
-        == "sex=F|site_id=S01"
-    )
+    assert canonical_stratum_label({"sex": "F", "site_id": "S01"}) == "sex=F|site_id=S01"
+    assert canonical_stratum_label({"site_id": "S01", "sex": "F"}) == "sex=F|site_id=S01"
 
 
 # ── Simple ──────────────────────────────────────────────────────────────
@@ -72,9 +66,7 @@ def test_permuted_block_is_balanced_within_each_block() -> None:
 
 def test_permuted_block_supports_ratio() -> None:
     """Block of 6 with [A,B] and ratio [2,1] gives 4 A + 2 B per block."""
-    seq = generate_permuted_block(
-        24, ["A", "B"], ratio=[2, 1], block_sizes=[6], seed=2
-    )
+    seq = generate_permuted_block(24, ["A", "B"], ratio=[2, 1], block_sizes=[6], seed=2)
     for start in range(0, 24, 6):
         block = seq[start : start + 6]
         assert Counter(block) == Counter({"A": 4, "B": 2})
@@ -101,9 +93,7 @@ def test_permuted_block_is_deterministic() -> None:
 
 def test_stratified_permuted_block_emits_one_sequence_per_stratum() -> None:
     expected = {"sex=F|site_id=S01": 8, "sex=M|site_id=S01": 4}
-    out = generate_stratified_permuted_block(
-        expected, ["A", "B"], block_sizes=[4], seed=10
-    )
+    out = generate_stratified_permuted_block(expected, ["A", "B"], block_sizes=[4], seed=10)
     assert set(out.keys()) == set(expected.keys())
     assert len(out["sex=F|site_id=S01"]) == 8
     assert len(out["sex=M|site_id=S01"]) == 4
@@ -113,18 +103,14 @@ def test_stratified_permuted_block_strata_independent_seeds() -> None:
     """Two strata with the same expected_n should produce different
     sequences (independent sub-seeds), not identical clones."""
     expected = {"f_a": 16, "f_b": 16}
-    out = generate_stratified_permuted_block(
-        expected, ["A", "B"], block_sizes=[4], seed=11
-    )
+    out = generate_stratified_permuted_block(expected, ["A", "B"], block_sizes=[4], seed=11)
     # Sequences should not be identical (sub-seeds differ).
     assert out["f_a"] != out["f_b"]
 
 
 def test_stratified_permuted_block_balanced_within_each_block() -> None:
     expected = {"f_a": 8}
-    out = generate_stratified_permuted_block(
-        expected, ["A", "B"], block_sizes=[4], seed=12
-    )
+    out = generate_stratified_permuted_block(expected, ["A", "B"], block_sizes=[4], seed=12)
     seq = out["f_a"]
     for start in range(0, 8, 4):
         assert Counter(seq[start : start + 4]) == Counter({"A": 2, "B": 2})
@@ -203,9 +189,7 @@ def test_minimisation_state_is_updated_with_assignment() -> None:
 
 def test_minimisation_rejects_invalid_probabilistic_p() -> None:
     with pytest.raises(ValueError, match="probabilistic_p"):
-        pocock_simon_choose_arm(
-            None, {"f": "v"}, ["A", "B"], probabilistic_p=0.0, seed=1
-        )
+        pocock_simon_choose_arm(None, {"f": "v"}, ["A", "B"], probabilistic_p=0.0, seed=1)
 
 
 def test_minimisation_handles_new_factor_value_gracefully() -> None:
@@ -217,8 +201,6 @@ def test_minimisation_handles_new_factor_value_gracefully() -> None:
             "B": {"site_id": {"S01": 3}},
         }
     }
-    arm, _ = pocock_simon_choose_arm(
-        initial, {"site_id": "S99"}, ["A", "B"], seed=4
-    )
+    arm, _ = pocock_simon_choose_arm(initial, {"site_id": "S99"}, ["A", "B"], seed=4)
     # Tied — but doesn't raise.
     assert arm in ("A", "B")

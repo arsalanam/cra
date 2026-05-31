@@ -246,9 +246,7 @@ def test_subgroup_analysis_requires_at_least_two_rows() -> None:
             parent_paramcd="OS",
             parent_param_label="Overall survival",
             subgroup_variable="SEX",
-            rows=[
-                SubgroupRow(subgroup_label="Female", n=100, n_events=40)
-            ],
+            rows=[SubgroupRow(subgroup_label="Female", n=100, n_events=40)],
             derived_from="sandbox:subgroup:OS:by:SEX",
         )
 
@@ -301,8 +299,22 @@ def test_document_csr_artefact_ids_follow_canonical_shape() -> None:
                 parent_param_label="Overall survival",
                 subgroup_variable="SEX",
                 rows=[
-                    SubgroupRow(subgroup_label="Female", n=100, n_events=40, effect=0.7, ci_lower=0.5, ci_upper=0.95),
-                    SubgroupRow(subgroup_label="Male", n=100, n_events=45, effect=0.75, ci_lower=0.55, ci_upper=1.0),
+                    SubgroupRow(
+                        subgroup_label="Female",
+                        n=100,
+                        n_events=40,
+                        effect=0.7,
+                        ci_lower=0.5,
+                        ci_upper=0.95,
+                    ),
+                    SubgroupRow(
+                        subgroup_label="Male",
+                        n=100,
+                        n_events=45,
+                        effect=0.75,
+                        ci_lower=0.55,
+                        ci_upper=1.0,
+                    ),
                 ],
                 interaction_p_value=0.42,
                 derived_from="sandbox:subgroup:OS:by:SEX",

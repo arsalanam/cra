@@ -40,9 +40,7 @@ async def _seed(session: AsyncSession) -> tuple[StudyDeployment, Subject, Partic
     )
     session.add(subj)
     await session.flush()
-    access = ParticipantAccess(
-        subject_id=subj.id, deployment_id=dep.id, token_hash="hash-1"
-    )
+    access = ParticipantAccess(subject_id=subj.id, deployment_id=dep.id, token_hash="hash-1")
     session.add(access)
     await session.flush()
     return dep, subj, access
@@ -96,9 +94,7 @@ async def test_fire_returns_zero_counts_when_no_planned_visits(
     clinical_session: AsyncSession,
 ) -> None:
     dep, _, _ = await _seed(clinical_session)
-    with patch(
-        "research_assistant.services.reminders.get_clinical_session"
-    ) as mock_session:
+    with patch("research_assistant.services.reminders.get_clinical_session") as mock_session:
         mock_session.return_value.__aenter__.return_value = clinical_session
         mock_session.return_value.__aexit__.return_value = None
         result = await fire_due_reminders(dep.id)
@@ -117,9 +113,7 @@ async def test_fire_dry_runs_email_when_ses_disabled(
     dep, subj, access = await _seed(clinical_session)
     repo = ClinicalRepository(clinical_session)
     sched = await repo.create_visit_schedule(dep.id, name="Main")
-    await repo.add_scheduled_visit(
-        sched.id, visit_name="Day 0", day_offset=0, reminder_offsets=[0]
-    )
+    await repo.add_scheduled_visit(sched.id, visit_name="Day 0", day_offset=0, reminder_offsets=[0])
     await repo.set_active_visit_schedule(sched.id)
     await repo.generate_planned_visits(subj.id)
     await repo.upsert_participant_contact(
@@ -128,11 +122,10 @@ async def test_fire_dry_runs_email_when_ses_disabled(
         opt_in_channels=["email"],
     )
 
-    with patch(
-        "research_assistant.services.reminders.get_clinical_session"
-    ) as mock_session, patch(
-        "research_assistant.services.reminders.datetime"
-    ) as mock_dt:
+    with (
+        patch("research_assistant.services.reminders.get_clinical_session") as mock_session,
+        patch("research_assistant.services.reminders.datetime") as mock_dt,
+    ):
         mock_session.return_value.__aenter__.return_value = clinical_session
         mock_session.return_value.__aexit__.return_value = None
         mock_dt.now.return_value = subj.baseline_date + timedelta(days=1)
@@ -156,9 +149,7 @@ async def test_fire_skips_sms_until_twilio_wired(
     dep, subj, access = await _seed(clinical_session)
     repo = ClinicalRepository(clinical_session)
     sched = await repo.create_visit_schedule(dep.id, name="Main")
-    await repo.add_scheduled_visit(
-        sched.id, visit_name="V", day_offset=0, reminder_offsets=[0]
-    )
+    await repo.add_scheduled_visit(sched.id, visit_name="V", day_offset=0, reminder_offsets=[0])
     await repo.set_active_visit_schedule(sched.id)
     await repo.generate_planned_visits(subj.id)
     await repo.upsert_participant_contact(
@@ -168,9 +159,7 @@ async def test_fire_skips_sms_until_twilio_wired(
         opt_in_channels=["sms"],
     )
 
-    with patch(
-        "research_assistant.services.reminders.get_clinical_session"
-    ) as mock_session:
+    with patch("research_assistant.services.reminders.get_clinical_session") as mock_session:
         mock_session.return_value.__aenter__.return_value = clinical_session
         mock_session.return_value.__aexit__.return_value = None
         result = await fire_due_reminders(dep.id)

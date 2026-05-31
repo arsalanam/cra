@@ -213,8 +213,7 @@ def _outcomes_list(items: list[Any], label: str) -> str:
     if not items:
         return f"({label}: none specified)"
     return "<br/>".join(
-        f"<b>{o.measure}</b> — {o.description} <i>(at {o.time_frame})</i>"
-        for o in items
+        f"<b>{o.measure}</b> — {o.description} <i>(at {o.time_frame})</i>" for o in items
     )
 
 
@@ -222,8 +221,7 @@ def _arms_list(items: list[Any]) -> str:
     if not items:
         return "—"
     return "<br/>".join(
-        f"<b>{a.label}</b> ({a.role.replace('_', ' ')}): {a.description}"
-        for a in items
+        f"<b>{a.label}</b> ({a.role.replace('_', ' ')}): {a.description}" for a in items
     )
 
 
@@ -344,9 +342,9 @@ def build_docx(data: RegistrationReportData, images_dir: Path | None = None) -> 
     docx = Document()
     docx.core_properties.title = data.title
     docx.add_heading(data.title, level=0)
-    docx.add_paragraph(
-        f"Generated {data.generated_at.strftime('%Y-%m-%d %H:%M UTC')}"
-    ).runs[0].font.color.rgb = DOCX_MUTED
+    docx.add_paragraph(f"Generated {data.generated_at.strftime('%Y-%m-%d %H:%M UTC')}").runs[
+        0
+    ].font.color.rgb = DOCX_MUTED
 
     docx.add_paragraph(
         "Paste these field values into ClinicalTrials.gov PRS and "

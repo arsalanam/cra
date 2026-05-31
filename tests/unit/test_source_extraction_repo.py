@@ -69,11 +69,7 @@ async def test_ingest_parses_csv_into_source_rows(
 ) -> None:
     dep, _, _ = await _seed(clinical_session)
     repo = ClinicalRepository(clinical_session)
-    csv = (
-        b"subject_id,sbp,dbp\n"
-        b"S-001,118,76\n"
-        b"S-002,122,80\n"
-    )
+    csv = b"subject_id,sbp,dbp\nS-001,118,76\nS-002,122,80\n"
     doc, added = await repo.ingest_source_document(
         dep.id,
         filename="labs.csv",
@@ -95,9 +91,7 @@ async def test_ingest_rejects_csv_without_header(
     dep, _, _ = await _seed(clinical_session)
     repo = ClinicalRepository(clinical_session)
     with pytest.raises(ClinicalError, match="header row"):
-        await repo.ingest_source_document(
-            dep.id, filename="bad.csv", raw_bytes=b""
-        )
+        await repo.ingest_source_document(dep.id, filename="bad.csv", raw_bytes=b"")
 
 
 async def test_ingest_rejects_unknown_subject_field(
@@ -120,12 +114,8 @@ async def test_ingest_content_hash_dedupe(
     dep, _, _ = await _seed(clinical_session)
     repo = ClinicalRepository(clinical_session)
     csv = b"a,b\n1,2\n"
-    first, added1 = await repo.ingest_source_document(
-        dep.id, filename="a.csv", raw_bytes=csv
-    )
-    second, added2 = await repo.ingest_source_document(
-        dep.id, filename="a.csv", raw_bytes=csv
-    )
+    first, added1 = await repo.ingest_source_document(dep.id, filename="a.csv", raw_bytes=csv)
+    second, added2 = await repo.ingest_source_document(dep.id, filename="a.csv", raw_bytes=csv)
     assert first.id == second.id
     assert added1 == 1
     assert added2 == 0
@@ -242,9 +232,7 @@ async def test_apply_to_subjects_writes_item_data_and_fill(
         subject_code_field="subject_id",
         mapping={"sbp": "sbp_item", "dbp": "dbp_item"},
     )
-    summary = await repo.apply_extraction_to_subjects(
-        m.id, source_document_id=doc.id
-    )
+    summary = await repo.apply_extraction_to_subjects(m.id, source_document_id=doc.id)
     assert summary["subjects_filled"] == 2
     assert summary["items_written"] == 4
     assert summary["source_rows_unmatched"] == 0
@@ -254,9 +242,7 @@ async def test_apply_to_subjects_writes_item_data_and_fill(
     items = list(
         (
             await clinical_session.scalars(
-                select(ItemData).where(
-                    ItemData.form_instance_id == fis[0].id
-                )
+                select(ItemData).where(ItemData.form_instance_id == fis[0].id)
             )
         ).all()
     )
@@ -265,9 +251,7 @@ async def test_apply_to_subjects_writes_item_data_and_fill(
     fills = list(
         (
             await clinical_session.scalars(
-                select(ExtractionFill).where(
-                    ExtractionFill.mapping_id == m.id
-                )
+                select(ExtractionFill).where(ExtractionFill.mapping_id == m.id)
             )
         ).all()
     )
@@ -296,9 +280,7 @@ async def test_apply_records_unmatched_subjects(
         subject_code_field="subject_id",
         mapping={"sbp": "sbp_item"},
     )
-    summary = await repo.apply_extraction_to_subjects(
-        m.id, source_document_id=doc.id
-    )
+    summary = await repo.apply_extraction_to_subjects(m.id, source_document_id=doc.id)
     assert summary["subjects_filled"] == 1
     assert summary["items_written"] == 1
     assert summary["source_rows_unmatched"] == 1
@@ -329,18 +311,14 @@ async def test_apply_is_idempotent_overwrites_value(
     await repo.apply_extraction_to_subjects(m.id, source_document_id=doc.id)
     items = list(
         (
-            await clinical_session.scalars(
-                select(ItemData).where(ItemData.item_id == "sbp_item")
-            )
+            await clinical_session.scalars(select(ItemData).where(ItemData.item_id == "sbp_item"))
         ).all()
     )
     assert len(items) == 1  # not duplicated
     fills = list(
         (
             await clinical_session.scalars(
-                select(ExtractionFill).where(
-                    ExtractionFill.mapping_id == m.id
-                )
+                select(ExtractionFill).where(ExtractionFill.mapping_id == m.id)
             )
         ).all()
     )
@@ -370,9 +348,7 @@ async def test_apply_to_table_returns_flat_rows_and_writes_fills(
         subject_code_field="subject_id",
         mapping={"sbp": "sbp_item", "dbp": "dbp_item"},
     )
-    table = await repo.apply_extraction_to_table(
-        m.id, source_document_id=doc.id
-    )
+    table = await repo.apply_extraction_to_table(m.id, source_document_id=doc.id)
     assert len(table) == 2
     assert table[0]["subject_code"] == "S-001"
     assert table[0]["sbp_item"] == "118"
@@ -385,9 +361,7 @@ async def test_apply_to_table_returns_flat_rows_and_writes_fills(
     fills = list(
         (
             await clinical_session.scalars(
-                select(ExtractionFill).where(
-                    ExtractionFill.target_kind == "extraction_cell"
-                )
+                select(ExtractionFill).where(ExtractionFill.target_kind == "extraction_cell")
             )
         ).all()
     )

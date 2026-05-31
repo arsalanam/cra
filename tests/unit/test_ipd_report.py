@@ -28,9 +28,7 @@ def _msg(
     msg_id: str = "m1",
     final_answer: str | None = None,
 ) -> Any:
-    return SimpleNamespace(
-        id=msg_id, role=role, input_text=None, final_answer=final_answer
-    )
+    return SimpleNamespace(id=msg_id, role=role, input_text=None, final_answer=final_answer)
 
 
 def _pooled(method: str = "MixedLM REML", effect: float = 0.72) -> IpdPooledEffect:
@@ -54,16 +52,28 @@ def _main_results() -> IpdMainResults:
         two_stage=_pooled("DerSimonian-Laird", effect=0.74),
         per_trial=[
             IpdPerTrialEffect(
-                trial_id="A", n_subjects=500, effect=0.7, ci_lower=0.5,
-                ci_upper=0.95, se=0.15,
+                trial_id="A",
+                n_subjects=500,
+                effect=0.7,
+                ci_lower=0.5,
+                ci_upper=0.95,
+                se=0.15,
             ),
             IpdPerTrialEffect(
-                trial_id="B", n_subjects=700, effect=0.75, ci_lower=0.55,
-                ci_upper=1.0, se=0.13,
+                trial_id="B",
+                n_subjects=700,
+                effect=0.75,
+                ci_lower=0.55,
+                ci_upper=1.0,
+                se=0.13,
             ),
             IpdPerTrialEffect(
-                trial_id="C", n_subjects=1100, effect=0.78, ci_lower=0.62,
-                ci_upper=0.97, se=0.10,
+                trial_id="C",
+                n_subjects=1100,
+                effect=0.78,
+                ci_lower=0.62,
+                ci_upper=0.97,
+                se=0.10,
             ),
         ],
         discrepancy_note="One-stage and two-stage estimates agree closely (Δlog≈0.03).",
@@ -83,12 +93,20 @@ def _document() -> IpdDocument:
                 subgroup_variable="sex",
                 levels=[
                     IpdSubgroupLevel(
-                        level_label="F", n_trials=5, n_subjects=2100,
-                        effect=0.68, ci_lower=0.48, ci_upper=0.95,
+                        level_label="F",
+                        n_trials=5,
+                        n_subjects=2100,
+                        effect=0.68,
+                        ci_lower=0.48,
+                        ci_upper=0.95,
                     ),
                     IpdSubgroupLevel(
-                        level_label="M", n_trials=5, n_subjects=2150,
-                        effect=0.76, ci_lower=0.55, ci_upper=1.05,
+                        level_label="M",
+                        n_trials=5,
+                        n_subjects=2150,
+                        effect=0.76,
+                        ci_lower=0.55,
+                        ci_upper=1.05,
                     ),
                 ],
                 interaction_p_value=0.42,

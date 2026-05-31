@@ -90,9 +90,7 @@ class PicoNetwork(BaseModel):
 class NmaPicoTurn(BaseModel):
     kind: Literal["nma_pico"] = "nma_pico"
     pico: PicoNetwork
-    rationale: str = Field(
-        description="Explain comparator selection + transitivity assumption."
-    )
+    rationale: str = Field(description="Explain comparator selection + transitivity assumption.")
 
 
 # ── STEP 3 — search results ─────────────────────────────────────────────
@@ -164,9 +162,7 @@ class NmaStudyExtractedData(BaseModel):
 class NmaDataExtraction(BaseModel):
     kind: Literal["nma_data_extraction"] = "nma_data_extraction"
     studies: list[NmaStudyExtractedData] = Field(min_length=2)
-    summary: str = Field(
-        description="Cross-study completeness, network connectedness check."
-    )
+    summary: str = Field(description="Cross-study completeness, network connectedness check.")
 
 
 # ── STEP 5 — assembled NMA results ──────────────────────────────────────

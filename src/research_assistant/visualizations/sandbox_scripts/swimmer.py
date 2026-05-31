@@ -130,9 +130,7 @@ def main() -> None:
     cleaned.sort(key=lambda r: (r["treatment"], -r["duration_days"]))
 
     n = len(cleaned)
-    fig, ax = plt.subplots(
-        figsize=(9, max(3.5, 0.18 * n + 1.5)), dpi=110
-    )
+    fig, ax = plt.subplots(figsize=(9, max(3.5, 0.18 * n + 1.5)), dpi=110)
 
     y_positions = np.arange(n)
     bar_colours = [colour_for.get(r["treatment"], fallback_colour) for r in cleaned]
@@ -180,9 +178,7 @@ def main() -> None:
     ax.grid(True, axis="x", alpha=0.3)
 
     # Legend: treatments + event glyphs that appeared.
-    handles = [
-        plt.Rectangle((0, 0), 1, 1, color=colour_for[t], alpha=0.75) for t in treatments
-    ]
+    handles = [plt.Rectangle((0, 0), 1, 1, color=colour_for[t], alpha=0.75) for t in treatments]
     legend_labels: list[str] = list(treatments)
     for kind in (
         "response_onset",

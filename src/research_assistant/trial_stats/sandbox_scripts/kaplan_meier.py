@@ -89,11 +89,7 @@ def _log_rank(df_by_arm: dict[str, pd.DataFrame]) -> float | None:
     if len(arms) < 2:
         return None
     all_times = sorted(
-        {
-            float(t)
-            for sub in df_by_arm.values()
-            for t in sub.loc[sub["CNSR"] == 0, "AVAL"]
-        }
+        {float(t) for sub in df_by_arm.values() for t in sub.loc[sub["CNSR"] == 0, "AVAL"]}
     )
     if not all_times:
         return None
@@ -101,12 +97,9 @@ def _log_rank(df_by_arm: dict[str, pd.DataFrame]) -> float | None:
     obs_minus_exp = 0.0
     variance = 0.0
     for t in all_times:
-        n_at_risk_total = sum(
-            int((sub["AVAL"] >= t).sum()) for sub in df_by_arm.values()
-        )
+        n_at_risk_total = sum(int((sub["AVAL"] >= t).sum()) for sub in df_by_arm.values())
         d_total = sum(
-            int(((sub["AVAL"] == t) & (sub["CNSR"] == 0)).sum())
-            for sub in df_by_arm.values()
+            int(((sub["AVAL"] == t) & (sub["CNSR"] == 0)).sum()) for sub in df_by_arm.values()
         )
         if n_at_risk_total <= 1 or d_total == 0:
             continue
@@ -149,9 +142,7 @@ def _plot_km_one(ax: object, df_param: pd.DataFrame, *, label: str) -> None:
 def _km_plot_save(df: pd.DataFrame, paramcd: str, param_label: str) -> Path:
     fig, ax = plt.subplots(figsize=(7, 4.5), dpi=110)
     arms = sorted(a for a in df["TRT01A"].dropna().unique() if a not in ("TBD", ""))
-    can_stratify = len(arms) >= 2 and all(
-        df[df["TRT01A"] == a].shape[0] >= 2 for a in arms
-    )
+    can_stratify = len(arms) >= 2 and all(df[df["TRT01A"] == a].shape[0] >= 2 for a in arms)
     if can_stratify:
         for arm in arms:
             sub = df[df["TRT01A"] == arm]

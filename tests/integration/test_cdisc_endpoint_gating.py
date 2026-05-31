@@ -98,17 +98,11 @@ async def _bootstrap(client: AsyncClient) -> dict[str, str]:
     await _seed("sub-admin", "admin@example.com", "admin")
     _login(client, "sub-admin", "admin@example.com")
     sid = (await client.post("/api/ecrf/studies", json={"name": "Test Trial"})).json()["id"]
-    fid = (
-        await client.post(f"/api/ecrf/studies/{sid}/forms", json=_form_body())
-    ).json()["id"]
+    fid = (await client.post(f"/api/ecrf/studies/{sid}/forms", json=_form_body())).json()["id"]
     await client.post(f"/api/ecrf/forms/{fid}/publish")
-    dep = (
-        await client.post("/api/edc/deployments", json={"research_study_id": sid})
-    ).json()
+    dep = (await client.post("/api/edc/deployments", json={"research_study_id": sid})).json()
     site = (
-        await client.post(
-            f"/api/edc/deployments/{dep['id']}/sites", json={"name": "Boston"}
-        )
+        await client.post(f"/api/edc/deployments/{dep['id']}/sites", json={"name": "Boston"})
     ).json()
     subj = (
         await client.post(
@@ -143,9 +137,7 @@ async def test_data_manager_derives_and_exports(client: AsyncClient) -> None:
     assert counts["adsl"] == 1
     assert counts["tlf"] >= 1
 
-    bundle = await client.get(
-        f"/api/edc/deployments/{ids['dep']}/cdisc/submission-bundle.zip"
-    )
+    bundle = await client.get(f"/api/edc/deployments/{ids['dep']}/cdisc/submission-bundle.zip")
     assert bundle.status_code == 200
     assert bundle.headers["content-type"] == "application/zip"
     assert bundle.content[:4] == b"PK\x03\x04"
@@ -164,9 +156,7 @@ async def test_pi_can_export_but_not_derive(client: AsyncClient) -> None:
     derive = await client.post(f"/api/edc/deployments/{ids['dep']}/cdisc/derive")
     assert derive.status_code == 403, derive.text
 
-    bundle = await client.get(
-        f"/api/edc/deployments/{ids['dep']}/cdisc/submission-bundle.zip"
-    )
+    bundle = await client.get(f"/api/edc/deployments/{ids['dep']}/cdisc/submission-bundle.zip")
     assert bundle.status_code == 200
     assert bundle.content[:4] == b"PK\x03\x04"
 
@@ -180,9 +170,7 @@ async def test_coordinator_blocked_from_all_cdisc(client: AsyncClient) -> None:
     assert derive.status_code == 403
     listing = await client.get(f"/api/edc/deployments/{ids['dep']}/cdisc/datasets")
     assert listing.status_code == 403
-    bundle = await client.get(
-        f"/api/edc/deployments/{ids['dep']}/cdisc/submission-bundle.zip"
-    )
+    bundle = await client.get(f"/api/edc/deployments/{ids['dep']}/cdisc/submission-bundle.zip")
     assert bundle.status_code == 403
 
 
@@ -200,9 +188,7 @@ async def test_dataset_csv_download_after_derivation(client: AsyncClient) -> Non
     _login(client, "sub-dm", "dm@example.com")
     await client.post(f"/api/edc/deployments/{ids['dep']}/cdisc/derive")
 
-    dm = await client.get(
-        f"/api/edc/deployments/{ids['dep']}/cdisc/datasets/DM/export.csv"
-    )
+    dm = await client.get(f"/api/edc/deployments/{ids['dep']}/cdisc/datasets/DM/export.csv")
     assert dm.status_code == 200
     assert dm.headers["content-type"] == "text/csv; charset=utf-8"
     text = dm.content.decode("utf-8")
@@ -215,8 +201,6 @@ async def test_export_bundle_refuses_before_derivation(client: AsyncClient) -> N
     ids = await _bootstrap(client)
     await _seed("sub-dm", "dm@example.com", "data_manager")
     _login(client, "sub-dm", "dm@example.com")
-    bundle = await client.get(
-        f"/api/edc/deployments/{ids['dep']}/cdisc/submission-bundle.zip"
-    )
+    bundle = await client.get(f"/api/edc/deployments/{ids['dep']}/cdisc/submission-bundle.zip")
     assert bundle.status_code == 409
     assert "derive" in bundle.json()["detail"]

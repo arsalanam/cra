@@ -68,9 +68,7 @@ async def _gather_item_data(
     instances = (
         (
             await session.execute(
-                select(FormInstance).where(
-                    FormInstance.subject_id.in_([s.id for s in subjects])
-                )
+                select(FormInstance).where(FormInstance.subject_id.in_([s.id for s in subjects]))
             )
         )
         .scalars()
@@ -83,11 +81,7 @@ async def _gather_item_data(
     if not fi_ids:
         return out
     items = (
-        (
-            await session.execute(
-                select(ItemData).where(ItemData.form_instance_id.in_(fi_ids))
-            )
-        )
+        (await session.execute(select(ItemData).where(ItemData.form_instance_id.in_(fi_ids))))
         .scalars()
         .all()
     )
@@ -157,11 +151,7 @@ async def _gather_form_instances_by_domain(
         return by_domain
     fi_ids = [fi.id for fi in instances]
     items = list(
-        (
-            await session.execute(
-                select(ItemData).where(ItemData.form_instance_id.in_(fi_ids))
-            )
-        )
+        (await session.execute(select(ItemData).where(ItemData.form_instance_id.in_(fi_ids))))
         .scalars()
         .all()
     )
@@ -195,11 +185,7 @@ async def run_derivation(
     study_id = deployment.research_study_id
 
     subjects: list[Subject] = list(
-        (
-            await session.execute(
-                select(Subject).where(Subject.deployment_id == deployment_id)
-            )
-        )
+        (await session.execute(select(Subject).where(Subject.deployment_id == deployment_id)))
         .scalars()
         .all()
     )
@@ -218,17 +204,11 @@ async def run_derivation(
     # TRT01P / TRT01A from the audited randomisation assignment rather
     # than the "TBD" placeholder. Map subject_id → Allocation.
     allocation_rows: list[Allocation] = list(
-        (
-            await session.execute(
-                select(Allocation).where(Allocation.deployment_id == deployment_id)
-            )
-        )
+        (await session.execute(select(Allocation).where(Allocation.deployment_id == deployment_id)))
         .scalars()
         .all()
     )
-    allocations_by_subject_id: dict[str, Allocation] = {
-        a.subject_id: a for a in allocation_rows
-    }
+    allocations_by_subject_id: dict[str, Allocation] = {a.subject_id: a for a in allocation_rows}
     subjects_by_id_full = {s.id: s for s in subjects}
     allocations_by_usubjid: dict[str, Allocation] = {}
     for subj_id, allocation in allocations_by_subject_id.items():
@@ -263,9 +243,7 @@ async def run_derivation(
         AdamAdtte,
         TlfArtefact,
     ):
-        await session.execute(
-            delete(model).where(model.deployment_id == deployment_id)
-        )
+        await session.execute(delete(model).where(model.deployment_id == deployment_id))
 
     subjects_by_id = {s.id: s for s in subjects}
 
@@ -383,9 +361,7 @@ async def run_derivation(
     )
 
 
-async def list_datasets(
-    session: AsyncSession, deployment_id: str
-) -> dict[str, Any]:
+async def list_datasets(session: AsyncSession, deployment_id: str) -> dict[str, Any]:
     """Summary view: last-derived timestamp + counts per dataset.
 
     Returns None values when nothing has been derived yet.
@@ -411,15 +387,11 @@ async def list_datasets(
     return payload
 
 
-async def fetch_dm(
-    session: AsyncSession, deployment_id: str
-) -> list[SdtmDm]:
+async def fetch_dm(session: AsyncSession, deployment_id: str) -> list[SdtmDm]:
     return list(
         (
             await session.execute(
-                select(SdtmDm)
-                .where(SdtmDm.deployment_id == deployment_id)
-                .order_by(SdtmDm.USUBJID)
+                select(SdtmDm).where(SdtmDm.deployment_id == deployment_id).order_by(SdtmDm.USUBJID)
             )
         )
         .scalars()
@@ -427,9 +399,7 @@ async def fetch_dm(
     )
 
 
-async def fetch_ae(
-    session: AsyncSession, deployment_id: str
-) -> list[SdtmAe]:
+async def fetch_ae(session: AsyncSession, deployment_id: str) -> list[SdtmAe]:
     return list(
         (
             await session.execute(
@@ -443,9 +413,7 @@ async def fetch_ae(
     )
 
 
-async def fetch_vs(
-    session: AsyncSession, deployment_id: str
-) -> list[SdtmVs]:
+async def fetch_vs(session: AsyncSession, deployment_id: str) -> list[SdtmVs]:
     return list(
         (
             await session.execute(
@@ -459,9 +427,7 @@ async def fetch_vs(
     )
 
 
-async def fetch_adsl(
-    session: AsyncSession, deployment_id: str
-) -> list[AdamAdsl]:
+async def fetch_adsl(session: AsyncSession, deployment_id: str) -> list[AdamAdsl]:
     return list(
         (
             await session.execute(
@@ -475,9 +441,7 @@ async def fetch_adsl(
     )
 
 
-async def fetch_adtte(
-    session: AsyncSession, deployment_id: str
-) -> list[AdamAdtte]:
+async def fetch_adtte(session: AsyncSession, deployment_id: str) -> list[AdamAdtte]:
     return list(
         (
             await session.execute(
@@ -491,9 +455,7 @@ async def fetch_adtte(
     )
 
 
-async def fetch_tlfs(
-    session: AsyncSession, deployment_id: str
-) -> list[TlfArtefact]:
+async def fetch_tlfs(session: AsyncSession, deployment_id: str) -> list[TlfArtefact]:
     return list(
         (
             await session.execute(
@@ -507,9 +469,7 @@ async def fetch_tlfs(
     )
 
 
-async def fetch_lb(
-    session: AsyncSession, deployment_id: str
-) -> list[SdtmLb]:
+async def fetch_lb(session: AsyncSession, deployment_id: str) -> list[SdtmLb]:
     return list(
         (
             await session.execute(
@@ -523,9 +483,7 @@ async def fetch_lb(
     )
 
 
-async def fetch_ex(
-    session: AsyncSession, deployment_id: str
-) -> list[SdtmEx]:
+async def fetch_ex(session: AsyncSession, deployment_id: str) -> list[SdtmEx]:
     return list(
         (
             await session.execute(
@@ -539,9 +497,7 @@ async def fetch_ex(
     )
 
 
-async def fetch_cm(
-    session: AsyncSession, deployment_id: str
-) -> list[SdtmCm]:
+async def fetch_cm(session: AsyncSession, deployment_id: str) -> list[SdtmCm]:
     return list(
         (
             await session.execute(
@@ -555,9 +511,7 @@ async def fetch_cm(
     )
 
 
-async def fetch_mh(
-    session: AsyncSession, deployment_id: str
-) -> list[SdtmMh]:
+async def fetch_mh(session: AsyncSession, deployment_id: str) -> list[SdtmMh]:
     return list(
         (
             await session.execute(

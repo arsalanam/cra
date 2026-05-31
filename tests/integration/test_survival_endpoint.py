@@ -70,17 +70,13 @@ async def _seed_user(sub: str, email: str, *, role: str) -> None:
     from research_assistant.persistence.user_repository import UserRepository
 
     async with get_db_session() as session:
-        existing = (
-            await session.scalars(select(User).where(User.cognito_sub == sub))
-        ).first()
+        existing = (await session.scalars(select(User).where(User.cognito_sub == sub))).first()
         if existing is not None:
             return
         user = User(cognito_sub=sub, email=email)
         session.add(user)
         await session.flush()
-        await UserRepository(session).grant_role(
-            user.id, role, scope_type="global", scope_id=None
-        )
+        await UserRepository(session).grant_role(user.id, role, scope_type="global", scope_id=None)
 
 
 def _session_cookie(sub: str, email: str) -> str:
@@ -171,9 +167,7 @@ async def test_render_survival_refuses_409_before_derivation(
         _fake_sandbox_factory(),
     )
     dep_id = await _setup_deployment_with_data(client)
-    resp = await client.post(
-        f"/api/edc/deployments/{dep_id}/cdisc/survival/render"
-    )
+    resp = await client.post(f"/api/edc/deployments/{dep_id}/cdisc/survival/render")
     assert resp.status_code == 409
     assert "ADTTE" in resp.text
 
@@ -184,9 +178,7 @@ async def test_render_survival_refuses_503_when_sandbox_disabled(
     monkeypatch.setenv("SANDBOX_ENABLED", "false")
     dep_id = await _setup_deployment_with_data(client)
     await client.post(f"/api/edc/deployments/{dep_id}/cdisc/derive")
-    resp = await client.post(
-        f"/api/edc/deployments/{dep_id}/cdisc/survival/render"
-    )
+    resp = await client.post(f"/api/edc/deployments/{dep_id}/cdisc/survival/render")
     assert resp.status_code == 503
 
 
@@ -216,33 +208,35 @@ def _fake_sandbox_factory(
         files: dict[str, str] = {}
         if png_present:
             stored = "abc123def456_km-ttae.png"
-            (images_dir / stored).write_bytes(
-                b"\x89PNG\r\n\x1a\n" + b"fake-png-bytes"
-            )
+            (images_dir / stored).write_bytes(b"\x89PNG\r\n\x1a\n" + b"fake-png-bytes")
             files["km-ttae.png"] = f"/static/sandbox-images/{stored}"
-        summary = cox_summary if cox_summary is not None else {
-            "params": [
-                {
-                    "paramcd": "TTAE",
-                    "param": "Time to First AE",
-                    "fitted": True,
-                    "reference": "Drug A",
-                    "n_events": 10,
-                    "n_subjects": 20,
-                    "rows": [
-                        {
-                            "comparison": "Drug B vs Drug A",
-                            "hr": 1.42,
-                            "hr_95ci_lo": 0.85,
-                            "hr_95ci_hi": 2.39,
-                            "p_value": 0.18,
-                            "log_hr": 0.35,
-                            "se_log_hr": 0.27,
-                        }
-                    ],
-                }
-            ]
-        }
+        summary = (
+            cox_summary
+            if cox_summary is not None
+            else {
+                "params": [
+                    {
+                        "paramcd": "TTAE",
+                        "param": "Time to First AE",
+                        "fitted": True,
+                        "reference": "Drug A",
+                        "n_events": 10,
+                        "n_subjects": 20,
+                        "rows": [
+                            {
+                                "comparison": "Drug B vs Drug A",
+                                "hr": 1.42,
+                                "hr_95ci_lo": 0.85,
+                                "hr_95ci_hi": 2.39,
+                                "p_value": 0.18,
+                                "log_hr": 0.35,
+                                "se_log_hr": 0.27,
+                            }
+                        ],
+                    }
+                ]
+            }
+        )
         files["cox-summary.json"] = json.dumps(summary)
         return SandboxResult(stdout="ok", files=files)
 
@@ -261,9 +255,7 @@ async def test_render_survival_persists_km_and_cox_tlfs(
     assert derive_resp.status_code == 200, derive_resp.text
     assert derive_resp.json()["counts"]["adtte"] >= 1
 
-    resp = await client.post(
-        f"/api/edc/deployments/{dep_id}/cdisc/survival/render"
-    )
+    resp = await client.post(f"/api/edc/deployments/{dep_id}/cdisc/survival/render")
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["tlfs_added"] == 2

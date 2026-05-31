@@ -176,8 +176,7 @@ def register_reminder_job() -> None:
         minutes = int(raw)
     except ValueError:
         logger.warning(
-            "Scheduler: REMINDER_INTERVAL_MINUTES=%r unparseable, "
-            "falling back to %d",
+            "Scheduler: REMINDER_INTERVAL_MINUTES=%r unparseable, falling back to %d",
             raw,
             _REMINDER_DEFAULT_MINUTES,
         )

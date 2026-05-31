@@ -77,9 +77,7 @@ def assemble_report_data(
             if kind == "ipd_main_results":
                 main_results = IpdMainResults.model_validate_json(msg.final_answer)
             elif kind == "ipd_subgroup_results":
-                subgroup_results.append(
-                    IpdSubgroupResults.model_validate_json(msg.final_answer)
-                )
+                subgroup_results.append(IpdSubgroupResults.model_validate_json(msg.final_answer))
             elif kind == "ipd_document":
                 document = IpdDocument.model_validate_json(msg.final_answer)
         except ValidationError:
@@ -188,9 +186,7 @@ def _main_pdf(results: IpdMainResults, styles: dict[str, ParagraphStyle]) -> Tab
 
 def _per_trial_pdf(results: IpdMainResults, styles: dict[str, ParagraphStyle]) -> Table:
     headers = ["Trial", "N", "Effect (95% CI)", "SE"]
-    body: list[list[Any]] = [
-        [Paragraph(f"<b>{h}</b>", styles["Cell"]) for h in headers]
-    ]
+    body: list[list[Any]] = [[Paragraph(f"<b>{h}</b>", styles["Cell"]) for h in headers]]
     for t in results.per_trial:
         body.append(
             [
@@ -224,13 +220,9 @@ def _per_trial_pdf(results: IpdMainResults, styles: dict[str, ParagraphStyle]) -
     return tbl
 
 
-def _subgroup_pdf(
-    sg: IpdSubgroupResults, styles: dict[str, ParagraphStyle]
-) -> Table:
+def _subgroup_pdf(sg: IpdSubgroupResults, styles: dict[str, ParagraphStyle]) -> Table:
     headers = ["Level", "N trials", "N subjects", "Effect (95% CI)"]
-    body: list[list[Any]] = [
-        [Paragraph(f"<b>{h}</b>", styles["Cell"]) for h in headers]
-    ]
+    body: list[list[Any]] = [[Paragraph(f"<b>{h}</b>", styles["Cell"]) for h in headers]]
     for lvl in sg.levels:
         if lvl.effect is not None:
             eff = _fmt_ci(lvl.effect, lvl.ci_lower, lvl.ci_upper)
@@ -396,9 +388,7 @@ def build_docx(data: IpdReportData, images_dir: Path | None = None) -> bytes:
     docx = Document()
     docx.core_properties.title = data.title
     docx.add_heading(data.title, level=0)
-    runs = docx.add_paragraph(
-        f"Generated {data.generated_at.strftime('%Y-%m-%d %H:%M UTC')}"
-    ).runs
+    runs = docx.add_paragraph(f"Generated {data.generated_at.strftime('%Y-%m-%d %H:%M UTC')}").runs
     if runs:
         runs[0].font.color.rgb = DOCX_MUTED
 
@@ -443,9 +433,7 @@ def build_docx(data: IpdReportData, images_dir: Path | None = None) -> bytes:
         t.cell(row_idx, 3).text = str(pe.n_trials)
         t.cell(row_idx, 4).text = str(pe.n_subjects)
         t.cell(row_idx, 5).text = _fmt_i2(pe.i_squared)
-        t.cell(row_idx, 6).text = (
-            f"{pe.tau_squared:.3f}" if pe.tau_squared is not None else "—"
-        )
+        t.cell(row_idx, 6).text = f"{pe.tau_squared:.3f}" if pe.tau_squared is not None else "—"
         t.cell(row_idx, 7).text = pe.method
     if main.discrepancy_note:
         p3 = docx.add_paragraph()
@@ -467,9 +455,7 @@ def build_docx(data: IpdReportData, images_dir: Path | None = None) -> bytes:
         tt.cell(i, 3).text = f"{t_row.se:.3f}"
 
     for sg in data.subgroup_results:
-        docx.add_heading(
-            f"Subgroup × treatment — {sg.subgroup_variable}", level=1
-        )
+        docx.add_heading(f"Subgroup × treatment — {sg.subgroup_variable}", level=1)
         if sg.interaction_p_value is not None:
             p4 = docx.add_paragraph()
             p4.add_run("Interaction p-value: ").bold = True

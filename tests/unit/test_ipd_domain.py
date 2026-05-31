@@ -129,12 +129,20 @@ def _main_results() -> IpdMainResults:
         ),
         per_trial=[
             IpdPerTrialEffect(
-                trial_id="A", n_subjects=500, effect=0.7,
-                ci_lower=0.5, ci_upper=0.95, se=0.15,
+                trial_id="A",
+                n_subjects=500,
+                effect=0.7,
+                ci_lower=0.5,
+                ci_upper=0.95,
+                se=0.15,
             ),
             IpdPerTrialEffect(
-                trial_id="B", n_subjects=700, effect=0.8,
-                ci_lower=0.6, ci_upper=1.05, se=0.13,
+                trial_id="B",
+                n_subjects=700,
+                effect=0.8,
+                ci_lower=0.6,
+                ci_upper=1.05,
+                se=0.13,
             ),
         ],
         discrepancy_note="One-stage and two-stage agree closely.",
@@ -149,8 +157,12 @@ def test_main_results_requires_at_least_two_per_trial_rows() -> None:
             two_stage=_pooled(),
             per_trial=[
                 IpdPerTrialEffect(
-                    trial_id="A", n_subjects=500, effect=0.7,
-                    ci_lower=0.5, ci_upper=0.95, se=0.15,
+                    trial_id="A",
+                    n_subjects=500,
+                    effect=0.7,
+                    ci_lower=0.5,
+                    ci_upper=0.95,
+                    se=0.15,
                 ),
             ],
             discrepancy_note="x",
@@ -170,8 +182,12 @@ def test_subgroup_requires_at_least_two_levels() -> None:
             subgroup_variable="sex",
             levels=[
                 IpdSubgroupLevel(
-                    level_label="F", n_trials=4, n_subjects=2000, effect=0.7,
-                    ci_lower=0.5, ci_upper=0.95,
+                    level_label="F",
+                    n_trials=4,
+                    n_subjects=2000,
+                    effect=0.7,
+                    ci_lower=0.5,
+                    ci_upper=0.95,
                 ),
             ],
         )
@@ -194,11 +210,17 @@ def test_subgroup_level_with_skip_reason_round_trips() -> None:
         subgroup_variable="region",
         levels=[
             IpdSubgroupLevel(
-                level_label="EU", n_trials=3, n_subjects=1500, effect=0.7,
-                ci_lower=0.5, ci_upper=0.95,
+                level_label="EU",
+                n_trials=3,
+                n_subjects=1500,
+                effect=0.7,
+                ci_lower=0.5,
+                ci_upper=0.95,
             ),
             IpdSubgroupLevel(
-                level_label="US", n_trials=1, n_subjects=200,
+                level_label="US",
+                n_trials=1,
+                n_subjects=200,
                 skip_reason="too few events",
             ),
         ],

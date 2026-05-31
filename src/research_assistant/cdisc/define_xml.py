@@ -312,8 +312,9 @@ def _add_item_def(parent: ET.Element, dataset: DatasetMeta, col: ColumnMeta) -> 
         ET.SubElement(item, "MethodOID", attrib={"MethodOID": col.method_oid})
 
 
-def _add_codelist(parent: ET.Element, oid: str, name: str, datatype: str,
-                  values: list[tuple[str, str]]) -> None:
+def _add_codelist(
+    parent: ET.Element, oid: str, name: str, datatype: str, values: list[tuple[str, str]]
+) -> None:
     cl = ET.SubElement(
         parent,
         "CodeList",
@@ -323,16 +324,13 @@ def _add_codelist(parent: ET.Element, oid: str, name: str, datatype: str,
     trans = ET.SubElement(desc, "TranslatedText", attrib={"xml:lang": "en"})
     trans.text = name
     for coded, decoded in values:
-        ci = ET.SubElement(
-            cl, "CodeListItem", attrib={"CodedValue": coded}
-        )
+        ci = ET.SubElement(cl, "CodeListItem", attrib={"CodedValue": coded})
         dec = ET.SubElement(ci, "Decode")
         t = ET.SubElement(dec, "TranslatedText", attrib={"xml:lang": "en"})
         t.text = decoded
 
 
-def _add_method_def(parent: ET.Element, oid: str, name: str, mtype: str,
-                    description: str) -> None:
+def _add_method_def(parent: ET.Element, oid: str, name: str, mtype: str, description: str) -> None:
     md = ET.SubElement(
         parent,
         "MethodDef",
@@ -370,9 +368,7 @@ def build_define_xml(
         },
     )
 
-    study = ET.SubElement(
-        odm, "Study", attrib={"OID": f"STUDY.{study_id}"}
-    )
+    study = ET.SubElement(odm, "Study", attrib={"OID": f"STUDY.{study_id}"})
     _add_global_variables(study, study_id, study_name or study_id)
 
     mdv = ET.SubElement(

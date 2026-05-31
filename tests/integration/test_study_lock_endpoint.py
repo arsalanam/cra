@@ -66,17 +66,13 @@ async def _seed_user(sub: str, email: str, *, role: str) -> None:
     from research_assistant.persistence.user_repository import UserRepository
 
     async with get_db_session() as session:
-        existing = (
-            await session.scalars(select(User).where(User.cognito_sub == sub))
-        ).first()
+        existing = (await session.scalars(select(User).where(User.cognito_sub == sub))).first()
         if existing is not None:
             return
         user = User(cognito_sub=sub, email=email)
         session.add(user)
         await session.flush()
-        await UserRepository(session).grant_role(
-            user.id, role, scope_type="global", scope_id=None
-        )
+        await UserRepository(session).grant_role(user.id, role, scope_type="global", scope_id=None)
 
 
 def _session_cookie(sub: str, email: str) -> str:
@@ -118,9 +114,7 @@ async def _setup_deployment(client: AsyncClient) -> dict[str, str]:
     assert study.status_code == 201, study.text
     study_id = study.json()["id"]
 
-    form = await client.post(
-        f"/api/ecrf/studies/{study_id}/forms", json=_form_body()
-    )
+    form = await client.post(f"/api/ecrf/studies/{study_id}/forms", json=_form_body())
     assert form.status_code == 201, form.text
     pub = await client.post(f"/api/ecrf/forms/{form.json()['id']}/publish")
     assert pub.status_code == 200, pub.text
@@ -132,9 +126,7 @@ async def _setup_deployment(client: AsyncClient) -> dict[str, str]:
     assert dep.status_code == 201, dep.text
     dep_id = dep.json()["id"]
 
-    site = await client.post(
-        f"/api/edc/deployments/{dep_id}/sites", json={"name": "Site A"}
-    )
+    site = await client.post(f"/api/edc/deployments/{dep_id}/sites", json={"name": "Site A"})
     assert site.status_code == 201, site.text
 
     subj = await client.post(
@@ -200,9 +192,7 @@ async def test_locked_study_refuses_submit_data(client: AsyncClient) -> None:
     # Lock as DM.
     await _seed_user("sub-dm", "dm@example.com", role="data_manager")
     _login(client, "sub-dm", "dm@example.com")
-    await client.post(
-        f"/api/edc/deployments/{ids['dep']}/lock", json={"reason": "lock"}
-    )
+    await client.post(f"/api/edc/deployments/{ids['dep']}/lock", json={"reason": "lock"})
 
     # Try to submit as admin (who otherwise has data.enter): should 409.
     _login(client, "sub-admin", "admin@example.com")
@@ -224,9 +214,7 @@ async def test_locked_study_refuses_signing(client: AsyncClient) -> None:
     # Lock.
     await _seed_user("sub-dm", "dm@example.com", role="data_manager")
     _login(client, "sub-dm", "dm@example.com")
-    await client.post(
-        f"/api/edc/deployments/{ids['dep']}/lock", json={"reason": "lock"}
-    )
+    await client.post(f"/api/edc/deployments/{ids['dep']}/lock", json={"reason": "lock"})
 
     # Try to sign as admin.
     _login(client, "sub-admin", "admin@example.com")
@@ -246,9 +234,7 @@ async def test_locked_study_refuses_sdv_verify(client: AsyncClient) -> None:
     # Lock.
     await _seed_user("sub-dm", "dm@example.com", role="data_manager")
     _login(client, "sub-dm", "dm@example.com")
-    await client.post(
-        f"/api/edc/deployments/{ids['dep']}/lock", json={"reason": "lock"}
-    )
+    await client.post(f"/api/edc/deployments/{ids['dep']}/lock", json={"reason": "lock"})
 
     # Monitor tries SDV after the lock.
     await _seed_user("sub-m", "m@example.com", role="monitor")
@@ -292,9 +278,7 @@ async def test_locked_study_refuses_ae_record(client: AsyncClient) -> None:
     # NEW AE record must be refused.
     await _seed_user("sub-c", "c@example.com", role="coordinator")
     _login(client, "sub-c", "c@example.com")
-    pre_ae = await client.post(
-        f"/api/edc/subjects/{ids['subj']}/adverse-events", json=_ae_body()
-    )
+    pre_ae = await client.post(f"/api/edc/subjects/{ids['subj']}/adverse-events", json=_ae_body())
     assert pre_ae.status_code == 201, pre_ae.text
 
     await _lock_as_dm(client, ids["dep"])
@@ -312,9 +296,7 @@ async def test_locked_study_refuses_ae_classify(client: AsyncClient) -> None:
     await _seed_user("sub-c", "c@example.com", role="coordinator")
     _login(client, "sub-c", "c@example.com")
     ae = (
-        await client.post(
-            f"/api/edc/subjects/{ids['subj']}/adverse-events", json=_ae_body()
-        )
+        await client.post(f"/api/edc/subjects/{ids['subj']}/adverse-events", json=_ae_body())
     ).json()
 
     await _lock_as_dm(client, ids["dep"])
@@ -322,9 +304,7 @@ async def test_locked_study_refuses_ae_classify(client: AsyncClient) -> None:
     # PI tries to reclassify after the lock.
     await _seed_user("sub-pi", "pi@example.com", role="principal_investigator")
     _login(client, "sub-pi", "pi@example.com")
-    resp = await client.patch(
-        f"/api/edc/ae/{ae['id']}", json={"is_serious": True}
-    )
+    resp = await client.patch(f"/api/edc/ae/{ae['id']}", json={"is_serious": True})
     assert resp.status_code == 409
 
 
@@ -369,9 +349,7 @@ async def test_locked_study_refuses_query_respond_and_close(
     # PI tries to respond after the lock.
     await _seed_user("sub-pi", "pi@example.com", role="principal_investigator")
     _login(client, "sub-pi", "pi@example.com")
-    respond = await client.post(
-        f"/api/edc/queries/{q['id']}/respond", json={"text": "Confirmed"}
-    )
+    respond = await client.post(f"/api/edc/queries/{q['id']}/respond", json={"text": "Confirmed"})
     assert respond.status_code == 409
 
     # DM tries to close after the lock.

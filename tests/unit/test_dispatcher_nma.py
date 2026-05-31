@@ -60,9 +60,7 @@ def test_three_plus_arm_compare_routes_to_nma() -> None:
 
 def test_pairwise_meta_analysis_still_routes_to_meta_analysis() -> None:
     """A normal pairwise meta-analysis ask should NOT route to NMA."""
-    assert classify(
-        "Does aspirin reduce stroke vs placebo", None
-    ) == "meta_analysis"
+    assert classify("Does aspirin reduce stroke vs placebo", None) == "meta_analysis"
 
 
 def test_definitional_question_about_nma_routes_to_general_qa() -> None:

@@ -61,9 +61,7 @@ def _two_by_two(
     }
 
 
-def _risk_difference_ci(
-    e_t: int, n_t: int, e_c: int, n_c: int
-) -> tuple[float, float, float]:
+def _risk_difference_ci(e_t: int, n_t: int, e_c: int, n_c: int) -> tuple[float, float, float]:
     """Wald CI for the risk difference (Newcombe 1998 method 10)."""
     if n_t == 0 or n_c == 0:
         return (float("nan"), float("nan"), float("nan"))

@@ -98,12 +98,9 @@ def _interaction_test(
     if dummies.empty:
         return None
     interactions = pd.DataFrame(
-        {f"SGxTRT_{c.split('SG_', 1)[1]}": sub["TRT_NONREF"] * dummies[c]
-         for c in dummies.columns}
+        {f"SGxTRT_{c.split('SG_', 1)[1]}": sub["TRT_NONREF"] * dummies[c] for c in dummies.columns}
     )
-    exog = pd.concat(
-        [sub[["TRT_NONREF"]].astype(float), dummies, interactions], axis=1
-    )
+    exog = pd.concat([sub[["TRT_NONREF"]].astype(float), dummies, interactions], axis=1)
     try:
         from statsmodels.duration.hazard_regression import PHReg
 
@@ -118,8 +115,7 @@ def _interaction_test(
         # gives the headline signal).
         names = list(exog.columns)
         pvals = [
-            float(fit.pvalues[i]) for i, name in enumerate(names)
-            if name.startswith("SGxTRT_")
+            float(fit.pvalues[i]) for i, name in enumerate(names) if name.startswith("SGxTRT_")
         ]
         if not pvals:
             return None

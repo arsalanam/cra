@@ -107,9 +107,7 @@ def _continuous_contrast(
         return diff, var
     if effect_measure == "SMD":
         # Hedges' g
-        pooled_sd = math.sqrt(
-            ((n_a - 1) * sd_a**2 + (n_b - 1) * sd_b**2) / max(n_a + n_b - 2, 1)
-        )
+        pooled_sd = math.sqrt(((n_a - 1) * sd_a**2 + (n_b - 1) * sd_b**2) / max(n_a + n_b - 2, 1))
         if pooled_sd == 0:
             return None
         g = (m_a - m_b) / pooled_sd
@@ -140,9 +138,7 @@ def main() -> None:
             json.dumps(
                 {
                     "fitted": False,
-                    "skip_reason": (
-                        "NMA requires ≥3 interventions and ≥2 studies."
-                    ),
+                    "skip_reason": ("NMA requires ≥3 interventions and ≥2 studies."),
                     "n_interventions": len(interventions),
                     "n_studies": len(studies),
                 },
@@ -200,9 +196,9 @@ def main() -> None:
             edge_counts[pair] = edge_counts.get(pair, 0) + 1
             node_studies[baseline_name] = node_studies.get(baseline_name, 0) + 1  # type: ignore[arg-type]
             node_studies[arm_name] = node_studies.get(arm_name, 0) + 1  # type: ignore[arg-type]
-            node_participants[baseline_name] = node_participants.get(
-                baseline_name, 0
-            ) + int(baseline.get("n") or 0)
+            node_participants[baseline_name] = node_participants.get(baseline_name, 0) + int(
+                baseline.get("n") or 0
+            )
             node_participants[arm_name] = node_participants.get(arm_name, 0) + int(
                 arm.get("n") or 0
             )
@@ -313,9 +309,7 @@ def main() -> None:
     # the host should reverse the SUCRA if higher-is-better was the convention.
     ranks = np.argsort(np.argsort(-draws, axis=1), axis=1) + 1  # rank 1 = best
     mean_ranks = ranks.mean(axis=0)
-    sucra_values = (
-        (len(interventions) - mean_ranks) / max(len(interventions) - 1, 1)
-    ).tolist()
+    sucra_values = ((len(interventions) - mean_ranks) / max(len(interventions) - 1, 1)).tolist()
     sucra_table = [
         {
             "intervention": name,

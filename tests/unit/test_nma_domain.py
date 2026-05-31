@@ -163,9 +163,15 @@ def test_results_round_trip_through_json() -> None:
                 NetworkNode(intervention="Drug C", n_studies=2, n_participants=600),
             ],
             edges=[
-                NetworkEdge(source_intervention="Placebo", target_intervention="Drug A", n_trials=2),
-                NetworkEdge(source_intervention="Placebo", target_intervention="Drug B", n_trials=2),
-                NetworkEdge(source_intervention="Placebo", target_intervention="Drug C", n_trials=1),
+                NetworkEdge(
+                    source_intervention="Placebo", target_intervention="Drug A", n_trials=2
+                ),
+                NetworkEdge(
+                    source_intervention="Placebo", target_intervention="Drug B", n_trials=2
+                ),
+                NetworkEdge(
+                    source_intervention="Placebo", target_intervention="Drug C", n_trials=1
+                ),
                 NetworkEdge(source_intervention="Drug A", target_intervention="Drug B", n_trials=1),
             ],
         ),

@@ -118,8 +118,18 @@ def _now_v5() -> str:
     """SAS v5 datetime format: DDMMMYY:HH:MM:SS (16 chars)."""
     now = datetime.datetime.now(datetime.UTC)
     months = [
-        "JAN", "FEB", "MAR", "APR", "MAY", "JUN",
-        "JUL", "AUG", "SEP", "OCT", "NOV", "DEC",
+        "JAN",
+        "FEB",
+        "MAR",
+        "APR",
+        "MAY",
+        "JUN",
+        "JUL",
+        "AUG",
+        "SEP",
+        "OCT",
+        "NOV",
+        "DEC",
     ]
     date_part = f"{now.day:02d}{months[now.month - 1]}{now.year % 100:02d}"
     return f"{date_part}:{now.hour:02d}:{now.minute:02d}:{now.second:02d}"
@@ -145,10 +155,7 @@ def _sas_metadata(timestamp: str) -> bytes:
       • blank      24 chars
       • created    16 chars (DDMMMYY:HH:MM:SS)
     """
-    parts = (
-        b"SAS     " + b"SAS     " + b"SASLIB  " + b"9.4     "
-        + b"PYTHON  " + b" " * 24
-    )
+    parts = b"SAS     " + b"SAS     " + b"SASLIB  " + b"9.4     " + b"PYTHON  " + b" " * 24
     return parts + timestamp.encode("ascii")
 
 
@@ -189,13 +196,16 @@ def _descriptor_metadata(dataset_name: str, dataset_label: str, timestamp: str) 
     name_field = _pad_ascii(dataset_name.upper(), 8)
     label_field = _pad_ascii(dataset_label, 40)
     record_a = (
-        b"SAS     " + b"SAS     " + name_field + b"SASDATA "
-        + b"9.4     " + b"PYTHON  " + b" " * 16 + timestamp.encode("ascii")
+        b"SAS     "
+        + b"SAS     "
+        + name_field
+        + b"SASDATA "
+        + b"9.4     "
+        + b"PYTHON  "
+        + b" " * 16
+        + timestamp.encode("ascii")
     )
-    record_b = (
-        timestamp.encode("ascii") + b" " * 16
-        + label_field + b" " * 8
-    )
+    record_b = timestamp.encode("ascii") + b" " * 16 + label_field + b" " * 8
     return record_a + record_b
 
 
@@ -271,21 +281,15 @@ def _validate_columns(columns: Sequence[ColumnMeta]) -> None:
         if not col.name:
             raise XptWriterError("Column has empty name.")
         if len(col.name) > 8:
-            raise XptWriterError(
-                f"Column {col.name!r} exceeds the 8-char limit of SAS v5 XPT."
-            )
+            raise XptWriterError(f"Column {col.name!r} exceeds the 8-char limit of SAS v5 XPT.")
         if not col.name.replace("_", "").isalnum():
-            raise XptWriterError(
-                f"Column {col.name!r} contains non-alphanumeric characters."
-            )
+            raise XptWriterError(f"Column {col.name!r} contains non-alphanumeric characters.")
         if col.type not in ("CHAR", "NUM"):
             raise XptWriterError(f"Column {col.name!r} has unsupported type {col.type!r}.")
         if col.type == "CHAR" and col.length < 1:
             raise XptWriterError(f"Column {col.name!r} declares CHAR length < 1.")
         if col.length > 200:
-            raise XptWriterError(
-                f"Column {col.name!r} length {col.length} > 200 — v5 limit."
-            )
+            raise XptWriterError(f"Column {col.name!r} length {col.length} > 200 — v5 limit.")
 
 
 def _row_value(row: Any, name: str) -> Any:

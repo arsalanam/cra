@@ -31,12 +31,9 @@ def load_script(kind: AnalysisKind) -> str:
     """
     if kind not in AVAILABLE_ANALYSES:
         raise FileNotFoundError(
-            f"Unknown trial-stats analysis {kind!r}. Available: "
-            f"{', '.join(AVAILABLE_ANALYSES)}."
+            f"Unknown trial-stats analysis {kind!r}. Available: {', '.join(AVAILABLE_ANALYSES)}."
         )
-    script_path = resources.files(__package__).joinpath(
-        "sandbox_scripts", f"{kind}.py"
-    )
+    script_path = resources.files(__package__).joinpath("sandbox_scripts", f"{kind}.py")
     return script_path.read_text(encoding="utf-8")
 
 

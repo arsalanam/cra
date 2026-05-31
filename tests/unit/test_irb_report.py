@@ -61,8 +61,15 @@ def _synopsis() -> ProtocolSynopsis:
 
 def _icf(reading_actual: float = 7.5) -> InformedConsentForm:
     section_ids = [
-        "purpose", "procedures", "risks", "benefits", "alternatives",
-        "confidentiality", "injury_and_compensation", "contacts", "voluntariness",
+        "purpose",
+        "procedures",
+        "risks",
+        "benefits",
+        "alternatives",
+        "confidentiality",
+        "injury_and_compensation",
+        "contacts",
+        "voluntariness",
     ]
     return InformedConsentForm(
         title="Consent to participate",

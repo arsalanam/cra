@@ -121,8 +121,8 @@ def test_namestr_carries_per_column_position() -> None:
     pos_usubjid = struct.unpack(">i", buf[namestr_start + 224 : namestr_start + 228])[0]
     pos_age = struct.unpack(">i", buf[namestr_start + 364 : namestr_start + 368])[0]
     assert pos_studyid == 0
-    assert pos_usubjid == 8   # after CHAR(8)
-    assert pos_age == 20      # after CHAR(8) + CHAR(12)
+    assert pos_usubjid == 8  # after CHAR(8)
+    assert pos_age == 20  # after CHAR(8) + CHAR(12)
 
 
 # ── write_xpt — observation records ─────────────────────────────────────

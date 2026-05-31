@@ -190,8 +190,7 @@ class CdiscMapper(Protocol):
         subjects: Iterable[Subject],
         item_data_by_subject: dict[str, list[ItemData]],
         config: ItemMappingConfig,
-    ) -> list[SdtmDm]:
-        ...
+    ) -> list[SdtmDm]: ...
 
     def derive_ae(
         self,
@@ -200,8 +199,7 @@ class CdiscMapper(Protocol):
         study_id: str,
         adverse_events: Iterable[AdverseEvent],
         subjects_by_id: dict[str, Subject] | None = None,
-    ) -> list[SdtmAe]:
-        ...
+    ) -> list[SdtmAe]: ...
 
     def derive_vs(
         self,
@@ -211,8 +209,7 @@ class CdiscMapper(Protocol):
         subjects: Iterable[Subject],
         item_data_by_subject: dict[str, list[ItemData]],
         config: ItemMappingConfig,
-    ) -> list[SdtmVs]:
-        ...
+    ) -> list[SdtmVs]: ...
 
     def derive_lb(
         self,
@@ -222,8 +219,7 @@ class CdiscMapper(Protocol):
         subjects_by_id: dict[str, Subject],
         form_instances: Iterable[FormInstanceWithItems],
         config: ItemMappingConfig,
-    ) -> list[SdtmLb]:
-        ...
+    ) -> list[SdtmLb]: ...
 
     def derive_ex(
         self,
@@ -233,8 +229,7 @@ class CdiscMapper(Protocol):
         subjects_by_id: dict[str, Subject],
         form_instances: Iterable[FormInstanceWithItems],
         config: ItemMappingConfig,
-    ) -> list[SdtmEx]:
-        ...
+    ) -> list[SdtmEx]: ...
 
     def derive_cm(
         self,
@@ -244,8 +239,7 @@ class CdiscMapper(Protocol):
         subjects_by_id: dict[str, Subject],
         form_instances: Iterable[FormInstanceWithItems],
         config: ItemMappingConfig,
-    ) -> list[SdtmCm]:
-        ...
+    ) -> list[SdtmCm]: ...
 
     def derive_mh(
         self,
@@ -255,8 +249,7 @@ class CdiscMapper(Protocol):
         subjects_by_id: dict[str, Subject],
         form_instances: Iterable[FormInstanceWithItems],
         config: ItemMappingConfig,
-    ) -> list[SdtmMh]:
-        ...
+    ) -> list[SdtmMh]: ...
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────

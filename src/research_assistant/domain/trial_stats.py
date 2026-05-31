@@ -208,13 +208,9 @@ class TimeToEventResult(BaseModel):
             )
         if self.hazard_ratio is not None:
             if self.hr_ci_lower is None or self.hr_ci_upper is None:
-                raise ValueError(
-                    "A hazard_ratio must be accompanied by 95% CI bounds."
-                )
+                raise ValueError("A hazard_ratio must be accompanied by 95% CI bounds.")
             if self.hr_ci_lower > self.hr_ci_upper:
-                raise ValueError(
-                    "hr_ci_lower must be ≤ hr_ci_upper."
-                )
+                raise ValueError("hr_ci_lower must be ≤ hr_ci_upper.")
         return self
 
 
@@ -257,9 +253,7 @@ class ContinuousResult(BaseModel):
         if self.lsmean_difference is not None and (
             self.diff_ci_lower is None or self.diff_ci_upper is None
         ):
-            raise ValueError(
-                "An LSMean difference must carry 95% CI bounds."
-            )
+            raise ValueError("An LSMean difference must carry 95% CI bounds.")
         return self
 
 

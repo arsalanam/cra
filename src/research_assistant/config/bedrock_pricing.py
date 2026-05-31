@@ -127,9 +127,7 @@ def lookup(model_id: str | None) -> ModelPricing:
     return _DEFAULT_PRICING
 
 
-def compute_message_cost(
-    *, input_tokens: int, output_tokens: int, model_id: str | None
-) -> float:
+def compute_message_cost(*, input_tokens: int, output_tokens: int, model_id: str | None) -> float:
     """Return USD cost for one message turn."""
     pricing = lookup(model_id)
     return (

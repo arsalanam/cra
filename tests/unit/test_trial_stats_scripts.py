@@ -40,9 +40,7 @@ def test_each_script_declares_sandbox_input_and_output_paths(kind: str) -> None:
     assert "/home/sandbox/input/data.json" in src, (
         f"{kind} must read from the canonical sandbox input path"
     )
-    assert "/home/sandbox/output" in src, (
-        f"{kind} must write to the canonical sandbox output dir"
-    )
+    assert "/home/sandbox/output" in src, f"{kind} must write to the canonical sandbox output dir"
 
 
 def test_load_unknown_kind_raises() -> None:

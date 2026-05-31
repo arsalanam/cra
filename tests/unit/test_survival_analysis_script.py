@@ -86,9 +86,7 @@ def test_script_produces_km_png_and_cox_json(
     assert row["hr_95ci_lo"] < row["hr"] < row["hr_95ci_hi"]
 
 
-def test_script_skips_cox_on_single_arm(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_script_skips_cox_on_single_arm(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     inp = tmp_path / "input"
     out = tmp_path / "output"
     inp.mkdir()
@@ -104,9 +102,7 @@ def test_script_skips_cox_on_single_arm(
         }
         for i in range(10)
     ]
-    (inp / "data.json").write_text(
-        json.dumps({"adtte": rows, "adsl": []}), encoding="utf-8"
-    )
+    (inp / "data.json").write_text(json.dumps({"adtte": rows, "adsl": []}), encoding="utf-8")
     monkeypatch.setattr(survival_analysis, "_INPUT", inp / "data.json")
     monkeypatch.setattr(survival_analysis, "_OUTPUT_DIR", out)
 
@@ -145,9 +141,7 @@ def test_script_skips_cox_when_too_few_events(
         }
         for i in range(5)
     ]
-    (inp / "data.json").write_text(
-        json.dumps({"adtte": rows, "adsl": []}), encoding="utf-8"
-    )
+    (inp / "data.json").write_text(json.dumps({"adtte": rows, "adsl": []}), encoding="utf-8")
     monkeypatch.setattr(survival_analysis, "_INPUT", inp / "data.json")
     monkeypatch.setattr(survival_analysis, "_OUTPUT_DIR", out)
 
@@ -165,9 +159,7 @@ def test_script_empty_input_emits_note_not_error(
     out = tmp_path / "output"
     inp.mkdir()
     out.mkdir()
-    (inp / "data.json").write_text(
-        json.dumps({"adtte": [], "adsl": []}), encoding="utf-8"
-    )
+    (inp / "data.json").write_text(json.dumps({"adtte": [], "adsl": []}), encoding="utf-8")
     monkeypatch.setattr(survival_analysis, "_INPUT", inp / "data.json")
     monkeypatch.setattr(survival_analysis, "_OUTPUT_DIR", out)
 
