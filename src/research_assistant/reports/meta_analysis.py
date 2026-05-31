@@ -402,6 +402,34 @@ def build_pdf(data: MetaAnalysisReportData, images_dir: Path) -> bytes:
                     styles["Body"],
                 )
             )
+        # Funnel plot + Egger's interpretation (optional; produced by
+        # run_visualisation when ≥3 studies contributed to the outcome).
+        funnel_path = _resolve_image_path(r.funnel_plot_image, images_dir)
+        if funnel_path is not None:
+            try:
+                from PIL import Image as PILImage
+
+                with PILImage.open(funnel_path) as im:
+                    iw, ih = im.size
+                max_w = 5.0 * inch
+                draw_w = max_w
+                draw_h = max_w * (ih / iw) if iw else 3.5 * inch
+                outcome_block.append(
+                    Paragraph(
+                        "<b>Funnel plot (publication bias):</b>",
+                        styles["Body"],
+                    )
+                )
+                outcome_block.append(RLImage(str(funnel_path), width=draw_w, height=draw_h))
+            except Exception as exc:  # pragma: no cover
+                logger.warning("Failed to embed funnel plot %s: %s", funnel_path, exc)
+        if r.funnel_interpretation:
+            outcome_block.append(
+                Paragraph(
+                    f"<i>{r.funnel_interpretation}</i>",
+                    styles["Body"],
+                )
+            )
         outcome_block.append(Paragraph(r.interpretation, styles["Quote"]))
         story.append(KeepTogether(outcome_block))
         story.append(Spacer(1, 0.08 * inch))
@@ -533,6 +561,19 @@ def build_docx(data: MetaAnalysisReportData, images_dir: Path) -> bytes:
         elif r.forest_plot_image:
             note = doc.add_paragraph("Forest plot file unavailable on this server.")
             for run in note.runs:
+                run.italic = True
+        # Funnel + Egger's
+        funnel_path = _resolve_image_path(r.funnel_plot_image, images_dir)
+        if funnel_path is not None:
+            try:
+                p = doc.add_paragraph()
+                p.add_run("Funnel plot (publication bias):").bold = True
+                doc.add_picture(str(funnel_path), width=Inches(5.0))
+            except Exception as exc:  # pragma: no cover
+                logger.warning("Failed to embed funnel plot %s: %s", funnel_path, exc)
+        if r.funnel_interpretation:
+            p = doc.add_paragraph(r.funnel_interpretation)
+            for run in p.runs:
                 run.italic = True
         interp = doc.add_paragraph(r.interpretation)
         for run in interp.runs:

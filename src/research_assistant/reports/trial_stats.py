@@ -51,9 +51,11 @@ from research_assistant.domain.trial_stats import (
     BinaryResult,
     ContinuousResult,
     SubgroupAnalysis,
+    SwimmerResult,
     TimeToEventResult,
     TrialStatsDocument,
     TrialStatsIntake,
+    WaterfallResult,
 )
 from research_assistant.persistence.models import Message
 from research_assistant.reports._shared_styles import (
@@ -78,6 +80,8 @@ class TrialStatsReportData:
     continuous: list[ContinuousResult]
     binary: list[BinaryResult]
     subgroup: list[SubgroupAnalysis]
+    waterfall: list[WaterfallResult]
+    swimmer: list[SwimmerResult]
     document: TrialStatsDocument | None
 
 
@@ -99,6 +103,8 @@ def assemble_report_data(
     continuous: list[ContinuousResult] = []
     binary: list[BinaryResult] = []
     subgroup: list[SubgroupAnalysis] = []
+    waterfall: list[WaterfallResult] = []
+    swimmer: list[SwimmerResult] = []
     document: TrialStatsDocument | None = None
 
     for msg in messages:
@@ -144,6 +150,14 @@ def assemble_report_data(
 
                 sg = SubgroupResultsTurn.model_validate_json(msg.final_answer)
                 subgroup = list(sg.analyses)
+            elif kind == "subject_visualisations":
+                from research_assistant.domain.trial_stats import (
+                    SubjectVisualizationsTurn,
+                )
+
+                viz = SubjectVisualizationsTurn.model_validate_json(msg.final_answer)
+                waterfall = list(viz.waterfall)
+                swimmer = list(viz.swimmer)
             elif kind == "trial_stats_document":
                 document = TrialStatsDocument.model_validate_json(msg.final_answer)
         except ValidationError:
@@ -156,8 +170,22 @@ def assemble_report_data(
         continuous = list(document.continuous)
         binary = list(document.binary)
         subgroup = list(document.subgroup)
+        waterfall = list(document.waterfall)
+        swimmer = list(document.swimmer)
 
-    if not any((intake, populations, time_to_event, continuous, binary, subgroup, document)):
+    if not any(
+        (
+            intake,
+            populations,
+            time_to_event,
+            continuous,
+            binary,
+            subgroup,
+            waterfall,
+            swimmer,
+            document,
+        )
+    ):
         return None
 
     title = "Trial-statistics analysis"
@@ -174,6 +202,8 @@ def assemble_report_data(
         continuous=continuous,
         binary=binary,
         subgroup=subgroup,
+        waterfall=waterfall,
+        swimmer=swimmer,
         document=document,
     )
 
@@ -538,6 +568,42 @@ def build_pdf(
             )
             flow.append(_subgroup_pdf(sg, styles))
 
+    if data.waterfall:
+        flow.append(Spacer(1, 14))
+        flow.append(Paragraph("Waterfall — per-subject best response", styles["H2"]))
+        for w in data.waterfall:
+            flow.append(Spacer(1, 6))
+            flow.append(
+                Paragraph(f"<b>{w.outcome_label}</b> (n={w.n_subjects})", styles["H3"])
+            )
+            if w.waterfall_image_url:
+                resolved = _resolve_image(images_dir, w.waterfall_image_url)
+                if resolved is not None:
+                    flow.append(Image(str(resolved), width=8.5 * inch, height=4.5 * inch))
+            counts_text = ", ".join(
+                f"{k}: {v}" for k, v in (w.response_counts or {}).items()
+            )
+            if counts_text:
+                flow.append(
+                    Paragraph(
+                        f"<i>RECIST 1.1 counts — {counts_text}</i>",
+                        styles["Body"],
+                    )
+                )
+
+    if data.swimmer:
+        flow.append(Spacer(1, 14))
+        flow.append(Paragraph("Swimmer — treatment timeline", styles["H2"]))
+        for s in data.swimmer:
+            flow.append(Spacer(1, 6))
+            flow.append(
+                Paragraph(f"<b>{s.outcome_label}</b> (n={s.n_subjects})", styles["H3"])
+            )
+            if s.swimmer_image_url:
+                resolved = _resolve_image(images_dir, s.swimmer_image_url)
+                if resolved is not None:
+                    flow.append(Image(str(resolved), width=8.5 * inch, height=5.0 * inch))
+
     if data.document and data.document.primary_summary_paragraph:
         flow.append(Spacer(1, 14))
         flow.append(Paragraph("Primary-endpoint summary", styles["H2"]))
@@ -723,6 +789,31 @@ def build_docx(
                 t.cell(i, 1).text = f"{sr.n} ({sr.n_events})"
                 t.cell(i, 2).text = _fmt_ci(sr.effect, sr.ci_lower, sr.ci_upper)
                 t.cell(i, 3).text = _fmt_p(sr.p_value)
+
+    if data.waterfall:
+        docx.add_heading("Waterfall — per-subject best response", level=1)
+        for w in data.waterfall:
+            docx.add_heading(f"{w.outcome_label} (n={w.n_subjects})", level=2)
+            if w.waterfall_image_url:
+                resolved = _resolve_image(images_dir, w.waterfall_image_url)
+                if resolved is not None:
+                    docx.add_picture(str(resolved), width=Inches(6.5))
+            counts_text = ", ".join(
+                f"{k}: {v}" for k, v in (w.response_counts or {}).items()
+            )
+            if counts_text:
+                wp = docx.add_paragraph(f"RECIST 1.1 counts — {counts_text}")
+                for run in wp.runs:
+                    run.italic = True
+
+    if data.swimmer:
+        docx.add_heading("Swimmer — treatment timeline", level=1)
+        for s in data.swimmer:
+            docx.add_heading(f"{s.outcome_label} (n={s.n_subjects})", level=2)
+            if s.swimmer_image_url:
+                resolved = _resolve_image(images_dir, s.swimmer_image_url)
+                if resolved is not None:
+                    docx.add_picture(str(resolved), width=Inches(6.5))
 
     if data.document and data.document.primary_summary_paragraph:
         docx.add_heading("Primary-endpoint summary", level=1)

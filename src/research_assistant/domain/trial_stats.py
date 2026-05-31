@@ -358,6 +358,98 @@ class SubgroupResultsTurn(BaseModel):
     notes: str = ""
 
 
+# ── STEP 6.5 — per-subject visualisations (waterfall + swimmer) ─────────
+
+
+WaterfallResponseCategory = Literal["CR", "PR", "SD", "PD"]
+
+
+class WaterfallSubject(BaseModel):
+    """One subject's best response, sorted into the plot by the sandbox."""
+
+    usubjid: str
+    best_change_pct: float = Field(
+        description="Best % change from baseline (e.g. -42.1 = 42% reduction)."
+    )
+    treatment: str = ""
+
+
+class WaterfallResult(BaseModel):
+    """Per-outcome waterfall plot — sandbox-rendered.
+
+    Response categories follow RECIST 1.1 thresholds:
+      • CR (Complete Response): −100%
+      • PR (Partial Response):  ≤ −30%
+      • SD (Stable Disease):    between PR and PD
+      • PD (Progressive Disease): ≥ +20%
+    """
+
+    outcome_label: str
+    n_subjects: int = Field(ge=0)
+    subjects: list[WaterfallSubject] = Field(default_factory=list)
+    response_counts: dict[WaterfallResponseCategory, int] = Field(default_factory=dict)
+    waterfall_image_url: str | None = None
+    derived_from: str = Field(
+        description=(
+            "Sandbox run id (e.g. 'sandbox:waterfall:RECIST'). The CSR drafter "
+            "cites this as 'TrialStats waterfall-<outcome>'."
+        )
+    )
+
+
+SwimmerEventKind = Literal[
+    "response_onset",
+    "pr",
+    "cr",
+    "progression",
+    "death",
+    "off_treatment",
+]
+
+
+class SwimmerEvent(BaseModel):
+    day: int = Field(ge=0)
+    kind: SwimmerEventKind
+
+
+class SwimmerSubject(BaseModel):
+    usubjid: str
+    treatment: str = ""
+    duration_days: int = Field(ge=0)
+    ongoing: bool = False
+    events: list[SwimmerEvent] = Field(default_factory=list)
+
+
+class SwimmerResult(BaseModel):
+    """Per-cohort swimmer plot — treatment timeline + event markers."""
+
+    outcome_label: str
+    n_subjects: int = Field(ge=0)
+    subjects: list[SwimmerSubject] = Field(default_factory=list)
+    swimmer_image_url: str | None = None
+    derived_from: str = Field(
+        description=(
+            "Sandbox run id (e.g. 'sandbox:swimmer:cohort'). The CSR drafter "
+            "cites this as 'TrialStats swimmer-<outcome>'."
+        )
+    )
+
+
+class SubjectVisualizationsTurn(BaseModel):
+    """STEP 6.5 turn — optional. Per-subject waterfall + swimmer plots.
+
+    Entered between subgroup_results and the assembled document when the
+    operator wants oncology-style per-subject visualisations. Both
+    fields are optional — emit waterfall alone, swimmer alone, or both
+    in one turn.
+    """
+
+    kind: Literal["subject_visualisations"] = "subject_visualisations"
+    waterfall: list[WaterfallResult] = Field(default_factory=list)
+    swimmer: list[SwimmerResult] = Field(default_factory=list)
+    notes: str = ""
+
+
 # ── STEP 7 — assembled document ─────────────────────────────────────────
 
 
@@ -377,6 +469,8 @@ class TrialStatsDocument(BaseModel):
     continuous: list[ContinuousResult] = Field(default_factory=list)
     binary: list[BinaryResult] = Field(default_factory=list)
     subgroup: list[SubgroupAnalysis] = Field(default_factory=list)
+    waterfall: list[WaterfallResult] = Field(default_factory=list)
+    swimmer: list[SwimmerResult] = Field(default_factory=list)
     primary_summary: CompositeSummary = Field(
         default="inconclusive",
         description=(
@@ -407,6 +501,8 @@ class TrialStatsDocument(BaseModel):
             f"TrialStats subgroup-{a.parent_paramcd}-by-{a.subgroup_variable}"
             for a in self.subgroup
         )
+        ids.extend(f"TrialStats waterfall-{w.outcome_label}" for w in self.waterfall)
+        ids.extend(f"TrialStats swimmer-{s.outcome_label}" for s in self.swimmer)
         return ids
 
 
@@ -421,6 +517,7 @@ TrialStatsTurn = Annotated[
     | ContinuousResultsTurn
     | BinaryResultsTurn
     | SubgroupResultsTurn
+    | SubjectVisualizationsTurn
     | TrialStatsDocument,
     Field(discriminator="kind"),
 ]
@@ -441,10 +538,18 @@ __all__ = [
     "SubgroupAnalysis",
     "SubgroupResultsTurn",
     "SubgroupRow",
+    "SubjectVisualizationsTurn",
+    "SwimmerEvent",
+    "SwimmerEventKind",
+    "SwimmerResult",
+    "SwimmerSubject",
     "TimeToEventResult",
     "TimeToEventResultsTurn",
     "TrialStatsDocument",
     "TrialStatsIntake",
     "TrialStatsTurn",
     "TtEParamcd",
+    "WaterfallResponseCategory",
+    "WaterfallResult",
+    "WaterfallSubject",
 ]

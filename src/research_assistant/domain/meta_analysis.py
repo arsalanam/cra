@@ -279,6 +279,32 @@ class MetaAnalysisOutcomeResult(BaseModel):
             "before returning to the frontend."
         ),
     )
+    funnel_plot_image: str | None = Field(
+        default=None,
+        description=(
+            "Optional filename produced by `run_visualisation(viz_kind='funnel', ...)` "
+            "(e.g., 'funnel-all-cause-mortality.png'). Present only when the agent "
+            "ran a funnel plot for publication-bias diagnosis on this outcome "
+            "(≥3 studies)."
+        ),
+    )
+    eggers_p_value: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Egger's regression test intercept p-value. Low values (<0.10 by "
+            "convention) signal small-study effects / funnel asymmetry. Set only "
+            "when a funnel plot was produced."
+        ),
+    )
+    funnel_interpretation: str | None = Field(
+        default=None,
+        description=(
+            "One-line interpretation of the funnel + Egger's result "
+            "(e.g. 'Egger's p=0.42 across 9 studies — funnel symmetric')."
+        ),
+    )
     interpretation: str = Field(
         description=(
             "One-sentence clinical takeaway (favours intervention / comparator / no difference)."

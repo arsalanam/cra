@@ -56,6 +56,7 @@ from research_assistant.reports._shared_styles import (
     make_page_decorations,
     make_pdf_styles,
 )
+from research_assistant.visualizations import build_grade_chip_svg
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +73,20 @@ _CERTAINTY_COLOURS: dict[str, tuple[colors.Color, colors.Color]] = {
 }
 
 
+_DOWNGRADE_PALETTE: dict[str, tuple[colors.Color, colors.Color, str]] = {
+    # (fill, text, short label)
+    "none":         (colors.HexColor("#d4edda"), colors.HexColor("#155724"), "—"),
+    "serious":      (colors.HexColor("#fff3cd"), colors.HexColor("#856404"), "−1"),
+    "very_serious": (colors.HexColor("#f8d7da"), colors.HexColor("#721c24"), "−2"),
+}
+
+_UPGRADE_PALETTE: dict[str, tuple[colors.Color, colors.Color, str]] = {
+    "none":     (colors.HexColor("#e9ecef"), colors.HexColor("#495057"), "—"),
+    "moderate": (colors.HexColor("#cfe2ff"), colors.HexColor("#084298"), "+1"),
+    "large":    (colors.HexColor("#9ec5fe"), colors.HexColor("#052c65"), "+2"),
+}
+
+
 @dataclass
 class GradeReportData:
     thread_id: str
@@ -82,6 +97,7 @@ class GradeReportData:
     sof_table: SofTable | None
     prisma_checklist: PrismaChecklist | None
     document: GradeDocument | None
+    chip_table_svg: str | None = None
 
 
 def _peek_kind(s: str) -> str | None:
@@ -133,17 +149,32 @@ def assemble_report_data(
     elif sof_table:
         title = f"GRADE — {sof_table.research_question[:80]}"
 
+    final_assessments = document.assessments if document else assessments
+    # Auto-derive the chip-table SVG host-side when the document didn't
+    # carry one. Same anti-hallucination posture as the certainty
+    # computation: the agent never authors the SVG — the helper does.
+    chip_svg: str | None = (
+        document.chip_table_svg
+        if document and document.chip_table_svg
+        else (
+            build_grade_chip_svg(final_assessments)
+            if final_assessments
+            else None
+        )
+    )
+
     return GradeReportData(
         thread_id=thread_id,
         title=title,
         generated_at=datetime.now(UTC),
         intake=document.intake if document else intake,
-        assessments=document.assessments if document else assessments,
+        assessments=final_assessments,
         sof_table=document.sof_table if document else sof_table,
         prisma_checklist=(
             document.prisma_checklist if document else prisma_checklist
         ),
         document=document,
+        chip_table_svg=chip_svg,
     )
 
 
@@ -239,6 +270,113 @@ def _domain_summary(d: Any) -> str:
     return f"{d.level.replace('_', ' ')}: {d.rationale}"
 
 
+def _chip_table_pdf(
+    assessments: list[OutcomeAssessment],
+    styles: dict[str, ParagraphStyle],
+) -> Table:
+    """Render the GRADE chip table as a coloured-cell ReportLab Table.
+
+    Rows = outcomes; columns = 5 downgrade domains + 3 upgrade domains +
+    computed certainty. Each chip cell uses the GRADE-pro / Cochrane
+    convention: green = no concern, amber = serious, red = very serious;
+    blue chips for observational upgrades.
+    """
+    downgrade_headers = (
+        "Outcome",
+        "Risk of bias",
+        "Inconsistency",
+        "Indirectness",
+        "Imprecision",
+        "Pub. bias",
+        "Large effect",
+        "Dose-resp.",
+        "Residual conf.",
+        "Certainty",
+    )
+    header_row = [
+        Paragraph(f"<b>{h}</b>", styles["Cell"]) for h in downgrade_headers
+    ]
+    rows: list[list[Paragraph]] = [header_row]
+
+    chip_cells: list[tuple[int, int, colors.Color, colors.Color]] = []
+    # (row, col, fill, text)
+
+    for row_idx, a in enumerate(assessments, start=1):
+        outcome_label = a.outcome_name if len(a.outcome_name) <= 28 else a.outcome_name[:26] + "…"
+        cells: list[Paragraph] = [Paragraph(outcome_label, styles["Cell"])]
+
+        for col_offset, domain in enumerate(
+            (
+                a.risk_of_bias,
+                a.inconsistency,
+                a.indirectness,
+                a.imprecision,
+                a.publication_bias,
+            ),
+            start=1,
+        ):
+            fill, text, label = _DOWNGRADE_PALETTE.get(
+                domain.level, (colors.white, colors.black, "?")
+            )
+            cells.append(Paragraph(f"<b>{label}</b>", styles["Cell"]))
+            chip_cells.append((row_idx, col_offset, fill, text))
+
+        # Upgrade columns — observational only.
+        for col_offset, upgrade in enumerate(
+            (a.large_effect, a.dose_response, a.residual_confounding),
+            start=6,
+        ):
+            if a.study_design != "observational" or upgrade is None:
+                cells.append(Paragraph("n/a", styles["Cell"]))
+                chip_cells.append(
+                    (row_idx, col_offset, colors.HexColor("#f1f3f5"), colors.HexColor("#6c757d"))
+                )
+            else:
+                fill, text, label = _UPGRADE_PALETTE.get(
+                    upgrade.level, (colors.white, colors.black, "?")
+                )
+                cells.append(Paragraph(f"<b>{label}</b>", styles["Cell"]))
+                chip_cells.append((row_idx, col_offset, fill, text))
+
+        # Certainty column.
+        certainty_fill, certainty_text = _CERTAINTY_COLOURS.get(
+            a.certainty, (colors.white, colors.black)
+        )
+        cells.append(
+            Paragraph(
+                f"<b>{a.certainty.replace('_', ' ').upper()}</b>", styles["Cell"]
+            )
+        )
+        chip_cells.append((row_idx, 9, certainty_fill, certainty_text))
+
+        rows.append(cells)
+
+    t = Table(
+        rows,
+        colWidths=[1.7, 0.85, 0.95, 0.85, 0.85, 0.85, 0.85, 0.85, 0.95, 0.9],
+        repeatRows=1,
+    )
+    t._argW = [w * inch for w in t._argW]
+
+    style_cmds: list[Any] = [
+        ("BACKGROUND", (0, 0), (-1, 0), LIGHT),
+        ("BOX", (0, 0), (-1, -1), 0.4, BORDER),
+        ("INNERGRID", (0, 0), (-1, -1), 0.3, BORDER),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("ALIGN", (1, 0), (-1, -1), "CENTER"),
+        ("FONTSIZE", (0, 0), (-1, -1), 8),
+        ("LEFTPADDING", (0, 0), (-1, -1), 4),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+    ]
+    for row, col, fill, text in chip_cells:
+        style_cmds.append(("BACKGROUND", (col, row), (col, row), fill))
+        style_cmds.append(("TEXTCOLOR", (col, row), (col, row), text))
+    t.setStyle(TableStyle(style_cmds))
+    return t
+
+
 # ── PDF builder ─────────────────────────────────────────────────────────
 
 
@@ -312,6 +450,20 @@ def build_pdf(data: GradeReportData, images_dir: Path | None = None) -> bytes:
                 styles["Body"],
             )
         )
+
+    # ── GRADE chip table (visual SoF) ──
+    if data.assessments:
+        flow.append(Spacer(1, 14))
+        flow.append(Paragraph("Visual SoF — GRADE chip table", styles["H2"]))
+        flow.append(
+            Paragraph(
+                "<i>Per-outcome downgrade / upgrade ratings at a glance. "
+                "Chip colours: green = no concern, amber = serious downgrade, "
+                "red = very serious. Observational upgrades show in blue.</i>",
+                styles["Body"],
+            )
+        )
+        flow.append(_chip_table_pdf(data.assessments, styles))
 
     # ── Per-outcome detail ──
     if data.assessments:
@@ -470,6 +622,58 @@ def build_docx(data: GradeReportData, images_dir: Path | None = None) -> bytes:
         docx.add_paragraph(
             "[Operator to complete — assemble the SoF after assessing each outcome]"
         )
+
+    # GRADE chip table (visual SoF)
+    if data.assessments:
+        docx.add_heading("Visual SoF — GRADE chip table", level=1)
+        chip_cols = [
+            "Outcome",
+            "RoB",
+            "Inconsistency",
+            "Indirectness",
+            "Imprecision",
+            "Pub. bias",
+            "Large effect",
+            "Dose-resp.",
+            "Residual conf.",
+            "Certainty",
+        ]
+        chip_label_map = {"none": "—", "serious": "−1", "very_serious": "−2"}
+        upgrade_label_map = {"none": "—", "moderate": "+1", "large": "+2"}
+        ct = docx.add_table(rows=1 + len(data.assessments), cols=len(chip_cols))
+        ct.style = "Light Grid Accent 1"
+        for j, c in enumerate(chip_cols):
+            cell = ct.cell(0, j)
+            cell.text = c
+            cell.paragraphs[0].runs[0].bold = True
+        for i, a in enumerate(data.assessments, start=1):
+            ct.cell(i, 0).text = a.outcome_name
+            ct.cell(i, 1).text = chip_label_map.get(a.risk_of_bias.level, "?")
+            ct.cell(i, 2).text = chip_label_map.get(a.inconsistency.level, "?")
+            ct.cell(i, 3).text = chip_label_map.get(a.indirectness.level, "?")
+            ct.cell(i, 4).text = chip_label_map.get(a.imprecision.level, "?")
+            ct.cell(i, 5).text = chip_label_map.get(a.publication_bias.level, "?")
+            if a.study_design == "observational":
+                ct.cell(i, 6).text = (
+                    upgrade_label_map.get(a.large_effect.level, "?")
+                    if a.large_effect is not None
+                    else "—"
+                )
+                ct.cell(i, 7).text = (
+                    upgrade_label_map.get(a.dose_response.level, "?")
+                    if a.dose_response is not None
+                    else "—"
+                )
+                ct.cell(i, 8).text = (
+                    upgrade_label_map.get(a.residual_confounding.level, "?")
+                    if a.residual_confounding is not None
+                    else "—"
+                )
+            else:
+                ct.cell(i, 6).text = "n/a"
+                ct.cell(i, 7).text = "n/a"
+                ct.cell(i, 8).text = "n/a"
+            ct.cell(i, 9).text = a.certainty.replace("_", " ").upper()
 
     # Per-outcome detail
     if data.assessments:

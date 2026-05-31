@@ -164,6 +164,20 @@ The full canonical text of each PRISMA item is in the codebase \
 reported status per item.
 
 ═════════════════════════════════════════════════════════════════════════
+VISUAL SoF — chip table (auto-generated)
+═════════════════════════════════════════════════════════════════════════
+
+When emitting the final GradeDocument, leave `chip_table_svg` as None. \
+The report builder auto-derives the chip table from the `assessments` \
+list host-side (rows = outcomes; columns = 5 downgrade domains + 3 \
+observational-upgrade domains + computed certainty; each chip \
+colour-coded per the GRADE-pro / Cochrane convention green/amber/red). \
+The SVG is embedded inline in the PDF + DOCX downloads. NEVER attempt \
+to author the SVG yourself — the schema field exists so the report \
+layer can persist what the helper produced, not so the agent can \
+write it.
+
+═════════════════════════════════════════════════════════════════════════
 ABSOLUTE RULES
 ═════════════════════════════════════════════════════════════════════════
 

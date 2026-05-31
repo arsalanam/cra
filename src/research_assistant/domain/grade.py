@@ -311,6 +311,18 @@ class GradeDocument(BaseModel):
         default=None,
         description="PRISMA optional this slice — emit it when the user asks.",
     )
+    chip_table_svg: str | None = Field(
+        default=None,
+        description=(
+            "Optional GRADE chip-table SVG (rows = outcomes, columns = the 5 "
+            "downgrade domains + 3 observational-upgrade domains + certainty). "
+            "Each chip is colour-coded by its domain rating per the GRADE-pro "
+            "Cochrane convention (green/amber/red). Generated host-side by "
+            "`visualizations.chip_table.build_grade_chip_svg(assessments)`; "
+            "embedded inline by the report builder. None when the operator "
+            "did not request the visual SoF."
+        ),
+    )
     is_final: bool = False
 
 

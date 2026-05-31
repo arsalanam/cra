@@ -192,6 +192,9 @@ _WORKFLOW_CONTINUATIONS: dict[str, tuple[str, ...]] = {
         "Continuous results confirmed",
         "Binary results confirmed",
         "Subgroup results confirmed",
+        "Visualisations confirmed",
+        "Add waterfall:",
+        "Add swimmer:",
         "Refine trial-stats:",
         "Finalize trial-stats",
         "Draft trial-stats from ADTTE",  # handoff seed

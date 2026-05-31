@@ -29,6 +29,7 @@ from ...config import get_settings
 from ...domain.meta_analysis import MetaAnalysisResults, MetaAnalysisTurn
 from ...tools import CLINICAL_TOOLS, DATA_SCIENCE_TOOLS, GENERAL_TOOLS
 from ...tools.clinical import rag_search
+from ...tools.data_science import visualisations
 from ..deps import AgentDeps, drain_tool_usage
 from ..model import build_bedrock_model
 
@@ -257,6 +258,26 @@ and contains a JSON payload.
   g. Populate `caveats` honestly: high heterogeneity, small n, \
      excluded studies, etc.
 
+  h. PUBLICATION-BIAS DIAGNOSTIC (optional, only when ≥3 included \
+     studies on the outcome). Call `run_visualisation(viz_kind="funnel", \
+     data_payload=...)` once per outcome to render the funnel plot + \
+     Egger's regression test. Shape:
+
+       {"data": {"outcome_label": "<outcome>", "effect_measure": "OR", \
+                  "studies": [{"label": "PMID 12345", "effect": 0.72, \
+                                "se": 0.18}, ...]}}
+
+     Use the log-effect + SE from your STEP 5 weighted-pooling \
+     computation (var = 1/a+1/b+1/c+1/d for OR/RR; var-of-mean for \
+     MD/SMD; SE = sqrt(var)). Populate \
+     MetaAnalysisOutcomeResult.funnel_plot_image with the returned \
+     filename (e.g. 'funnel-all-cause-mortality.png'); copy the \
+     sandbox's intercept p-value into `eggers_p_value` and its \
+     `interpretation` text verbatim into `funnel_interpretation`. \
+     NEVER invent the Egger's p — it comes from the sandbox or stays \
+     None. When fewer than 3 studies contributed to the outcome, \
+     leave all three funnel fields None.
+
 ────────────────────────────────────────────────────────────────────────
 ABSOLUTE RULES
 ────────────────────────────────────────────────────────────────────────
@@ -292,6 +313,8 @@ _TOOL_GATES: dict[str, frozenset[str | None]] = {
     "search_papers": frozenset({"pico", "search_results", "data_extraction", "meta_analysis"}),
     "fetch_pmc_fulltext": frozenset({"search_results", "data_extraction", "meta_analysis"}),
     "sandbox_exec": frozenset({"data_extraction", "meta_analysis"}),
+    # Funnel plot is available alongside the forest-plot work in STEP 5.
+    "run_visualisation": frozenset({"data_extraction", "meta_analysis"}),
 }
 
 
@@ -388,8 +411,15 @@ def build_agent() -> Agent[AgentDeps, MetaAnalysisTurn]:
 
     # Tools available to this specialist: clinical (PubMed/MeSH/PMC) +
     # data science (sandbox for analysis) + general (web/wiki/file/etc.) +
-    # rag_search over the local library (gated to early stages — context only).
-    tools = [*CLINICAL_TOOLS, *DATA_SCIENCE_TOOLS, *GENERAL_TOOLS, rag_search]
+    # rag_search over the local library (gated to early stages — context only) +
+    # run_visualisation for the funnel plot at STEP 5.
+    tools = [
+        *CLINICAL_TOOLS,
+        *DATA_SCIENCE_TOOLS,
+        *GENERAL_TOOLS,
+        rag_search,
+        visualisations,
+    ]
     for tool_module in tools:
         tool_module.register(agent)
 

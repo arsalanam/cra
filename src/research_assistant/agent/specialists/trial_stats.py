@@ -44,7 +44,7 @@ from pydantic_ai.usage import UsageLimits
 from ...config import get_settings
 from ...domain.trial_stats import TrialStatsTurn
 from ...tools import ToolModule
-from ...tools.data_science import sandbox_exec, trial_analysis
+from ...tools.data_science import sandbox_exec, trial_analysis, visualisations
 from ...tools.general import web_search, wikipedia
 from ..deps import AgentDeps, drain_tool_usage
 from ..model import build_bedrock_model
@@ -77,6 +77,8 @@ field (primary endpoint, arm labels, paramcd, etc).
   • continuous_results          — STEP 4. Per-PARAMCD MMRM LSMean diffs.
   • binary_results              — STEP 5. Per-PARAMCD response-rate diffs.
   • subgroup_results            — STEP 6. Per-PARAMCD × subgroup forest.
+  • subject_visualisations      — STEP 6.5 (OPTIONAL). Per-subject \
+waterfall + swimmer plots.
   • trial_stats_document        — STEP 7. Assembled artefact, iterable.
 
 Workflow transitions are user-driven via continuation messages:
@@ -85,7 +87,10 @@ Workflow transitions are user-driven via continuation messages:
   - "Time-to-event confirmed"             → STEP 4
   - "Continuous results confirmed"        → STEP 5
   - "Binary results confirmed"            → STEP 6
-  - "Subgroup results confirmed"          → STEP 7 (is_final=False)
+  - "Subgroup results confirmed"          → STEP 6.5 or STEP 7
+  - "Visualisations confirmed"            → STEP 7 (is_final=False)
+  - "Add waterfall: <directive>"          → STEP 6.5 (run waterfall)
+  - "Add swimmer: <directive>"            → STEP 6.5 (run swimmer)
   - "Refine trial-stats: <directive>"     → return refreshed document
   - "Finalize trial-stats"                → STEP 7 with is_final=True
 
@@ -234,6 +239,56 @@ ONE SubgroupAnalysis per parent × subgroup_variable:
   - derived_from = "sandbox:subgroup:<PARENT_PARAMCD>:by:<SUBGROUP_VAR>"
 
 ═════════════════════════════════════════════════════════════════════════
+STEP 6.5 — Per-subject visualisations (optional)
+═════════════════════════════════════════════════════════════════════════
+
+When the operator wants oncology-style per-subject plots (waterfall + \
+swimmer), emit a `subject_visualisations` turn carrying ONE \
+`WaterfallResult` and/or ONE `SwimmerResult` per outcome.
+
+For WATERFALL (best response per subject), call \
+`run_visualisation(viz_kind="waterfall", data_payload=...)` with:
+
+    {
+      "data": {
+        "outcome_label": "Best change in target lesion (%)",
+        "subjects": [
+          {"usubjid": "S001", "best_change_pct": -42.1, "treatment": "Drug A"},
+          ...
+        ],
+        "treatments": ["Placebo", "Drug A"]
+      }
+    }
+
+The sandbox emits `trial-stats-waterfall.json` with per-subject \
+ordering + RECIST 1.1 response counts (CR/PR/SD/PD). Populate \
+WaterfallResult with `derived_from = "sandbox:waterfall:<outcome>"`.
+
+For SWIMMER (treatment timeline + event markers), call \
+`run_visualisation(viz_kind="swimmer", data_payload=...)` with:
+
+    {
+      "data": {
+        "outcome_label": "Treatment timeline",
+        "subjects": [
+          {"usubjid": "S001", "treatment": "Drug A",
+           "duration_days": 412, "ongoing": false,
+           "events": [{"day": 56, "kind": "response_onset"},
+                       {"day": 240, "kind": "progression"}]},
+          ...
+        ],
+        "treatments": ["Placebo", "Drug A"]
+      }
+    }
+
+Event kinds: response_onset / pr / cr / progression / death / \
+off_treatment. Populate SwimmerResult with \
+`derived_from = "sandbox:swimmer:<outcome>"`.
+
+If the operator hasn't asked for waterfall / swimmer, skip this stage \
+entirely and go to STEP 7.
+
+═════════════════════════════════════════════════════════════════════════
 STEP 7 — Assembled document
 ═════════════════════════════════════════════════════════════════════════
 
@@ -278,6 +333,14 @@ _TOOL_GATES: dict[str, frozenset[str | None]] = {
             "continuous_results",
             "binary_results",
             "subgroup_results",
+            "subject_visualisations",
+            "trial_stats_document",
+        }
+    ),
+    "run_visualisation": frozenset(
+        {
+            "subgroup_results",
+            "subject_visualisations",
             "trial_stats_document",
         }
     ),
@@ -287,6 +350,7 @@ _TOOL_GATES: dict[str, frozenset[str | None]] = {
             "continuous_results",
             "binary_results",
             "subgroup_results",
+            "subject_visualisations",
             "trial_stats_document",
         }
     ),
@@ -338,6 +402,7 @@ def build_agent() -> Agent[AgentDeps, TrialStatsTurn]:
     )
     specialist_tools: list[ToolModule] = [
         trial_analysis,
+        visualisations,
         sandbox_exec,
         web_search,
         wikipedia,
