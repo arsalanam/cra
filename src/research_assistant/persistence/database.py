@@ -61,6 +61,12 @@ _COLUMN_MIGRATIONS: dict[str, dict[str, str]] = {
         "embedding_model": "TEXT",
         "embedded_at": "TIMESTAMPTZ",
     },
+    "notifications": {
+        # P2 #4 group-level living-review subscriptions. NULL for personal
+        # watch notifications (legacy shape); set when the row is fanned out
+        # from a LiteratureWatchSubscription quorum-clear event.
+        "subscription_id": "TEXT REFERENCES literature_watch_subscriptions(id) ON DELETE CASCADE",
+    },
 }
 
 # Index DDL applied after column migrations. Each must be idempotent

@@ -36,6 +36,7 @@ from .library import create_library_router
 from .portfolio import create_portfolio_router
 from .sr import create_sr_router
 from .threads import create_thread_router
+from .watch_subscriptions import create_subscriptions_router
 from .watches import create_notifications_router, create_watches_router
 
 logger = logging.getLogger(__name__)
@@ -90,6 +91,7 @@ def create_app() -> FastAPI:
     app.include_router(create_dispatch_router(), prefix="/api", dependencies=auth_dep)
     app.include_router(create_admin_router(), prefix="/api")
     app.include_router(create_watches_router(), prefix="/api", dependencies=auth_dep)
+    app.include_router(create_subscriptions_router(), prefix="/api", dependencies=auth_dep)
     app.include_router(create_notifications_router(), prefix="/api", dependencies=auth_dep)
     app.include_router(create_library_router(), prefix="/api", dependencies=auth_dep)
     app.include_router(create_ecrf_router(), prefix="/api", dependencies=auth_dep)

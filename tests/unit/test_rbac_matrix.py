@@ -41,9 +41,21 @@ def test_researcher_holds_all_evidence_skills_plus_library() -> None:
 
 
 def test_student_is_meta_analysis_plus_general_qa_only() -> None:
-    """The Student tier added in this slice — locked to evidence-light use."""
+    """The Student tier added in this slice — locked to evidence-light use.
+
+    P2 #4 added watch_subscription.vote so students can be invited to a
+    guideline-committee subscription as a voting member (without owning
+    the underlying watch). That doesn't widen the skill surface they can
+    drive — it just lets them vote on a quorum if invited.
+    """
     perms = ROLE_PERMISSIONS[Role.STUDENT]
-    assert perms == frozenset({Permission.SKILL_META_ANALYSIS, Permission.SKILL_GENERAL_QA})
+    assert perms == frozenset(
+        {
+            Permission.SKILL_META_ANALYSIS,
+            Permission.SKILL_GENERAL_QA,
+            Permission.WATCH_SUBSCRIPTION_VOTE,
+        }
+    )
     # Explicitly NOT granted — these are the ones a frontend Student
     # account must not be able to reach.
     assert Permission.SKILL_SEARCH_STRATEGY not in perms
@@ -350,6 +362,53 @@ def test_researcher_can_run_lay_summary_but_student_cannot() -> None:
     assert Permission.SKILL_LAY_SUMMARY in ROLE_PERMISSIONS[Role.RESEARCHER]
     assert Permission.SKILL_LAY_SUMMARY in ROLE_PERMISSIONS[Role.ADMIN]
     assert Permission.SKILL_LAY_SUMMARY not in ROLE_PERMISSIONS[Role.STUDENT]
+
+
+def test_watch_subscription_vote_committee_member_roles() -> None:
+    """P2 #4 group-level subscriptions: every natural HTA /
+    guideline-committee voter archetype must carry
+    watch_subscription.vote. Roles that aren't natural committee
+    members (coordinator / data_manager / monitor / study_designer)
+    do not — they can still be invited if needed via a Role grant."""
+    for role in (
+        Role.ADMIN,
+        Role.RESEARCHER,
+        Role.STUDENT,
+        Role.AUDITOR,
+        Role.PRINCIPAL_INVESTIGATOR,
+    ):
+        assert Permission.WATCH_SUBSCRIPTION_VOTE in ROLE_PERMISSIONS[role], (
+            f"{role.value} should carry watch_subscription.vote"
+        )
+    for role in (
+        Role.STUDY_DESIGNER,
+        Role.COORDINATOR,
+        Role.DATA_MANAGER,
+        Role.MONITOR,
+        Role.REVIEWER_1,
+        Role.REVIEWER_2,
+        Role.ADJUDICATOR,
+    ):
+        assert Permission.WATCH_SUBSCRIPTION_VOTE not in ROLE_PERMISSIONS[role], (
+            f"{role.value} should NOT carry watch_subscription.vote by default"
+        )
+
+
+def test_watch_subscription_manage_remains_researcher_only() -> None:
+    """Subscription create / delete / member-mgmt is gated by the
+    existing watch.manage permission (researcher + admin). Students,
+    auditors, and PIs can vote but not create."""
+    for role in (Role.RESEARCHER, Role.ADMIN):
+        assert Permission.WATCH_MANAGE in ROLE_PERMISSIONS[role]
+    for role in (
+        Role.STUDENT,
+        Role.AUDITOR,
+        Role.PRINCIPAL_INVESTIGATOR,
+        Role.COORDINATOR,
+        Role.DATA_MANAGER,
+        Role.MONITOR,
+    ):
+        assert Permission.WATCH_MANAGE not in ROLE_PERMISSIONS[role]
 
 
 def test_researcher_can_run_csr_drafter_but_student_cannot() -> None:

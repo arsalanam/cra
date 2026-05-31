@@ -81,6 +81,16 @@
   </div>
 
   <div class="container">
+    <h2>Group subscriptions <span style="color:#5a6070;font-size:11px;font-weight:400;text-transform:none">— guideline / HTA panels</span></h2>
+    <p class="lead">
+      Wrap a watch in a group subscription so an invited panel can vote on whether each new run is practice-changing.
+      Quorum fires a notification to every member; sub-threshold runs stay silent.
+    </p>
+    <div id="subs-content" class="loading">Loading subscriptions…</div>
+    <div style="margin: 18px 0 30px;">
+      <button class="btn primary" onclick="toggleNewSubForm()">+ New subscription</button>
+    </div>
+
     <h2>Saved literature watches</h2>
     <p class="lead">
       Each watch re-runs its saved PubMed query on a schedule, triages new hits against the saved PICO,
@@ -272,6 +282,277 @@ function renderTriage(t, threshold) {
 }
 
 loadWatches();
+
+/* ── Group subscriptions (P2 #4) ─────────────────────────────────────── */
+
+const subsContent = $("subs-content");
+let subscriptionsCache = [];
+const expandedSubs = new Set();
+
+async function loadSubscriptions() {
+  try {
+    const res = await fetch("/api/watch-subscriptions");
+    if (!res.ok) throw new Error(await res.text() || res.statusText);
+    subscriptionsCache = await res.json();
+    renderSubscriptions();
+  } catch (e) {
+    subsContent.className = "err-box";
+    subsContent.textContent = "Failed to load subscriptions: " + (e.message || e);
+  }
+}
+
+function renderSubscriptions() {
+  if (subscriptionsCache.length === 0) {
+    subsContent.className = "empty";
+    subsContent.textContent = "No subscriptions yet. Create one to invite a panel to vote on a watch's runs.";
+    return;
+  }
+  subsContent.className = "";
+  subsContent.innerHTML = subscriptionsCache.map(renderSubscription).join("");
+  for (const sid of expandedSubs) loadSubRuns(sid);
+}
+
+function renderSubscription(s) {
+  return `
+    <div class="watch-card" data-sub-id="${s.id}">
+      <div class="watch-head">
+        <div class="watch-name">${escapeHtml(s.name)}</div>
+        <span class="status-pill ${s.status}">${s.status}</span>
+      </div>
+      <div class="watch-meta">
+        <div class="meta-cell"><span class="lbl">Watch</span>${escapeHtml(s.watch_name || s.watch_id)}</div>
+        <div class="meta-cell"><span class="lbl">Voters</span>${s.n_voters}</div>
+        <div class="meta-cell"><span class="lbl">Observers</span>${s.n_observers}</div>
+        <div class="meta-cell"><span class="lbl">Quorum rule</span>≥ max(${s.min_votes}, ${Math.round(s.min_fraction * 100)}%)</div>
+      </div>
+      <div class="actions">
+        <button class="btn primary" onclick="toggleSubRuns('${s.id}')">${expandedSubs.has(s.id) ? "Hide" : "Show"} runs + votes</button>
+        <button class="btn" onclick="toggleMemberForm('${s.id}')">Manage members</button>
+        <button class="btn danger" onclick="deleteSubscription('${s.id}')">Delete</button>
+      </div>
+      <div id="sub-runs-${s.id}" class="runs" style="display: ${expandedSubs.has(s.id) ? "block" : "none"};"></div>
+      <div id="sub-members-${s.id}" class="runs" style="display: none;"></div>
+    </div>
+  `;
+}
+
+async function toggleSubRuns(sid) {
+  if (expandedSubs.has(sid)) {
+    expandedSubs.delete(sid);
+    $("sub-runs-" + sid).style.display = "none";
+  } else {
+    expandedSubs.add(sid);
+    $("sub-runs-" + sid).style.display = "block";
+    await loadSubRuns(sid);
+  }
+  renderSubscriptions();
+}
+
+async function loadSubRuns(sid) {
+  const root = $("sub-runs-" + sid);
+  if (!root) return;
+  root.innerHTML = "<div class='loading'>Loading runs…</div>";
+  try {
+    const res = await fetch(`/api/watch-subscriptions/${sid}/runs?limit=10`);
+    if (!res.ok) throw new Error(await res.text() || res.statusText);
+    const runs = await res.json();
+    if (runs.length === 0) {
+      root.innerHTML = "<div class='empty' style='padding:14px'>No runs yet on this watch.</div>";
+      return;
+    }
+    root.innerHTML = `<h4>Recent runs</h4>` + runs.map(r => renderSubRun(sid, r)).join("");
+  } catch (e) {
+    root.innerHTML = "<div class='err-box'>Failed to load runs: " + escapeHtml(e.message || String(e)) + "</div>";
+  }
+}
+
+function renderSubRun(sid, r) {
+  const t = r.tally;
+  const cleared = t.quorum_cleared;
+  const badge = cleared
+    ? "<span class='last-run-pill success'>quorum cleared</span>"
+    : `<span class='last-run-pill no_change'>${t.yes}/${t.threshold} yes</span>`;
+  const voted = r.has_voted ? "<span style='color:#6bcf7f;font-size:11px'>✓ you voted</span>" : "";
+  const voteBtns = (cleared || r.status !== "success")
+    ? ""
+    : `
+      <div style="margin-top:8px;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+        <button class="btn" onclick="castVote('${sid}','${r.run_id}','yes')">Vote YES</button>
+        <button class="btn" onclick="castVote('${sid}','${r.run_id}','no')">Vote NO</button>
+        <button class="btn" onclick="castVote('${sid}','${r.run_id}','abstain')">Abstain</button>
+        <span style='color:#5a6070;font-size:11px'>tally: ${t.yes} yes / ${t.no} no / ${t.abstain} abstain of ${t.n_voters} voters</span>
+      </div>
+    `;
+  return `
+    <div class="run">
+      <div class="run-head">
+        <span class="run-time">${formatDate(r.started_at)} · ${r.total_hits} hits</span>
+        ${badge}
+        ${voted}
+      </div>
+      ${voteBtns}
+    </div>
+  `;
+}
+
+async function castVote(sid, runId, vote) {
+  const rationale = vote === "yes"
+    ? prompt("Optional rationale for your YES vote:") || ""
+    : "";
+  try {
+    const res = await fetch(`/api/watch-subscriptions/${sid}/runs/${runId}/vote`, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({vote, rationale}),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({detail: res.statusText}));
+      throw new Error(err.detail || res.statusText);
+    }
+    await loadSubRuns(sid);
+    await loadSubscriptions();
+  } catch (e) {
+    alert("Vote failed: " + (e.message || e));
+  }
+}
+
+async function toggleMemberForm(sid) {
+  const root = $("sub-members-" + sid);
+  if (!root) return;
+  if (root.style.display === "block") {
+    root.style.display = "none";
+    return;
+  }
+  root.style.display = "block";
+  root.innerHTML = "<div class='loading'>Loading members…</div>";
+  try {
+    const res = await fetch(`/api/watch-subscriptions/${sid}`);
+    if (!res.ok) throw new Error(await res.text());
+    const sub = await res.json();
+    const rows = (sub.members || []).map(m => `
+      <div class="run" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+        <span><b>${escapeHtml(m.email || m.user_id)}</b> <span style='color:#5a6070;font-size:11px'>${m.role}</span></span>
+        <button class="btn danger" onclick="removeMember('${sid}','${m.user_id}')">Remove</button>
+      </div>
+    `).join("");
+    root.innerHTML = `
+      <h4>Members</h4>
+      ${rows || "<div class='empty' style='padding:10px'>No members yet.</div>"}
+      <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        <input id="invite-email-${sid}" placeholder="email" style="flex:1;min-width:180px;background:#0f1115;color:#e6e6e6;border:1px solid #2a2f3a;padding:6px 8px;border-radius:4px;font-size:12px" />
+        <select id="invite-role-${sid}" style="background:#0f1115;color:#e6e6e6;border:1px solid #2a2f3a;padding:6px 8px;border-radius:4px;font-size:12px">
+          <option value="voter">voter</option>
+          <option value="observer">observer</option>
+        </select>
+        <button class="btn primary" onclick="addMember('${sid}')">Add</button>
+      </div>
+    `;
+  } catch (e) {
+    root.innerHTML = "<div class='err-box'>Failed to load members: " + escapeHtml(e.message || String(e)) + "</div>";
+  }
+}
+
+async function addMember(sid) {
+  const email = $("invite-email-" + sid).value.trim();
+  const role = $("invite-role-" + sid).value;
+  if (!email) return;
+  try {
+    const res = await fetch(`/api/watch-subscriptions/${sid}/members`, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({email, role}),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({detail: res.statusText}));
+      throw new Error(err.detail || res.statusText);
+    }
+    await toggleMemberForm(sid);
+    await toggleMemberForm(sid);
+    await loadSubscriptions();
+  } catch (e) {
+    alert("Invite failed: " + (e.message || e));
+  }
+}
+
+async function removeMember(sid, uid) {
+  if (!confirm("Remove this member?")) return;
+  try {
+    const res = await fetch(`/api/watch-subscriptions/${sid}/members/${uid}`, {method: "DELETE"});
+    if (!res.ok) throw new Error(await res.text());
+    await toggleMemberForm(sid);
+    await toggleMemberForm(sid);
+    await loadSubscriptions();
+  } catch (e) {
+    alert("Remove failed: " + (e.message || e));
+  }
+}
+
+async function deleteSubscription(sid) {
+  if (!confirm("Delete this subscription? Members + votes + group notifications will be removed.")) return;
+  try {
+    const res = await fetch(`/api/watch-subscriptions/${sid}`, {method: "DELETE"});
+    if (!res.ok) throw new Error(await res.text());
+    await loadSubscriptions();
+  } catch (e) {
+    alert("Delete failed: " + (e.message || e));
+  }
+}
+
+function toggleNewSubForm() {
+  let form = $("new-sub-form");
+  if (form) {
+    form.remove();
+    return;
+  }
+  form = document.createElement("div");
+  form.id = "new-sub-form";
+  form.className = "watch-card";
+  const watchOptions = (watchesCache || []).map(w =>
+    `<option value="${w.id}">${escapeHtml(w.name)}</option>`
+  ).join("");
+  form.innerHTML = `
+    <div class="watch-head"><div class="watch-name">New group subscription</div></div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;margin-bottom:10px">
+      <div><div class='meta-cell'><span class='lbl'>Name</span></div><input id="new-sub-name" placeholder="e.g. Cardio guideline panel" style="width:100%;background:#0f1115;color:#e6e6e6;border:1px solid #2a2f3a;padding:6px 8px;border-radius:4px;font-size:12px"></div>
+      <div><div class='meta-cell'><span class='lbl'>Watch</span></div><select id="new-sub-watch" style="width:100%;background:#0f1115;color:#e6e6e6;border:1px solid #2a2f3a;padding:6px 8px;border-radius:4px;font-size:12px">${watchOptions}</select></div>
+      <div><div class='meta-cell'><span class='lbl'>Min votes</span></div><input id="new-sub-min-votes" type="number" value="2" min="1" style="width:100%;background:#0f1115;color:#e6e6e6;border:1px solid #2a2f3a;padding:6px 8px;border-radius:4px;font-size:12px"></div>
+      <div><div class='meta-cell'><span class='lbl'>Min fraction (0–1)</span></div><input id="new-sub-min-fraction" type="number" value="0.5" min="0" max="1" step="0.05" style="width:100%;background:#0f1115;color:#e6e6e6;border:1px solid #2a2f3a;padding:6px 8px;border-radius:4px;font-size:12px"></div>
+    </div>
+    <div class="actions">
+      <button class="btn primary" onclick="createSubscription()">Create</button>
+      <button class="btn" onclick="toggleNewSubForm()">Cancel</button>
+    </div>
+  `;
+  subsContent.parentNode.insertBefore(form, subsContent.nextSibling);
+}
+
+async function createSubscription() {
+  const name = $("new-sub-name").value.trim();
+  const watch_id = $("new-sub-watch").value;
+  const min_votes = parseInt($("new-sub-min-votes").value, 10);
+  const min_fraction = parseFloat($("new-sub-min-fraction").value);
+  if (!name || !watch_id) {
+    alert("Pick a watch and give the subscription a name.");
+    return;
+  }
+  try {
+    const res = await fetch("/api/watch-subscriptions", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({name, watch_id, min_votes, min_fraction}),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({detail: res.statusText}));
+      throw new Error(err.detail || res.statusText);
+    }
+    toggleNewSubForm();
+    await loadSubscriptions();
+  } catch (e) {
+    alert("Create failed: " + (e.message || e));
+  }
+}
+
+loadSubscriptions();
 </script>
 </body>
 </html>

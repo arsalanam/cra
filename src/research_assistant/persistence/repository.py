@@ -12,9 +12,12 @@ from sqlalchemy.orm import selectinload
 from .models import (
     DEFAULT_USER_ID,
     LiteratureWatch,
+    LiteratureWatchSubscription,
     Message,
     Notification,
+    RunVote,
     StreamEvent,
+    SubscriptionMember,
     Thread,
     WatchRun,
 )
@@ -361,3 +364,345 @@ class WatchRepository:
         notif.read_at = _utcnow()
         await self._s.flush()
         return True
+
+
+class SubscriptionError(Exception):
+    """Raised on invalid subscription state changes — invalid vote
+    value, watch missing, member not found, etc. Translated to 4xx by
+    the endpoint layer."""
+
+
+class SubscriptionRepository:
+    """CRUD for LiteratureWatchSubscription + SubscriptionMember +
+    RunVote, plus the quorum tally that drives group notifications.
+
+    Quorum rule: yes-votes ≥ max(min_votes, ceil(min_fraction × n_voters))
+    where n_voters is the count of members with role='voter'.
+    """
+
+    _ALLOWED_VOTES = ("yes", "no", "abstain")
+    _ALLOWED_MEMBER_ROLES = ("voter", "observer")
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._s = session
+
+    # ── Subscriptions ─────────────────────────────────────────────────────
+
+    async def create_subscription(
+        self,
+        *,
+        name: str,
+        watch_id: str,
+        owner_user_id: str | None = None,
+        description: str = "",
+        min_votes: int = 2,
+        min_fraction: float = 0.5,
+    ) -> LiteratureWatchSubscription:
+        if not 0.0 <= min_fraction <= 1.0:
+            raise SubscriptionError("min_fraction must be between 0 and 1.")
+        if min_votes < 1:
+            raise SubscriptionError("min_votes must be at least 1.")
+        watch = await self._s.get(LiteratureWatch, watch_id)
+        if watch is None:
+            raise SubscriptionError(f"Watch {watch_id!r} not found.")
+        sub = LiteratureWatchSubscription(
+            name=name[:200],
+            description=description,
+            watch_id=watch_id,
+            owner_user_id=owner_user_id,
+            min_votes=min_votes,
+            min_fraction=min_fraction,
+        )
+        self._s.add(sub)
+        await self._s.flush()
+        # Auto-add the owner as a voting member so the creator can vote
+        # without an explicit invite step.
+        if owner_user_id is not None:
+            await self.add_member(
+                subscription_id=sub.id,
+                user_id=owner_user_id,
+                role="voter",
+                invited_by_user_id=owner_user_id,
+            )
+        return sub
+
+    async def get_subscription(self, subscription_id: str) -> LiteratureWatchSubscription | None:
+        return await self._s.get(LiteratureWatchSubscription, subscription_id)
+
+    async def list_subscriptions_for_user(self, user_id: str) -> list[LiteratureWatchSubscription]:
+        """Subscriptions where the user is either the owner OR a member."""
+        member_sub_ids = select(SubscriptionMember.subscription_id).where(
+            SubscriptionMember.user_id == user_id
+        )
+        stmt = (
+            select(LiteratureWatchSubscription)
+            .where(
+                (LiteratureWatchSubscription.owner_user_id == user_id)
+                | (LiteratureWatchSubscription.id.in_(member_sub_ids))
+            )
+            .order_by(LiteratureWatchSubscription.created_at.desc())
+        )
+        result = await self._s.execute(stmt)
+        return list(result.scalars().all())
+
+    async def list_subscriptions_for_watch(
+        self, watch_id: str
+    ) -> list[LiteratureWatchSubscription]:
+        stmt = (
+            select(LiteratureWatchSubscription)
+            .where(LiteratureWatchSubscription.watch_id == watch_id)
+            .order_by(LiteratureWatchSubscription.created_at.desc())
+        )
+        result = await self._s.execute(stmt)
+        return list(result.scalars().all())
+
+    async def update_subscription(
+        self,
+        subscription_id: str,
+        **kwargs: object,
+    ) -> LiteratureWatchSubscription | None:
+        sub = await self._s.get(LiteratureWatchSubscription, subscription_id)
+        if sub is None:
+            return None
+        if "min_fraction" in kwargs:
+            mf = kwargs["min_fraction"]
+            if not isinstance(mf, (int, float)) or not 0.0 <= float(mf) <= 1.0:
+                raise SubscriptionError("min_fraction must be between 0 and 1.")
+        if "min_votes" in kwargs:
+            mv = kwargs["min_votes"]
+            if not isinstance(mv, int) or mv < 1:
+                raise SubscriptionError("min_votes must be at least 1.")
+        for key, value in kwargs.items():
+            if hasattr(sub, key):
+                setattr(sub, key, value)
+        await self._s.flush()
+        return sub
+
+    async def delete_subscription(self, subscription_id: str) -> bool:
+        sub = await self._s.get(LiteratureWatchSubscription, subscription_id)
+        if sub is None:
+            return False
+        await self._s.delete(sub)
+        await self._s.flush()
+        return True
+
+    # ── Members ───────────────────────────────────────────────────────────
+
+    async def add_member(
+        self,
+        *,
+        subscription_id: str,
+        user_id: str,
+        role: str = "voter",
+        invited_by_user_id: str | None = None,
+    ) -> SubscriptionMember:
+        if role not in self._ALLOWED_MEMBER_ROLES:
+            raise SubscriptionError(f"Invalid member role {role!r}; choose voter | observer.")
+        sub = await self._s.get(LiteratureWatchSubscription, subscription_id)
+        if sub is None:
+            raise SubscriptionError(f"Subscription {subscription_id!r} not found.")
+        # Idempotent: re-adding the same (sub, user) updates role + invited_by
+        # rather than raising on the UNIQUE constraint.
+        existing = await self._s.scalar(
+            select(SubscriptionMember).where(
+                SubscriptionMember.subscription_id == subscription_id,
+                SubscriptionMember.user_id == user_id,
+            )
+        )
+        if existing is not None:
+            existing.role = role
+            existing.invited_by_user_id = invited_by_user_id
+            await self._s.flush()
+            return existing
+        member = SubscriptionMember(
+            subscription_id=subscription_id,
+            user_id=user_id,
+            role=role,
+            invited_by_user_id=invited_by_user_id,
+        )
+        self._s.add(member)
+        await self._s.flush()
+        return member
+
+    async def remove_member(self, *, subscription_id: str, user_id: str) -> bool:
+        member = await self._s.scalar(
+            select(SubscriptionMember).where(
+                SubscriptionMember.subscription_id == subscription_id,
+                SubscriptionMember.user_id == user_id,
+            )
+        )
+        if member is None:
+            return False
+        await self._s.delete(member)
+        await self._s.flush()
+        return True
+
+    async def list_members(self, subscription_id: str) -> list[SubscriptionMember]:
+        stmt = (
+            select(SubscriptionMember)
+            .where(SubscriptionMember.subscription_id == subscription_id)
+            .order_by(SubscriptionMember.joined_at)
+        )
+        result = await self._s.execute(stmt)
+        return list(result.scalars().all())
+
+    async def is_member(self, *, subscription_id: str, user_id: str) -> SubscriptionMember | None:
+        result: SubscriptionMember | None = await self._s.scalar(
+            select(SubscriptionMember).where(
+                SubscriptionMember.subscription_id == subscription_id,
+                SubscriptionMember.user_id == user_id,
+            )
+        )
+        return result
+
+    # ── Votes ─────────────────────────────────────────────────────────────
+
+    async def record_vote(
+        self,
+        *,
+        subscription_id: str,
+        run_id: str,
+        voter_user_id: str,
+        vote: str,
+        rationale: str = "",
+    ) -> RunVote:
+        if vote not in self._ALLOWED_VOTES:
+            raise SubscriptionError(f"Invalid vote {vote!r}; choose yes | no | abstain.")
+        # Voter must be a member with role='voter'. Observers can't vote.
+        member = await self.is_member(subscription_id=subscription_id, user_id=voter_user_id)
+        if member is None or member.role != "voter":
+            raise SubscriptionError("Only voting members may cast votes on this subscription.")
+        # Run must belong to the subscription's watch.
+        sub = await self._s.get(LiteratureWatchSubscription, subscription_id)
+        if sub is None:
+            raise SubscriptionError(f"Subscription {subscription_id!r} not found.")
+        run = await self._s.get(WatchRun, run_id)
+        if run is None or run.watch_id != sub.watch_id:
+            raise SubscriptionError(f"Run {run_id!r} not found on this subscription's watch.")
+        # Idempotent upsert keyed on (sub, run, voter).
+        existing = await self._s.scalar(
+            select(RunVote).where(
+                RunVote.subscription_id == subscription_id,
+                RunVote.run_id == run_id,
+                RunVote.voter_user_id == voter_user_id,
+            )
+        )
+        if existing is not None:
+            existing.vote = vote
+            existing.rationale = rationale
+            await self._s.flush()
+            return existing
+        rv = RunVote(
+            subscription_id=subscription_id,
+            run_id=run_id,
+            voter_user_id=voter_user_id,
+            vote=vote,
+            rationale=rationale,
+        )
+        self._s.add(rv)
+        await self._s.flush()
+        return rv
+
+    async def list_votes(self, *, subscription_id: str, run_id: str) -> list[RunVote]:
+        stmt = (
+            select(RunVote)
+            .where(
+                RunVote.subscription_id == subscription_id,
+                RunVote.run_id == run_id,
+            )
+            .order_by(RunVote.voted_at)
+        )
+        result = await self._s.execute(stmt)
+        return list(result.scalars().all())
+
+    async def tally(self, *, subscription_id: str, run_id: str) -> dict[str, object]:
+        """Return the vote breakdown + quorum status for a (sub, run).
+
+        Schema: {yes, no, abstain, n_voters, threshold,
+        quorum_cleared}. `n_voters` is the count of members with
+        role='voter'. `threshold` is `max(min_votes,
+        ceil(min_fraction × n_voters))`. `quorum_cleared` is
+        `yes >= threshold` AND `n_voters > 0`.
+        """
+        import math
+
+        sub = await self._s.get(LiteratureWatchSubscription, subscription_id)
+        if sub is None:
+            raise SubscriptionError(f"Subscription {subscription_id!r} not found.")
+        votes = await self.list_votes(subscription_id=subscription_id, run_id=run_id)
+        yes = sum(1 for v in votes if v.vote == "yes")
+        no = sum(1 for v in votes if v.vote == "no")
+        abstain = sum(1 for v in votes if v.vote == "abstain")
+        n_voters = (
+            await self._s.scalar(
+                select(func.count(SubscriptionMember.id)).where(
+                    SubscriptionMember.subscription_id == subscription_id,
+                    SubscriptionMember.role == "voter",
+                )
+            )
+            or 0
+        )
+        n_voters = int(n_voters)
+        fraction_floor = math.ceil(sub.min_fraction * n_voters)
+        threshold = max(sub.min_votes, fraction_floor)
+        quorum_cleared = n_voters > 0 and yes >= threshold
+        return {
+            "subscription_id": subscription_id,
+            "run_id": run_id,
+            "yes": yes,
+            "no": no,
+            "abstain": abstain,
+            "n_voters": n_voters,
+            "threshold": threshold,
+            "quorum_cleared": quorum_cleared,
+        }
+
+    async def fanout_group_notification(
+        self,
+        *,
+        subscription_id: str,
+        run_id: str,
+        title: str,
+        summary: str,
+        new_paper_count: int,
+    ) -> list[Notification]:
+        """Create one Notification per member when quorum clears.
+
+        Idempotent per (subscription, run, recipient): if a row already
+        exists for that triple, it is left alone so a stray double-tally
+        doesn't double-notify. Returns the freshly-created rows (may be
+        empty if every member already had one).
+        """
+        sub = await self._s.get(LiteratureWatchSubscription, subscription_id)
+        if sub is None:
+            raise SubscriptionError(f"Subscription {subscription_id!r} not found.")
+        members = await self.list_members(subscription_id)
+        if not members:
+            return []
+        existing_user_ids = set(
+            (
+                await self._s.scalars(
+                    select(Notification.user_id).where(
+                        Notification.subscription_id == subscription_id,
+                        Notification.run_id == run_id,
+                    )
+                )
+            ).all()
+        )
+        created: list[Notification] = []
+        for member in members:
+            if member.user_id in existing_user_ids:
+                continue
+            notif = Notification(
+                user_id=member.user_id,
+                watch_id=sub.watch_id,
+                run_id=run_id,
+                subscription_id=subscription_id,
+                title=title[:300],
+                summary=summary,
+                new_paper_count=new_paper_count,
+            )
+            self._s.add(notif)
+            created.append(notif)
+        await self._s.flush()
+        return created

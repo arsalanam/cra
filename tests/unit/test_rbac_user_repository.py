@@ -109,7 +109,16 @@ async def test_effective_permissions_for_student_is_meta_plus_general(
     await repo.grant_role(user.id, "student")
 
     perms = await repo.effective_permissions_for_sub("sub-student")
-    assert perms == frozenset({Permission.SKILL_META_ANALYSIS, Permission.SKILL_GENERAL_QA})
+    # P2 #4: students additionally carry watch_subscription.vote so they
+    # can be invited to a guideline-committee subscription. This does
+    # NOT widen the skill surface they can drive.
+    assert perms == frozenset(
+        {
+            Permission.SKILL_META_ANALYSIS,
+            Permission.SKILL_GENERAL_QA,
+            Permission.WATCH_SUBSCRIPTION_VOTE,
+        }
+    )
 
 
 async def test_effective_permissions_merges_legacy_user_roles(

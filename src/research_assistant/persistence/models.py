@@ -357,7 +357,18 @@ class WatchRun(Base):
 
 
 class Notification(Base):
-    """An in-app alert raised when a WatchRun produces material new evidence."""
+    """An in-app alert raised when a WatchRun produces material new evidence.
+
+    Two flavours share the table:
+      • Personal — `subscription_id` is NULL. The watch's owner is the
+        recipient (`user_id`). Created by `services.watch_runner` when a
+        run trips the watch's own `triage_threshold`.
+      • Group — `subscription_id` is set. Created by
+        `services.watch_subscriptions` when quorum on a LiteratureWatch-
+        Subscription clears for a given run. One Notification row is
+        fanned out to each subscription member (each row carries that
+        member's `user_id`).
+    """
 
     __tablename__ = "notifications"
 
@@ -373,6 +384,15 @@ class Notification(Base):
     run_id: Mapped[str] = mapped_column(
         ForeignKey("watch_runs.id", ondelete="CASCADE"),
     )
+    # Set when the notification is a group-level alert fanned out from a
+    # LiteratureWatchSubscription quorum-clear event. NULL for personal
+    # watch alerts (the legacy shape).
+    subscription_id: Mapped[str | None] = mapped_column(
+        ForeignKey("literature_watch_subscriptions.id", ondelete="CASCADE"),
+        nullable=True,
+        default=None,
+        index=True,
+    )
     title: Mapped[str] = mapped_column(Text)
     summary: Mapped[str] = mapped_column(Text)
     new_paper_count: Mapped[int] = mapped_column(Integer, default=0)
@@ -383,6 +403,169 @@ class Notification(Base):
 
     watch: Mapped[LiteratureWatch] = relationship(back_populates="notifications")
     run: Mapped[WatchRun] = relationship(back_populates="notification")
+
+
+# ── Group-level living-review subscriptions (P2 #4) ─────────────────────
+
+
+class LiteratureWatchSubscription(Base):
+    """A group wrapper around a LiteratureWatch.
+
+    Ad-hoc membership (operator invites users by email or local sub).
+    When a WatchRun lands, each member can cast a yes/no/abstain vote
+    on whether the run is practice-changing enough to trip a group
+    alert. Quorum is configurable: yes-votes ≥ max(min_votes,
+    ceil(min_fraction × n_members)) — matching the HTA / guideline-
+    committee convention "N votes OR % of members, whichever is
+    greater".
+
+    Notifications are fanned out per-member when quorum clears (one
+    Notification row per member, all sharing the same subscription_id +
+    run_id). This keeps the existing per-user `/api/notifications` feed
+    working unchanged.
+    """
+
+    __tablename__ = "literature_watch_subscriptions"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    name: Mapped[str] = mapped_column(Text)
+    description: Mapped[str] = mapped_column(Text, default="")
+    watch_id: Mapped[str] = mapped_column(
+        ForeignKey("literature_watches.id", ondelete="CASCADE"),
+        index=True,
+    )
+    owner_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        default=None,
+        doc="Creator of the subscription. Implicit voter; can manage members.",
+    )
+    min_votes: Mapped[int] = mapped_column(
+        Integer,
+        default=2,
+        doc=(
+            "Absolute floor on yes-votes for quorum. Default 2 — a "
+            "single yes-vote shouldn't fire a group alert."
+        ),
+    )
+    min_fraction: Mapped[float] = mapped_column(
+        Float,
+        default=0.5,
+        doc=(
+            "Fraction of members whose yes-votes are required (0.0 – "
+            "1.0). Quorum cleared when yes ≥ max(min_votes, "
+            "ceil(min_fraction × n_members))."
+        ),
+    )
+    status: Mapped[str] = mapped_column(
+        Text,
+        default="active",
+        doc="'active' | 'paused'. Paused subscriptions ignore new WatchRuns.",
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
+
+    watch: Mapped[LiteratureWatch] = relationship()
+    members: Mapped[list[SubscriptionMember]] = relationship(
+        back_populates="subscription",
+        cascade="all, delete-orphan",
+    )
+    votes: Mapped[list[RunVote]] = relationship(
+        back_populates="subscription",
+        cascade="all, delete-orphan",
+    )
+
+
+class SubscriptionMember(Base):
+    """Ad-hoc membership row.
+
+    `role` is voter | observer. Observers receive notifications when
+    quorum clears but don't count toward the denominator and can't
+    vote — useful for sponsors / liaisons who attend but don't decide.
+    """
+
+    __tablename__ = "subscription_members"
+    __table_args__ = (
+        UniqueConstraint(
+            "subscription_id",
+            "user_id",
+            name="uq_subscription_member_user",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    subscription_id: Mapped[str] = mapped_column(
+        ForeignKey("literature_watch_subscriptions.id", ondelete="CASCADE"),
+        index=True,
+    )
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        index=True,
+    )
+    role: Mapped[str] = mapped_column(
+        Text,
+        default="voter",
+        doc="'voter' (counts toward quorum) | 'observer' (read-only).",
+    )
+    invited_by_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        default=None,
+    )
+    joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    subscription: Mapped[LiteratureWatchSubscription] = relationship(
+        back_populates="members",
+        foreign_keys=[subscription_id],
+    )
+
+
+class RunVote(Base):
+    """One member's vote on one WatchRun for one Subscription.
+
+    Idempotent per (subscription, run, voter): the unique constraint
+    means re-voting overwrites the prior choice (the repo method
+    upserts) instead of creating a duplicate. Rationale is free-text
+    captured at vote time.
+    """
+
+    __tablename__ = "run_votes"
+    __table_args__ = (
+        UniqueConstraint(
+            "subscription_id",
+            "run_id",
+            "voter_user_id",
+            name="uq_run_vote_voter",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    subscription_id: Mapped[str] = mapped_column(
+        ForeignKey("literature_watch_subscriptions.id", ondelete="CASCADE"),
+        index=True,
+    )
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("watch_runs.id", ondelete="CASCADE"),
+        index=True,
+    )
+    voter_user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        index=True,
+    )
+    vote: Mapped[str] = mapped_column(
+        Text,
+        doc="'yes' | 'no' | 'abstain'. Enforced by the repo method.",
+    )
+    rationale: Mapped[str] = mapped_column(Text, default="")
+    voted_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
+
+    subscription: Mapped[LiteratureWatchSubscription] = relationship(
+        back_populates="votes",
+    )
 
 
 class SourceConfig(Base):

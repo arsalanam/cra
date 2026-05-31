@@ -48,6 +48,12 @@ class Permission(StrEnum):
     # ── Living-review watches ────────────────────────────────────────────
     WATCH_READ = "watch.read"
     WATCH_MANAGE = "watch.manage"
+    # P2 #4: group-level subscriptions on top of a LiteratureWatch. Anyone
+    # invited to a subscription gets vote — including students + auditors
+    # — without needing watch.read on the underlying watch. Researchers
+    # additionally get watch.manage which covers create / member-mgmt /
+    # delete on the subscription side.
+    WATCH_SUBSCRIPTION_VOTE = "watch_subscription.vote"
 
     # ── eCRF studies / forms ─────────────────────────────────────────────
     STUDY_READ = "study.read"
@@ -244,7 +250,13 @@ _EVIDENCE_SKILLS: Final[frozenset[Permission]] = frozenset(
 # trigger) doesn't 403 a student typing "hi" or "explain forest plot".
 # `general_qa` is hallucination-guarded by `_reject_clinical_synthesis`.
 _STUDENT_SKILLS: Final[frozenset[Permission]] = frozenset(
-    {Permission.SKILL_META_ANALYSIS, Permission.SKILL_GENERAL_QA}
+    {
+        Permission.SKILL_META_ANALYSIS,
+        Permission.SKILL_GENERAL_QA,
+        # Students can be invited to a guideline-committee subscription
+        # as voters even though they can't manage watches themselves.
+        Permission.WATCH_SUBSCRIPTION_VOTE,
+    }
 )
 
 
@@ -260,6 +272,7 @@ ROLE_PERMISSIONS: Final[dict[Role, frozenset[Permission]]] = {
             Permission.LIBRARY_WRITE,
             Permission.WATCH_READ,
             Permission.WATCH_MANAGE,
+            Permission.WATCH_SUBSCRIPTION_VOTE,
             # Researchers can spin up SR projects and assign reviewers, and
             # see project-level state; the per-project screening permissions
             # come from project membership (reviewer_1/2/adjudicator), not
@@ -281,6 +294,10 @@ ROLE_PERMISSIONS: Final[dict[Role, frozenset[Permission]]] = {
             Permission.PRISMA_READ,
             Permission.CDISC_READ,
             Permission.RANDOMIZATION_READ,
+            # Auditors can be invited as voting members on a guideline-
+            # committee subscription. Read-only on the underlying watch
+            # is unchanged.
+            Permission.WATCH_SUBSCRIPTION_VOTE,
             # Recruitment / screening logs: auditor reads, doesn't mutate.
             Permission.SCREENING_READ,
             # Visit schedule + reminders: read-only for audit trails.
@@ -361,6 +378,9 @@ ROLE_PERMISSIONS: Final[dict[Role, frozenset[Permission]]] = {
             # reconciliation rollup.
             Permission.IP_DISPENSE,
             Permission.IP_RECONCILE,
+            # PIs are the natural HTA / guideline-committee voter — when
+            # an institution forms a panel, the PI is on it.
+            Permission.WATCH_SUBSCRIPTION_VOTE,
         }
     ),
     Role.COORDINATOR: frozenset(
