@@ -147,6 +147,39 @@ async def resolve_screening_log_scope(log_id: str) -> Scope:
         return (log.deployment_id, log.site_id, None)
 
 
+async def resolve_visit_schedule_scope(schedule_id: str) -> Scope:
+    """VisitSchedule → its deployment scope (P1 #4)."""
+    from ..persistence.clinical.models import VisitSchedule
+
+    async with get_clinical_session() as s:
+        schedule = await s.get(VisitSchedule, schedule_id)
+        if schedule is None:
+            raise HTTPException(404, "Visit schedule not found")
+        return await resolve_deployment_scope(schedule.deployment_id)
+
+
+async def resolve_planned_visit_scope(planned_visit_id: str) -> Scope:
+    """PlannedVisit → its subject's scope (P1 #4)."""
+    from ..persistence.clinical.models import PlannedVisit
+
+    async with get_clinical_session() as s:
+        pv = await s.get(PlannedVisit, planned_visit_id)
+        if pv is None:
+            raise HTTPException(404, "Planned visit not found")
+        return await resolve_subject_scope(pv.subject_id)
+
+
+async def resolve_participant_access_scope(access_id: str) -> Scope:
+    """ParticipantAccess → its subject's scope (P1 #4)."""
+    from ..persistence.clinical.models import ParticipantAccess
+
+    async with get_clinical_session() as s:
+        access = await s.get(ParticipantAccess, access_id)
+        if access is None:
+            raise HTTPException(404, "Participant access not found")
+        return await resolve_subject_scope(access.subject_id)
+
+
 # ecrf StudyOut / FormOut path params resolve straight to (study_id, None).
 async def resolve_ecrf_study_scope(study_id: str) -> Scope:
     return (study_id, None, None)
@@ -202,6 +235,9 @@ RESOURCE_RESOLVERS: dict[str, ResolverFn] = {
     "deviation_id": resolve_deviation_scope,
     "capa_id": resolve_capa_scope,
     "log_id": resolve_screening_log_scope,
+    "schedule_id": resolve_visit_schedule_scope,
+    "planned_visit_id": resolve_planned_visit_scope,
+    "access_id": resolve_participant_access_scope,
 }
 
 

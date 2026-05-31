@@ -577,6 +577,121 @@ class RecruitmentFunnelOut(BaseModel):
     per_week_per_site: dict[str, dict[str, dict[str, int]]]
 
 
+# ── Visit scheduling + participant reminders DTOs (P1 #4) ────────────────
+
+
+class VisitScheduleIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str
+    description: str = ""
+
+
+class VisitScheduleOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    deployment_id: str
+    name: str
+    description: str
+    is_active: bool
+    created_by_sub: str | None
+    created_at: datetime
+
+
+class ScheduledVisitIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    visit_name: str
+    day_offset: int
+    window_before_days: int = 0
+    window_after_days: int = 0
+    reminder_offsets: list[int] | None = None
+    ordering: int = 0
+
+
+class ScheduledVisitOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    schedule_id: str
+    visit_name: str
+    day_offset: int
+    window_before_days: int
+    window_after_days: int
+    reminder_offsets_json: str
+    ordering: int
+
+
+class PlannedVisitOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    subject_id: str
+    scheduled_visit_id: str
+    planned_date: datetime
+    window_start: datetime
+    window_end: datetime
+    status: str
+    completed_at: datetime | None
+    override_reason: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class PlannedVisitUpdateIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    planned_date: datetime | None = None
+    status: str | None = None
+    override_reason: str = ""
+
+
+class GeneratePlannedVisitsIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    baseline_date: datetime | None = None
+
+
+class ParticipantContactIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    email: str | None = None
+    phone: str | None = None
+    preferred_channel: str = "email"
+    opt_in_channels: list[str] = Field(default_factory=lambda: ["email"])
+    opt_out: bool = False
+
+
+class ParticipantContactOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    participant_access_id: str
+    subject_id: str
+    email: str | None
+    phone: str | None
+    preferred_channel: str
+    opt_in_channels_json: str
+    opt_out_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class SentReminderOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    planned_visit_id: str
+    subject_id: str
+    channel: str
+    offset_days: int
+    provider: str
+    status: str
+    recipient: str | None
+    error: str | None
+    queued_at: datetime
+    sent_at: datetime | None
+
+
+class ReminderRunResultOut(BaseModel):
+    deployment_id: str
+    queued: int
+    sent: int
+    failed: int
+    skipped: int
+
+
 class CapaOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: str
@@ -2494,5 +2609,246 @@ def create_edc_router() -> APIRouter:
                 deployment_id, site_id=site_id
             )
             return RecruitmentFunnelOut.model_validate(payload)
+
+    # ── Visit scheduling + reminders (P1 #4) ─────────────────────────────
+
+    @router.post(
+        "/deployments/{deployment_id}/visit-schedules",
+        response_model=VisitScheduleOut,
+        status_code=201,
+    )
+    async def create_visit_schedule(
+        deployment_id: str,
+        body: VisitScheduleIn,
+        user: SessionPayload = require_permission_scoped(
+            Permission.VISIT_SCHEDULE_AUTHOR, resource_param="deployment_id"
+        ),
+    ) -> VisitScheduleOut:
+        async with get_clinical_session() as s:
+            try:
+                schedule = await ClinicalRepository(s).create_visit_schedule(
+                    deployment_id,
+                    name=body.name,
+                    description=body.description,
+                    actor_sub=user.sub,
+                )
+            except ClinicalError as e:
+                raise HTTPException(422, str(e)) from e
+            return VisitScheduleOut.model_validate(schedule)
+
+    @router.get(
+        "/deployments/{deployment_id}/visit-schedules",
+        response_model=list[VisitScheduleOut],
+    )
+    async def list_visit_schedules(
+        deployment_id: str,
+        user: SessionPayload = require_permission_scoped(
+            Permission.VISIT_SCHEDULE_READ, resource_param="deployment_id"
+        ),
+    ) -> list[VisitScheduleOut]:
+        async with get_clinical_session() as s:
+            rows = await ClinicalRepository(s).list_visit_schedules(deployment_id)
+            return [VisitScheduleOut.model_validate(r) for r in rows]
+
+    @router.post(
+        "/visit-schedules/{schedule_id}/activate",
+        response_model=VisitScheduleOut,
+    )
+    async def activate_visit_schedule(
+        schedule_id: str,
+        user: SessionPayload = require_permission_scoped(
+            Permission.VISIT_SCHEDULE_AUTHOR, resource_param="schedule_id"
+        ),
+    ) -> VisitScheduleOut:
+        async with get_clinical_session() as s:
+            try:
+                schedule = await ClinicalRepository(s).set_active_visit_schedule(
+                    schedule_id, actor_sub=user.sub
+                )
+            except ClinicalError as e:
+                raise HTTPException(422, str(e)) from e
+            return VisitScheduleOut.model_validate(schedule)
+
+    @router.post(
+        "/visit-schedules/{schedule_id}/visits",
+        response_model=ScheduledVisitOut,
+        status_code=201,
+    )
+    async def add_scheduled_visit(
+        schedule_id: str,
+        body: ScheduledVisitIn,
+        user: SessionPayload = require_permission_scoped(
+            Permission.VISIT_SCHEDULE_AUTHOR, resource_param="schedule_id"
+        ),
+    ) -> ScheduledVisitOut:
+        async with get_clinical_session() as s:
+            try:
+                visit = await ClinicalRepository(s).add_scheduled_visit(
+                    schedule_id,
+                    visit_name=body.visit_name,
+                    day_offset=body.day_offset,
+                    window_before_days=body.window_before_days,
+                    window_after_days=body.window_after_days,
+                    reminder_offsets=body.reminder_offsets,
+                    ordering=body.ordering,
+                    actor_sub=user.sub,
+                )
+            except ClinicalError as e:
+                raise HTTPException(422, str(e)) from e
+            return ScheduledVisitOut.model_validate(visit)
+
+    @router.get(
+        "/visit-schedules/{schedule_id}/visits",
+        response_model=list[ScheduledVisitOut],
+    )
+    async def list_scheduled_visits(
+        schedule_id: str,
+        user: SessionPayload = require_permission_scoped(
+            Permission.VISIT_SCHEDULE_READ, resource_param="schedule_id"
+        ),
+    ) -> list[ScheduledVisitOut]:
+        async with get_clinical_session() as s:
+            rows = await ClinicalRepository(s).list_scheduled_visits(schedule_id)
+            return [ScheduledVisitOut.model_validate(r) for r in rows]
+
+    @router.post(
+        "/subjects/{subject_id}/planned-visits/generate",
+        response_model=list[PlannedVisitOut],
+    )
+    async def generate_planned_visits(
+        subject_id: str,
+        body: GeneratePlannedVisitsIn,
+        user: SessionPayload = require_permission_scoped(
+            Permission.VISIT_UPDATE, resource_param="subject_id"
+        ),
+    ) -> list[PlannedVisitOut]:
+        async with get_clinical_session() as s:
+            try:
+                rows = await ClinicalRepository(s).generate_planned_visits(
+                    subject_id,
+                    baseline_date=body.baseline_date,
+                    actor_sub=user.sub,
+                )
+            except ClinicalError as e:
+                raise HTTPException(422, str(e)) from e
+            return [PlannedVisitOut.model_validate(r) for r in rows]
+
+    @router.get(
+        "/subjects/{subject_id}/planned-visits",
+        response_model=list[PlannedVisitOut],
+    )
+    async def list_subject_planned_visits(
+        subject_id: str,
+        user: SessionPayload = require_permission_scoped(
+            Permission.VISIT_SCHEDULE_READ, resource_param="subject_id"
+        ),
+        status: str | None = None,
+    ) -> list[PlannedVisitOut]:
+        async with get_clinical_session() as s:
+            rows = await ClinicalRepository(s).list_planned_visits(
+                subject_id=subject_id, status=status
+            )
+            return [PlannedVisitOut.model_validate(r) for r in rows]
+
+    @router.get(
+        "/deployments/{deployment_id}/planned-visits",
+        response_model=list[PlannedVisitOut],
+    )
+    async def list_deployment_planned_visits(
+        deployment_id: str,
+        user: SessionPayload = require_permission_scoped(
+            Permission.VISIT_SCHEDULE_READ, resource_param="deployment_id"
+        ),
+        status: str | None = None,
+    ) -> list[PlannedVisitOut]:
+        async with get_clinical_session() as s:
+            rows = await ClinicalRepository(s).list_planned_visits(
+                deployment_id=deployment_id, status=status
+            )
+            return [PlannedVisitOut.model_validate(r) for r in rows]
+
+    @router.patch(
+        "/planned-visits/{planned_visit_id}",
+        response_model=PlannedVisitOut,
+    )
+    async def update_planned_visit(
+        planned_visit_id: str,
+        body: PlannedVisitUpdateIn,
+        user: SessionPayload = require_permission_scoped(
+            Permission.VISIT_UPDATE, resource_param="planned_visit_id"
+        ),
+    ) -> PlannedVisitOut:
+        async with get_clinical_session() as s:
+            try:
+                row = await ClinicalRepository(s).update_planned_visit(
+                    planned_visit_id,
+                    planned_date=body.planned_date,
+                    status=body.status,
+                    override_reason=body.override_reason,
+                    actor_sub=user.sub,
+                )
+            except ClinicalError as e:
+                raise HTTPException(422, str(e)) from e
+            return PlannedVisitOut.model_validate(row)
+
+    @router.put(
+        "/participant-access/{access_id}/contact",
+        response_model=ParticipantContactOut,
+    )
+    async def upsert_participant_contact(
+        access_id: str,
+        body: ParticipantContactIn,
+        user: SessionPayload = require_permission_scoped(
+            Permission.PARTICIPANT_CONTACT_MANAGE, resource_param="access_id"
+        ),
+    ) -> ParticipantContactOut:
+        async with get_clinical_session() as s:
+            try:
+                contact = await ClinicalRepository(s).upsert_participant_contact(
+                    access_id,
+                    email=body.email,
+                    phone=body.phone,
+                    preferred_channel=body.preferred_channel,
+                    opt_in_channels=body.opt_in_channels,
+                    opt_out=body.opt_out,
+                    actor_sub=user.sub,
+                )
+            except ClinicalError as e:
+                raise HTTPException(422, str(e)) from e
+            return ParticipantContactOut.model_validate(contact)
+
+    @router.get(
+        "/deployments/{deployment_id}/reminders",
+        response_model=list[SentReminderOut],
+    )
+    async def list_sent_reminders(
+        deployment_id: str,
+        user: SessionPayload = require_permission_scoped(
+            Permission.REMINDER_READ, resource_param="deployment_id"
+        ),
+    ) -> list[SentReminderOut]:
+        async with get_clinical_session() as s:
+            rows = await ClinicalRepository(s).list_sent_reminders(
+                deployment_id=deployment_id
+            )
+            return [SentReminderOut.model_validate(r) for r in rows]
+
+    @router.post(
+        "/deployments/{deployment_id}/reminders/run-due",
+        response_model=ReminderRunResultOut,
+    )
+    async def run_due_reminders(
+        deployment_id: str,
+        user: SessionPayload = require_permission_scoped(
+            Permission.REMINDER_SEND, resource_param="deployment_id"
+        ),
+    ) -> ReminderRunResultOut:
+        """Manual trigger for the reminder fire pipeline. Useful when the
+        APScheduler interval would take too long for a sponsor-asked
+        weekly burst, or for testing."""
+        from ..services.reminders import fire_due_reminders
+
+        result = await fire_due_reminders(deployment_id)
+        return ReminderRunResultOut.model_validate(result.as_dict())
 
     return router

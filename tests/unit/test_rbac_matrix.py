@@ -351,6 +351,70 @@ def test_researcher_can_run_grade_drafter_but_student_cannot() -> None:
     assert Permission.SKILL_GRADE_DRAFTER not in ROLE_PERMISSIONS[Role.STUDENT]
 
 
+def test_visit_schedule_permissions_per_role() -> None:
+    """P1 #4 visit scheduling + reminders:
+      - study_designer: authors schedule + reads.
+      - coordinator: reads schedule, marks visits complete, manages
+        participant contact (point-of-care).
+      - PI: reads schedule, updates visits, reads reminder audit.
+      - data_manager: activates schedule + reads + sends reminders
+        manually.
+      - monitor + auditor: read-only.
+    """
+    designer = ROLE_PERMISSIONS[Role.STUDY_DESIGNER]
+    assert Permission.VISIT_SCHEDULE_AUTHOR in designer
+    assert Permission.VISIT_SCHEDULE_READ in designer
+    # Designer does NOT touch participants directly.
+    assert Permission.PARTICIPANT_CONTACT_MANAGE not in designer
+    assert Permission.VISIT_UPDATE not in designer
+
+    coord = ROLE_PERMISSIONS[Role.COORDINATOR]
+    assert Permission.VISIT_SCHEDULE_READ in coord
+    assert Permission.VISIT_UPDATE in coord
+    assert Permission.PARTICIPANT_CONTACT_MANAGE in coord
+    # Coordinator does NOT author the schedule.
+    assert Permission.VISIT_SCHEDULE_AUTHOR not in coord
+    assert Permission.REMINDER_SEND not in coord
+
+    pi = ROLE_PERMISSIONS[Role.PRINCIPAL_INVESTIGATOR]
+    assert Permission.VISIT_SCHEDULE_READ in pi
+    assert Permission.VISIT_UPDATE in pi
+    assert Permission.REMINDER_READ in pi
+    assert Permission.VISIT_SCHEDULE_AUTHOR not in pi
+
+    dm = ROLE_PERMISSIONS[Role.DATA_MANAGER]
+    assert Permission.VISIT_SCHEDULE_AUTHOR in dm
+    assert Permission.REMINDER_SEND in dm
+    assert Permission.REMINDER_READ in dm
+    # DM doesn't update specific planned visits or manage contact info —
+    # that's coordinator / PI territory.
+    assert Permission.VISIT_UPDATE not in dm
+    assert Permission.PARTICIPANT_CONTACT_MANAGE not in dm
+
+    mon = ROLE_PERMISSIONS[Role.MONITOR]
+    assert Permission.VISIT_SCHEDULE_READ in mon
+    assert Permission.REMINDER_READ in mon
+    assert Permission.REMINDER_SEND not in mon
+    assert Permission.VISIT_UPDATE not in mon
+
+    aud = ROLE_PERMISSIONS[Role.AUDITOR]
+    assert Permission.VISIT_SCHEDULE_READ in aud
+    assert Permission.REMINDER_READ in aud
+    assert Permission.REMINDER_SEND not in aud
+    assert Permission.VISIT_UPDATE not in aud
+
+    student = ROLE_PERMISSIONS[Role.STUDENT]
+    for p in (
+        Permission.VISIT_SCHEDULE_AUTHOR,
+        Permission.VISIT_SCHEDULE_READ,
+        Permission.VISIT_UPDATE,
+        Permission.PARTICIPANT_CONTACT_MANAGE,
+        Permission.REMINDER_READ,
+        Permission.REMINDER_SEND,
+    ):
+        assert p not in student
+
+
 def test_coordinator_records_screening_pi_dm_update_monitor_auditor_read() -> None:
     """Recruitment / screening (P1 #3):
       - Coordinator records + updates + reads (point-of-care).

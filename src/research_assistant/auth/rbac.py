@@ -94,6 +94,14 @@ class Permission(StrEnum):
     SCREENING_UPDATE = "screening.update"
     SCREENING_READ = "screening.read"
 
+    # ── Visit scheduling + reminders (P1 #4) ─────────────────────────────
+    VISIT_SCHEDULE_AUTHOR = "visit_schedule.author"
+    VISIT_SCHEDULE_READ = "visit_schedule.read"
+    VISIT_UPDATE = "visit.update"
+    PARTICIPANT_CONTACT_MANAGE = "participant_contact.manage"
+    REMINDER_READ = "reminder.read"
+    REMINDER_SEND = "reminder.send"
+
     # ── CDISC submission pipeline (SDTM → ADaM → TLF) ────────────────────
     CDISC_DERIVE = "cdisc.derive"
     CDISC_READ = "cdisc.read"
@@ -238,6 +246,9 @@ ROLE_PERMISSIONS: Final[dict[Role, frozenset[Permission]]] = {
             Permission.RANDOMIZATION_READ,
             # Recruitment / screening logs: auditor reads, doesn't mutate.
             Permission.SCREENING_READ,
+            # Visit schedule + reminders: read-only for audit trails.
+            Permission.VISIT_SCHEDULE_READ,
+            Permission.REMINDER_READ,
         }
     ),
     Role.STUDY_DESIGNER: frozenset(
@@ -249,6 +260,10 @@ ROLE_PERMISSIONS: Final[dict[Role, frozenset[Permission]]] = {
             Permission.STUDY_CREATE,
             Permission.DEPLOYMENT_MANAGE,
             Permission.DATA_READ,
+            # Visit schedule: designer authors the schedule alongside the
+            # form definitions.
+            Permission.VISIT_SCHEDULE_AUTHOR,
+            Permission.VISIT_SCHEDULE_READ,
         }
     ),
     Role.PRINCIPAL_INVESTIGATOR: frozenset(
@@ -280,6 +295,11 @@ ROLE_PERMISSIONS: Final[dict[Role, frozenset[Permission]]] = {
             # enrolment status; reads the log + funnel rollup.
             Permission.SCREENING_UPDATE,
             Permission.SCREENING_READ,
+            # Visit schedule + reminders: PI reads schedule + marks
+            # visits complete; reads reminder audit trail.
+            Permission.VISIT_SCHEDULE_READ,
+            Permission.VISIT_UPDATE,
+            Permission.REMINDER_READ,
         }
     ),
     Role.COORDINATOR: frozenset(
@@ -303,6 +323,12 @@ ROLE_PERMISSIONS: Final[dict[Role, frozenset[Permission]]] = {
             Permission.SCREENING_RECORD,
             Permission.SCREENING_UPDATE,
             Permission.SCREENING_READ,
+            # Visit calendar: coordinator marks visits complete + reschedules
+            # with override reason; manages participant contact info for
+            # reminders.
+            Permission.VISIT_SCHEDULE_READ,
+            Permission.VISIT_UPDATE,
+            Permission.PARTICIPANT_CONTACT_MANAGE,
         }
     ),
     Role.DATA_MANAGER: frozenset(
@@ -321,6 +347,12 @@ ROLE_PERMISSIONS: Final[dict[Role, frozenset[Permission]]] = {
             # record at point-of-care (coordinator's job).
             Permission.SCREENING_UPDATE,
             Permission.SCREENING_READ,
+            # Visit schedule + reminders: DM activates schedules; reads
+            # reminder audit trail; triggers manual reminder runs.
+            Permission.VISIT_SCHEDULE_AUTHOR,
+            Permission.VISIT_SCHEDULE_READ,
+            Permission.REMINDER_READ,
+            Permission.REMINDER_SEND,
             # Data managers classify deviations + author CAPAs; they also
             # have sae.report so the IND-safety report can be produced
             # outside the PI's signing flow.
@@ -363,6 +395,9 @@ ROLE_PERMISSIONS: Final[dict[Role, frozenset[Permission]]] = {
             # Recruitment / screening: monitors read for source-data
             # verification — they don't record or update.
             Permission.SCREENING_READ,
+            # Visit schedule + reminders: read-only for SDV.
+            Permission.VISIT_SCHEDULE_READ,
+            Permission.REMINDER_READ,
         }
     ),
     # SR screening roles — always granted at sr_review scope, never global.

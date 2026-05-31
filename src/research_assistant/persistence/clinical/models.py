@@ -113,6 +113,17 @@ class Subject(ClinicalBase):
     status: Mapped[str] = mapped_column(Text, default="enrolled")
     created_by: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    baseline_date: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        default=None,
+        doc=(
+            "Per-subject baseline date — anchor for the visit-schedule "
+            "day_offset arithmetic (P1 #4). Set explicitly via the "
+            "calendar API; PlannedVisit generation falls back to "
+            "`created_at` when None."
+        ),
+    )
 
     deployment: Mapped[StudyDeployment] = relationship(back_populates="subjects")
     events: Mapped[list[EventInstance]] = relationship(
@@ -1386,3 +1397,208 @@ class ScreeningLog(ClinicalBase):
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
     )
     notes: Mapped[str] = mapped_column(Text, default="")
+
+
+# ── Visit scheduling + participant reminders (P1 #4) ────────────────────
+
+
+class VisitSchedule(ClinicalBase):
+    """Per-deployment named visit schedule. Only one schedule per deployment
+    is `active=True` at a time — the active one is the source from which
+    PlannedVisit rows are generated when a subject is enrolled.
+    """
+
+    __tablename__ = "visit_schedules"
+    __table_args__ = (
+        UniqueConstraint("deployment_id", "name", name="uq_visit_schedule_name"),
+    )
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    deployment_id: Mapped[str] = mapped_column(
+        ForeignKey("study_deployments.id", ondelete="CASCADE"), index=True
+    )
+    name: Mapped[str] = mapped_column(Text)
+    description: Mapped[str] = mapped_column(Text, default="")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_by_sub: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    visits: Mapped[list[ScheduledVisit]] = relationship(
+        back_populates="schedule", cascade="all, delete-orphan"
+    )
+
+
+class ScheduledVisit(ClinicalBase):
+    """One visit in a VisitSchedule.
+
+    `day_offset` is days from the subject's baseline date (0 = baseline).
+    `window_before_days` / `window_after_days` define the visit window
+    (negative = before, positive = after) — e.g. a Week 4 visit with
+    offset=28, window_before=3, window_after=3 means the visit can occur
+    between days 25 and 31.
+
+    `reminder_offsets_json` is a JSON array of ints (days before due_date)
+    when a reminder should fire. Example: `[-7, -1, 0]` = 7 days before,
+    1 day before, and morning of the visit.
+    """
+
+    __tablename__ = "scheduled_visits"
+    __table_args__ = (
+        UniqueConstraint(
+            "schedule_id", "visit_name", name="uq_scheduled_visit_name"
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    schedule_id: Mapped[str] = mapped_column(
+        ForeignKey("visit_schedules.id", ondelete="CASCADE"), index=True
+    )
+    visit_name: Mapped[str] = mapped_column(Text)
+    day_offset: Mapped[int] = mapped_column(
+        Integer, doc="Days from baseline (0 = baseline visit)."
+    )
+    window_before_days: Mapped[int] = mapped_column(Integer, default=0)
+    window_after_days: Mapped[int] = mapped_column(Integer, default=0)
+    reminder_offsets_json: Mapped[str] = mapped_column(
+        Text,
+        default="[-7, -1, 0]",
+        doc="JSON list[int] of offsets (days before due_date) when reminders fire.",
+    )
+    ordering: Mapped[int] = mapped_column(
+        Integer, default=0, doc="Sort order within schedule."
+    )
+
+    schedule: Mapped[VisitSchedule] = relationship(back_populates="visits")
+
+
+class PlannedVisit(ClinicalBase):
+    """Per-subject instance of a ScheduledVisit. Auto-generated when a
+    subject is enrolled (or via the explicit generate endpoint).
+
+    `override_reason` is non-empty when a coordinator has shifted the
+    planned_date away from the schedule-implied date (e.g. subject
+    travel, holiday). The audit trail records every override.
+    """
+
+    __tablename__ = "planned_visits"
+    __table_args__ = (
+        UniqueConstraint(
+            "subject_id", "scheduled_visit_id", name="uq_planned_visit"
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    subject_id: Mapped[str] = mapped_column(
+        ForeignKey("subjects.id", ondelete="CASCADE"), index=True
+    )
+    scheduled_visit_id: Mapped[str] = mapped_column(
+        ForeignKey("scheduled_visits.id", ondelete="RESTRICT"), index=True
+    )
+    planned_date: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    window_start: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    window_end: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    status: Mapped[str] = mapped_column(
+        Text,
+        default="pending",
+        doc="pending | completed | missed | cancelled",
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
+    override_reason: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
+
+
+class ParticipantContact(ClinicalBase):
+    """Participant's reminder-channel preferences. Linked 1:1 with
+    ParticipantAccess. PHI minimised: only created when the participant
+    opts in to reminders at consent time.
+
+    `opt_in_channels_json` is a JSON list of channels the participant
+    has accepted (e.g. `["email"]`). When opt_out_at is set, the
+    reminder pipeline skips this contact entirely.
+    """
+
+    __tablename__ = "participant_contacts"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    participant_access_id: Mapped[str] = mapped_column(
+        ForeignKey("participant_access.id", ondelete="CASCADE"),
+        unique=True,
+        index=True,
+    )
+    subject_id: Mapped[str] = mapped_column(
+        ForeignKey("subjects.id", ondelete="CASCADE"), index=True
+    )
+    email: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    phone: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    preferred_channel: Mapped[str] = mapped_column(
+        Text,
+        default="email",
+        doc="email | sms | none — sets the reminder pipeline's first-choice channel.",
+    )
+    opt_in_channels_json: Mapped[str] = mapped_column(
+        Text,
+        default='["email"]',
+        doc="JSON list[str] — channels the participant has consented to.",
+    )
+    opt_out_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        default=None,
+        doc="Set when the participant withdraws consent to reminders.",
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
+
+
+class SentReminder(ClinicalBase):
+    """Audit row written for every reminder the pipeline attempts to send.
+
+    `provider` is the actual provider used (`ses`, `dry_run`, …). When
+    SES creds are missing in env, the helper writes `provider='dry_run'`
+    so the pipeline is testable without external IO. `error` carries any
+    provider-side failure detail.
+
+    Unique key `(planned_visit_id, offset_days, channel)` prevents double-
+    sends — the scheduler is idempotent across restarts.
+    """
+
+    __tablename__ = "sent_reminders"
+    __table_args__ = (
+        UniqueConstraint(
+            "planned_visit_id",
+            "offset_days",
+            "channel",
+            name="uq_sent_reminder",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    planned_visit_id: Mapped[str] = mapped_column(
+        ForeignKey("planned_visits.id", ondelete="CASCADE"), index=True
+    )
+    subject_id: Mapped[str] = mapped_column(Text, index=True)
+    channel: Mapped[str] = mapped_column(Text, doc="email | sms")
+    offset_days: Mapped[int] = mapped_column(
+        Integer, doc="Days before due_date this reminder was for (e.g. -7)."
+    )
+    provider: Mapped[str] = mapped_column(
+        Text, doc="ses | twilio | dry_run"
+    )
+    status: Mapped[str] = mapped_column(
+        Text, default="queued", doc="queued | sent | failed | skipped"
+    )
+    recipient: Mapped[str | None] = mapped_column(
+        Text, nullable=True, default=None, doc="Email or phone the reminder went to."
+    )
+    error: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    queued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )

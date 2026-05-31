@@ -32,11 +32,15 @@ from .models import (
     FormInstance,
     ItemData,
     ParticipantAccess,
+    ParticipantContact,
+    PlannedVisit,
     ProtocolDeviation,
     Query,
     QueryResponse,
     RandomizationSchedule,
+    ScheduledVisit,
     ScreeningLog,
+    SentReminder,
     Signature,
     Site,
     StudyDeployment,
@@ -44,6 +48,7 @@ from .models import (
     Subject,
     SubjectSignature,
     Verification,
+    VisitSchedule,
 )
 from .recruitment_terminology import (
     CONSENT_STATUSES,
@@ -1851,3 +1856,537 @@ class ClinicalRepository:
             "screen_failures_by_reason": per_reason,
             "per_week_per_site": per_week_site,
         }
+
+    # ── Visit scheduling + participant reminders (P1 #4) ───────────────
+
+    _ALLOWED_REMINDER_CHANNELS = ("email", "sms")
+
+    async def create_visit_schedule(
+        self,
+        deployment_id: str,
+        *,
+        name: str,
+        description: str = "",
+        actor_sub: str | None = None,
+    ) -> VisitSchedule:
+        deployment = await self._s.get(StudyDeployment, deployment_id)
+        if deployment is None:
+            raise ClinicalError(f"Deployment {deployment_id!r} not found.")
+        existing = await self._s.scalar(
+            select(VisitSchedule).where(
+                VisitSchedule.deployment_id == deployment_id,
+                VisitSchedule.name == name,
+            )
+        )
+        if existing is not None:
+            raise ClinicalError(
+                f"Visit schedule named {name!r} already exists in this deployment."
+            )
+        schedule = VisitSchedule(
+            deployment_id=deployment_id,
+            name=name,
+            description=description,
+            created_by_sub=actor_sub,
+        )
+        self._s.add(schedule)
+        await self._s.flush()
+        self._audit(
+            entity_type="visit_schedule",
+            entity_id=schedule.id,
+            action="create",
+            actor_sub=actor_sub,
+            new_value=name,
+        )
+        return schedule
+
+    async def set_active_visit_schedule(
+        self,
+        schedule_id: str,
+        *,
+        actor_sub: str | None = None,
+    ) -> VisitSchedule:
+        """Deactivate any other active schedule in the deployment, then
+        activate this one."""
+        schedule = await self._s.get(VisitSchedule, schedule_id)
+        if schedule is None:
+            raise ClinicalError(f"Visit schedule {schedule_id!r} not found.")
+        # Deactivate siblings.
+        siblings = await self._s.scalars(
+            select(VisitSchedule).where(
+                VisitSchedule.deployment_id == schedule.deployment_id,
+                VisitSchedule.id != schedule.id,
+                VisitSchedule.is_active.is_(True),
+            )
+        )
+        for sibling in siblings:
+            sibling.is_active = False
+        schedule.is_active = True
+        await self._s.flush()
+        self._audit(
+            entity_type="visit_schedule",
+            entity_id=schedule.id,
+            action="activate",
+            actor_sub=actor_sub,
+        )
+        return schedule
+
+    async def list_visit_schedules(
+        self, deployment_id: str
+    ) -> list[VisitSchedule]:
+        rows = await self._s.scalars(
+            select(VisitSchedule)
+            .where(VisitSchedule.deployment_id == deployment_id)
+            .order_by(VisitSchedule.created_at)
+        )
+        return list(rows)
+
+    async def get_active_visit_schedule(
+        self, deployment_id: str
+    ) -> VisitSchedule | None:
+        result: VisitSchedule | None = await self._s.scalar(
+            select(VisitSchedule).where(
+                VisitSchedule.deployment_id == deployment_id,
+                VisitSchedule.is_active.is_(True),
+            )
+        )
+        return result
+
+    async def add_scheduled_visit(
+        self,
+        schedule_id: str,
+        *,
+        visit_name: str,
+        day_offset: int,
+        window_before_days: int = 0,
+        window_after_days: int = 0,
+        reminder_offsets: list[int] | None = None,
+        ordering: int = 0,
+        actor_sub: str | None = None,
+    ) -> ScheduledVisit:
+        schedule = await self._s.get(VisitSchedule, schedule_id)
+        if schedule is None:
+            raise ClinicalError(f"Visit schedule {schedule_id!r} not found.")
+        if window_before_days < 0 or window_after_days < 0:
+            raise ClinicalError(
+                "window_before_days and window_after_days must be non-negative."
+            )
+        offsets = reminder_offsets if reminder_offsets is not None else [-7, -1, 0]
+        for offset in offsets:
+            if offset > 0:
+                raise ClinicalError(
+                    "reminder_offsets are days BEFORE the due date — use non-positive ints."
+                )
+        existing = await self._s.scalar(
+            select(ScheduledVisit).where(
+                ScheduledVisit.schedule_id == schedule_id,
+                ScheduledVisit.visit_name == visit_name,
+            )
+        )
+        if existing is not None:
+            raise ClinicalError(
+                f"Visit named {visit_name!r} already exists in this schedule."
+            )
+        visit = ScheduledVisit(
+            schedule_id=schedule_id,
+            visit_name=visit_name,
+            day_offset=day_offset,
+            window_before_days=window_before_days,
+            window_after_days=window_after_days,
+            reminder_offsets_json=json.dumps(sorted(offsets)),
+            ordering=ordering,
+        )
+        self._s.add(visit)
+        await self._s.flush()
+        self._audit(
+            entity_type="scheduled_visit",
+            entity_id=visit.id,
+            action="create",
+            actor_sub=actor_sub,
+            new_value=f"name={visit_name},day={day_offset}",
+        )
+        return visit
+
+    async def list_scheduled_visits(
+        self, schedule_id: str
+    ) -> list[ScheduledVisit]:
+        rows = await self._s.scalars(
+            select(ScheduledVisit)
+            .where(ScheduledVisit.schedule_id == schedule_id)
+            .order_by(ScheduledVisit.ordering, ScheduledVisit.day_offset)
+        )
+        return list(rows)
+
+    async def generate_planned_visits(
+        self,
+        subject_id: str,
+        *,
+        baseline_date: datetime | None = None,
+        actor_sub: str | None = None,
+    ) -> list[PlannedVisit]:
+        """Generate PlannedVisit rows for `subject_id` against the
+        deployment's ACTIVE visit schedule. Idempotent: visits that
+        already exist for this subject + scheduled_visit are skipped.
+
+        `baseline_date` overrides Subject.baseline_date (which itself
+        falls back to Subject.created_at when unset).
+        """
+        subject = await self._s.get(Subject, subject_id)
+        if subject is None:
+            raise ClinicalError(f"Subject {subject_id!r} not found.")
+        schedule = await self.get_active_visit_schedule(subject.deployment_id)
+        if schedule is None:
+            raise ClinicalError(
+                "No active visit schedule for this deployment — create + activate one first."
+            )
+        baseline = baseline_date or subject.baseline_date or subject.created_at
+        if baseline.tzinfo is None:
+            baseline = baseline.replace(tzinfo=UTC)
+        # Persist the baseline if the caller passed one explicitly.
+        if baseline_date is not None:
+            subject.baseline_date = baseline_date
+        visits = await self.list_scheduled_visits(schedule.id)
+        from datetime import timedelta
+
+        created: list[PlannedVisit] = []
+        for sv in visits:
+            existing = await self._s.scalar(
+                select(PlannedVisit).where(
+                    PlannedVisit.subject_id == subject_id,
+                    PlannedVisit.scheduled_visit_id == sv.id,
+                )
+            )
+            if existing is not None:
+                continue
+            planned = baseline + timedelta(days=sv.day_offset)
+            row = PlannedVisit(
+                subject_id=subject_id,
+                scheduled_visit_id=sv.id,
+                planned_date=planned,
+                window_start=planned - timedelta(days=sv.window_before_days),
+                window_end=planned + timedelta(days=sv.window_after_days),
+            )
+            self._s.add(row)
+            created.append(row)
+        await self._s.flush()
+        if created:
+            self._audit(
+                entity_type="subject",
+                entity_id=subject_id,
+                action="planned_visits_generated",
+                actor_sub=actor_sub,
+                new_value=f"count={len(created)}",
+            )
+        return created
+
+    async def list_planned_visits(
+        self,
+        *,
+        subject_id: str | None = None,
+        deployment_id: str | None = None,
+        status: str | None = None,
+    ) -> list[PlannedVisit]:
+        stmt = select(PlannedVisit).order_by(PlannedVisit.planned_date)
+        if subject_id is not None:
+            stmt = stmt.where(PlannedVisit.subject_id == subject_id)
+        elif deployment_id is not None:
+            subject_ids_stmt = select(Subject.id).where(
+                Subject.deployment_id == deployment_id
+            )
+            stmt = stmt.where(PlannedVisit.subject_id.in_(subject_ids_stmt))
+        if status is not None:
+            stmt = stmt.where(PlannedVisit.status == status)
+        return list((await self._s.scalars(stmt)).all())
+
+    async def update_planned_visit(
+        self,
+        planned_visit_id: str,
+        *,
+        planned_date: datetime | None = None,
+        status: str | None = None,
+        override_reason: str = "",
+        actor_sub: str | None = None,
+    ) -> PlannedVisit:
+        row = await self._s.get(PlannedVisit, planned_visit_id)
+        if row is None:
+            raise ClinicalError(f"Planned visit {planned_visit_id!r} not found.")
+        if status is not None and status not in (
+            "pending",
+            "completed",
+            "missed",
+            "cancelled",
+        ):
+            raise ClinicalError(
+                f"Invalid status {status!r}; choose pending | completed | missed | cancelled."
+            )
+        if planned_date is not None and planned_date != row.planned_date:
+            if not override_reason:
+                raise ClinicalError(
+                    "override_reason required when shifting planned_date."
+                )
+            from datetime import timedelta
+
+            sv = await self._s.get(ScheduledVisit, row.scheduled_visit_id)
+            if sv is not None:
+                row.window_start = planned_date - timedelta(days=sv.window_before_days)
+                row.window_end = planned_date + timedelta(days=sv.window_after_days)
+            row.planned_date = planned_date
+            row.override_reason = override_reason
+        if status is not None:
+            old_status = row.status
+            row.status = status
+            if status == "completed":
+                row.completed_at = datetime.now(UTC)
+            self._audit(
+                entity_type="planned_visit",
+                entity_id=row.id,
+                action="status",
+                actor_sub=actor_sub,
+                old_value=old_status,
+                new_value=status,
+            )
+        else:
+            self._audit(
+                entity_type="planned_visit",
+                entity_id=row.id,
+                action="reschedule",
+                actor_sub=actor_sub,
+                new_value=override_reason,
+            )
+        await self._s.flush()
+        return row
+
+    async def upsert_participant_contact(
+        self,
+        participant_access_id: str,
+        *,
+        email: str | None = None,
+        phone: str | None = None,
+        preferred_channel: str = "email",
+        opt_in_channels: list[str] | None = None,
+        opt_out: bool = False,
+        actor_sub: str | None = None,
+    ) -> ParticipantContact:
+        access = await self._s.get(ParticipantAccess, participant_access_id)
+        if access is None:
+            raise ClinicalError(
+                f"Participant access {participant_access_id!r} not found."
+            )
+        if preferred_channel not in ("email", "sms", "none"):
+            raise ClinicalError(
+                f"Invalid preferred_channel {preferred_channel!r}."
+            )
+        for ch in opt_in_channels or []:
+            if ch not in self._ALLOWED_REMINDER_CHANNELS:
+                raise ClinicalError(
+                    f"Invalid opt_in channel {ch!r}; choose from "
+                    f"{', '.join(self._ALLOWED_REMINDER_CHANNELS)}."
+                )
+        contact = await self._s.scalar(
+            select(ParticipantContact).where(
+                ParticipantContact.participant_access_id == participant_access_id
+            )
+        )
+        if contact is None:
+            contact = ParticipantContact(
+                participant_access_id=participant_access_id,
+                subject_id=access.subject_id,
+            )
+            self._s.add(contact)
+        contact.email = email
+        contact.phone = phone
+        contact.preferred_channel = preferred_channel
+        contact.opt_in_channels_json = json.dumps(opt_in_channels or [])
+        if opt_out:
+            contact.opt_out_at = datetime.now(UTC)
+        else:
+            contact.opt_out_at = None
+        await self._s.flush()
+        self._audit(
+            entity_type="participant_contact",
+            entity_id=contact.id,
+            action="upsert",
+            actor_sub=actor_sub,
+            new_value=preferred_channel,
+        )
+        return contact
+
+    async def get_participant_contact(
+        self, subject_id: str
+    ) -> ParticipantContact | None:
+        result: ParticipantContact | None = await self._s.scalar(
+            select(ParticipantContact).where(
+                ParticipantContact.subject_id == subject_id
+            )
+        )
+        return result
+
+    async def compute_due_reminders(
+        self, deployment_id: str, *, now: datetime | None = None
+    ) -> list[dict[str, object]]:
+        """Read the reminder queue: planned visits × reminder offsets ×
+        opted-in participant channels where no SentReminder row exists
+        for that (planned_visit, offset, channel) yet AND the reminder
+        target time has passed.
+
+        Returns list of dicts the send helper drains. Each dict carries:
+          - planned_visit_id, subject_id, channel, offset_days
+          - recipient (email or phone)
+          - visit_name, planned_date (for the email body)
+
+        The caller is responsible for actually writing the SentReminder row
+        + dispatching to the provider.
+        """
+        from datetime import timedelta
+
+        current = now or datetime.now(UTC)
+        # Pull pending planned visits in the future or recent past so we
+        # don't iterate the whole history.
+        stmt = (
+            select(PlannedVisit)
+            .where(PlannedVisit.status == "pending")
+            .order_by(PlannedVisit.planned_date)
+        )
+        subject_ids_stmt = select(Subject.id).where(
+            Subject.deployment_id == deployment_id
+        )
+        stmt = stmt.where(PlannedVisit.subject_id.in_(subject_ids_stmt))
+        planned_visits = list((await self._s.scalars(stmt)).all())
+        if not planned_visits:
+            return []
+        # Bulk-load scheduled visit metadata.
+        sv_ids = {pv.scheduled_visit_id for pv in planned_visits}
+        sv_rows = await self._s.scalars(
+            select(ScheduledVisit).where(ScheduledVisit.id.in_(sv_ids))
+        )
+        sv_by_id = {sv.id: sv for sv in sv_rows}
+        # Bulk-load already-sent reminders for these planned visits.
+        sent_rows = await self._s.scalars(
+            select(SentReminder).where(
+                SentReminder.planned_visit_id.in_(pv.id for pv in planned_visits)
+            )
+        )
+        sent_keys = {
+            (sr.planned_visit_id, sr.offset_days, sr.channel) for sr in sent_rows
+        }
+        # Bulk-load participant contacts.
+        subject_ids = {pv.subject_id for pv in planned_visits}
+        contact_rows = await self._s.scalars(
+            select(ParticipantContact).where(
+                ParticipantContact.subject_id.in_(subject_ids)
+            )
+        )
+        contact_by_subject: dict[str, ParticipantContact] = {
+            c.subject_id: c for c in contact_rows
+        }
+        out: list[dict[str, object]] = []
+        for pv in planned_visits:
+            contact = contact_by_subject.get(pv.subject_id)
+            if contact is None or contact.opt_out_at is not None:
+                continue
+            try:
+                opt_in = json.loads(contact.opt_in_channels_json) or []
+            except json.JSONDecodeError:
+                opt_in = []
+            if not opt_in:
+                continue
+            sv = sv_by_id.get(pv.scheduled_visit_id)
+            if sv is None:
+                continue
+            try:
+                offsets = json.loads(sv.reminder_offsets_json) or []
+            except json.JSONDecodeError:
+                offsets = []
+            for offset in offsets:
+                # offset is days BEFORE due_date; target_at = due_date + offset.
+                # Normalise to aware-UTC for portability across SQLite test
+                # fixtures (which strip tzinfo) and Postgres (which preserves it).
+                planned = pv.planned_date
+                if planned.tzinfo is None:
+                    planned = planned.replace(tzinfo=UTC)
+                target_at = planned + timedelta(days=offset)
+                if target_at > current:
+                    continue
+                # Pick first opted-in channel matching preferred order.
+                channels: list[str] = []
+                if contact.preferred_channel in opt_in:
+                    channels.append(contact.preferred_channel)
+                channels.extend(c for c in opt_in if c not in channels)
+                for channel in channels:
+                    if (pv.id, offset, channel) in sent_keys:
+                        continue
+                    recipient = (
+                        contact.email if channel == "email" else contact.phone
+                    )
+                    if not recipient:
+                        continue
+                    out.append(
+                        {
+                            "planned_visit_id": pv.id,
+                            "subject_id": pv.subject_id,
+                            "channel": channel,
+                            "offset_days": offset,
+                            "recipient": recipient,
+                            "visit_name": sv.visit_name,
+                            "planned_date": pv.planned_date.isoformat(),
+                            "target_at": target_at.isoformat(),
+                        }
+                    )
+                    break  # only one channel per (planned_visit, offset)
+        return out
+
+    async def record_sent_reminder(
+        self,
+        *,
+        planned_visit_id: str,
+        subject_id: str,
+        channel: str,
+        offset_days: int,
+        provider: str,
+        status: str,
+        recipient: str | None = None,
+        error: str | None = None,
+    ) -> SentReminder:
+        """Write a SentReminder row. Idempotent: returns the existing row
+        when the unique (planned_visit_id, offset_days, channel) is hit."""
+        existing = await self._s.scalar(
+            select(SentReminder).where(
+                SentReminder.planned_visit_id == planned_visit_id,
+                SentReminder.offset_days == offset_days,
+                SentReminder.channel == channel,
+            )
+        )
+        if existing is not None:
+            return existing
+        row = SentReminder(
+            planned_visit_id=planned_visit_id,
+            subject_id=subject_id,
+            channel=channel,
+            offset_days=offset_days,
+            provider=provider,
+            status=status,
+            recipient=recipient,
+            error=error,
+            sent_at=datetime.now(UTC) if status == "sent" else None,
+        )
+        self._s.add(row)
+        await self._s.flush()
+        return row
+
+    async def list_sent_reminders(
+        self,
+        *,
+        deployment_id: str | None = None,
+        subject_id: str | None = None,
+        since: datetime | None = None,
+    ) -> list[SentReminder]:
+        stmt = select(SentReminder).order_by(SentReminder.queued_at.desc())
+        if subject_id is not None:
+            stmt = stmt.where(SentReminder.subject_id == subject_id)
+        elif deployment_id is not None:
+            subject_ids_stmt = select(Subject.id).where(
+                Subject.deployment_id == deployment_id
+            )
+            stmt = stmt.where(SentReminder.subject_id.in_(subject_ids_stmt))
+        if since is not None:
+            stmt = stmt.where(SentReminder.queued_at >= since)
+        return list((await self._s.scalars(stmt)).all())

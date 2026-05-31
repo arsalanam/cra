@@ -1,4 +1,4 @@
-"""APScheduler wrapper for living-review watches.
+"""APScheduler wrapper for living-review watches + participant reminders.
 
 Single global AsyncIOScheduler instance, MemoryJobStore. Source of truth
 for which watches exist is the LiteratureWatch table — at FastAPI
@@ -6,22 +6,34 @@ startup we re-register active watches; on /api/watches CRUD we update
 the in-memory schedule. Process restart loses the in-memory schedule
 but re-registers from DB cleanly, so nothing is actually lost.
 
-Job execution itself lives in `services.watch_runner` — this module
-just maps cron strings to job invocations.
+In addition to per-watch cron jobs, an interval job fires the
+participant-reminder pipeline (P1 #4) every
+`REMINDER_INTERVAL_MINUTES` minutes (default 15). The job calls
+`services.reminders.fire_due_reminders_all_deployments`.
+
+Job execution itself lives in `services.watch_runner` /
+`services.reminders` — this module just maps schedules to invocations.
 """
 
 from __future__ import annotations
 
 import logging
+import os
 from typing import TYPE_CHECKING
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 
 if TYPE_CHECKING:
     from ..persistence.models import LiteratureWatch
 
 logger = logging.getLogger(__name__)
+
+
+_REMINDER_JOB_ID = "reminders:fire-due"
+_REMINDER_INTERVAL_ENV = "REMINDER_INTERVAL_MINUTES"
+_REMINDER_DEFAULT_MINUTES = 15
 
 
 _scheduler: AsyncIOScheduler | None = None
@@ -72,6 +84,8 @@ async def start_scheduler() -> None:
         except Exception:
             logger.exception("Could not register watch %s on startup; skipping", watch.id)
     logger.info("Scheduler re-registered %d active watch(es) from DB", registered)
+
+    register_reminder_job()
 
 
 async def stop_scheduler() -> None:
@@ -148,3 +162,39 @@ def trigger_now(watch_id: str) -> None:
         coalesce=True,
     )
     logger.info("Scheduler: enqueued manual run for watch %s", watch_id)
+
+
+def register_reminder_job() -> None:
+    """Add (or replace) the periodic participant-reminder interval job.
+
+    Interval is configurable via REMINDER_INTERVAL_MINUTES env (default
+    15). When set to 0, the job is skipped entirely (testing /
+    reminders-disabled deployments).
+    """
+    raw = os.environ.get(_REMINDER_INTERVAL_ENV, str(_REMINDER_DEFAULT_MINUTES))
+    try:
+        minutes = int(raw)
+    except ValueError:
+        logger.warning(
+            "Scheduler: REMINDER_INTERVAL_MINUTES=%r unparseable, "
+            "falling back to %d",
+            raw,
+            _REMINDER_DEFAULT_MINUTES,
+        )
+        minutes = _REMINDER_DEFAULT_MINUTES
+    if minutes <= 0:
+        logger.info("Scheduler: reminder pipeline disabled (interval<=0)")
+        return
+    sched = get_scheduler()
+    from .reminders import fire_due_reminders_all_deployments
+
+    sched.add_job(
+        fire_due_reminders_all_deployments,
+        trigger=IntervalTrigger(minutes=minutes),
+        id=_REMINDER_JOB_ID,
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=300,
+    )
+    logger.info("Scheduler: reminder job registered (interval=%d min)", minutes)

@@ -66,6 +66,10 @@
           <div id="rec-summary" class="muted">Select a deployment to view the recruitment funnel.</div>
         </div>
         <div class="card">
+          <h2>Visit calendar <span id="cal-badge" class="muted" style="font-size:11px"></span></h2>
+          <div id="cal-summary" class="muted">Select a deployment to view the visit calendar.</div>
+        </div>
+        <div class="card">
           <h2>Study lock <span id="lock-badge" class="muted" style="font-size:11px"></span></h2>
           <div id="lock-summary" class="muted">Select a deployment to view its lock state.</div>
         </div>
@@ -697,7 +701,112 @@
     }
   }
 
-  /* Reload the CDISC + lock + randomisation + recruitment panels when the user picks a different deployment. */
+  /* ── Visit calendar (P1 #4) ──────────────────────────────────────── */
+
+  async function loadVisitCalendar(){
+    const root = document.getElementById("cal-summary");
+    const badge = document.getElementById("cal-badge");
+    if(!depId){ root.className="muted"; root.textContent="Select a deployment."; badge.textContent=""; return; }
+    try {
+      const [schedulesR, visitsR] = await Promise.all([
+        api(`/api/edc/deployments/${depId}/visit-schedules`),
+        api(`/api/edc/deployments/${depId}/planned-visits?status=pending`),
+      ]);
+      if(schedulesR.status === 403 || visitsR.status === 403){
+        root.className="muted"; root.textContent="Calendar requires visit_schedule.read permission.";
+        badge.textContent=""; return;
+      }
+      const schedules = await schedulesR.json();
+      const planned = await visitsR.json();
+      const active = (schedules || []).find(s => s.is_active);
+      const now = new Date();
+      const overdue = (planned || []).filter(v => new Date(v.window_end) < now).length;
+      const upcoming = (planned || []).filter(v => new Date(v.planned_date) >= now).length;
+      badge.textContent = `${planned.length} pending` + (overdue ? `, ${overdue} overdue` : "");
+      badge.className = overdue > 0 ? "err" : "muted";
+
+      const schedRows = (schedules || []).map(s => `
+        <div style="font-size:12px;display:flex;justify-content:space-between;padding:3px 0">
+          <span>${esc(s.name)}${s.is_active ? " <b>(active)</b>" : ""}</span>
+          <span class="muted">${esc(s.description || "")}</span>
+        </div>
+      `).join("") || `<div class="muted" style="font-size:12px">No schedules. <button class="btn secondary" onclick="addVisitSchedule()">+ Create</button></div>`;
+
+      const visitRows = (planned || []).slice(0, 6).map(v => {
+        const due = new Date(v.planned_date);
+        const isOverdue = new Date(v.window_end) < now;
+        const flag = isOverdue ? `<span style="color:#d97a7a">overdue</span>` : esc(due.toLocaleDateString());
+        return `
+          <div style="display:flex;justify-content:space-between;border-top:1px solid #1f232c;padding:5px 0;font-size:12px">
+            <span><b>${esc(v.subject_id.slice(-6))}</b> · ${flag}</span>
+            <button class="btn secondary" style="padding:2px 8px;font-size:11px" onclick="completePlannedVisit('${v.id}')">complete</button>
+          </div>
+        `;
+      }).join("") || `<div class="muted" style="font-size:12px">No pending visits.</div>`;
+
+      root.className="";
+      root.innerHTML = `
+        <div class="sec-title" style="margin:0 0 4px">Schedules</div>
+        ${schedRows}
+        ${active ? `<div class="row" style="margin-top:6px"><input type="text" id="cal-visit-name" placeholder="Visit name" style="flex:1;min-width:90px"/><input type="number" id="cal-day-offset" placeholder="Day offset" style="width:90px"/><button class="btn secondary" onclick="addScheduledVisit('${active.id}')">+ Visit</button></div>` : ""}
+        <div class="sec-title" style="margin:10px 0 4px">Upcoming visits</div>
+        ${visitRows}
+        ${subjectId ? `<div class="row" style="margin-top:8px"><button class="btn secondary" onclick="generatePlannedVisits('${subjectId}')">Generate planned visits for selected subject</button></div>` : ""}
+        <div id="cal-status" class="status"></div>
+      `;
+    } catch (e) { root.className="muted"; root.textContent="Calendar unavailable."; badge.textContent=""; }
+  }
+
+  async function addVisitSchedule(){
+    const name = prompt("Schedule name (e.g. 'Main schedule')");
+    if(!name) return;
+    const r = await api(`/api/edc/deployments/${depId}/visit-schedules`, {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ name }),
+    });
+    if(r.ok){
+      const sch = await r.json();
+      await api(`/api/edc/visit-schedules/${sch.id}/activate`, { method: "POST" });
+      await loadVisitCalendar();
+    }
+  }
+
+  async function addScheduledVisit(scheduleId){
+    const visit_name = document.getElementById("cal-visit-name").value.trim();
+    const day_offset = parseInt(document.getElementById("cal-day-offset").value, 10);
+    if(!visit_name || isNaN(day_offset)) return;
+    const r = await api(`/api/edc/visit-schedules/${scheduleId}/visits`, {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ visit_name, day_offset, window_before_days: 3, window_after_days: 3 }),
+    });
+    if(r.ok){ await loadVisitCalendar(); }
+  }
+
+  async function generatePlannedVisits(sid){
+    const r = await api(`/api/edc/subjects/${sid}/planned-visits/generate`, {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({}),
+    });
+    const status = document.getElementById("cal-status");
+    if(r.ok){
+      const rows = await r.json();
+      status.className="status ok"; status.textContent=`Generated ${rows.length} planned visit(s).`;
+      await loadVisitCalendar();
+    } else {
+      const err = await r.json().catch(()=>({detail:r.statusText}));
+      status.className="status err"; status.textContent=`Failed: ${err.detail || r.statusText}`;
+    }
+  }
+
+  async function completePlannedVisit(plannedId){
+    const r = await api(`/api/edc/planned-visits/${plannedId}`, {
+      method:"PATCH", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ status: "completed" }),
+    });
+    if(r.ok){ await loadVisitCalendar(); }
+  }
+
+  /* Reload the CDISC + lock + randomisation + recruitment + calendar panels when the user picks a different deployment. */
   const originalSelectDeployment = selectDeployment;
   selectDeployment = async function(id){
     await originalSelectDeployment(id);
@@ -705,6 +814,7 @@
     await loadLockStatus();
     await loadRandomisation();
     await loadRecruitment();
+    await loadVisitCalendar();
   };
 
   loadDeployments();
