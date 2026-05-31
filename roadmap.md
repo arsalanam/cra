@@ -67,7 +67,7 @@ Where the item sits in the research lifecycle:
 | Analysis | Individual Patient Data (IPD) meta-analysis | **P1** | ✅ shipped 2026-05-31 | L |
 | Cross-cutting | Citation-manager integration (Zotero / EndNote / Mendeley) | **P1** | ✅ shipped 2026-05-31 | S |
 | Cross-cutting | Portfolio dashboard across reviews + trials | **P1** | ✅ shipped 2026-05-31 | M |
-| Synthesis | Group-level living-review subscriptions (quorum notifications) | **P2** | 📝 planned (feature-guide) | M |
+| Synthesis | Group-level living-review subscriptions (quorum notifications) | **P2** | ✅ shipped 2026-05-31 | M |
 | Dissemination | Patient-facing / lay summaries | **P2** | ✅ shipped 2026-05-31 | M |
 | Execution | Drug accountability (IP receipt → dispense → return) | **P2** | ✅ shipped 2026-05-31 | M |
 | Execution | Lab-data feeds (HL7 / CDISC LAB) | **P2** | 💡 proposed | L |
@@ -420,9 +420,29 @@ Shipped as a focused per-user dashboard with an admin-only org rollup, no new pe
 
 ## P2 — Polish on existing workflows
 
-#### Group-level living-review subscriptions · 📝 · M
+#### ~~Group-level living-review subscriptions~~ · ✅ shipped 2026-05-31 · M
 
-In the feature-guide roadmap. Group watches with quorum-based notification rules — designed for guideline committees and HTA bodies who need consensus signalling on practice-changing evidence rather than per-user alerts.
+Shipped as the fourth P2 — wraps an existing `LiteratureWatch` with an ad-hoc invited panel that votes on each new run. Closes the "guideline committee" gap that personal watches couldn't fill: HTA bodies and guideline groups need consensus signal, not per-individual alerts.
+
+- **3 new tables** in `persistence/models.py`:
+  - `LiteratureWatchSubscription` — group wrapper around a watch with `min_votes` (default 2) + `min_fraction` (default 0.5) + status (active/paused).
+  - `SubscriptionMember` — ad-hoc membership row with `role` (voter | observer). Observers receive notifications but don't count toward the denominator and can't vote. UNIQUE on (subscription, user) so re-invites upsert.
+  - `RunVote` — one row per (subscription, run, voter). UNIQUE on the triple so re-voting overwrites; idempotent upsert at the repo layer.
+- **`Notification.subscription_id` column added** (additive migration via `_COLUMN_MIGRATIONS`) so the existing personal notification feed and the new group notifications share one table. NULL for personal alerts, set for group ones. The frontend's existing `/api/notifications` feed picks up both flavours transparently.
+- **Quorum rule**: `yes ≥ max(min_votes, ceil(min_fraction × n_voters))`, where `n_voters` counts members with `role='voter'`. Matches the HTA / guideline-committee convention "N votes OR % of members, whichever is greater". When `n_voters == 0` quorum never clears.
+- **`SubscriptionRepository`** in `persistence/repository.py` — CRUD on subscriptions + members + votes + `tally(subscription_id, run_id)` + `fanout_group_notification` (idempotent per (subscription, run, recipient) so a stray double-tally doesn't double-notify).
+- **`services/watch_subscriptions.py`** orchestrator — `record_vote_and_fanout` records a vote, re-tallies, and (if quorum clears AND the subscription is active) fans out one `Notification` per member. Returns the tally + `notifications_created`.
+- **`/api/watch-subscriptions/*`** REST surface (8 endpoints): CRUD on subscriptions, member add/remove (by email or local user_id), runs-awaiting-vote list, cast vote, get tally. Membership check at runtime (a member who isn't owner still sees the tally + can vote; non-members get 404).
+- **RBAC**: existing `watch.read` + `watch.manage` continue to gate watch CRUD; new `watch_subscription.vote` permission granted to admin + researcher + student + auditor + principal_investigator — the natural HTA / guideline-committee voter archetypes. Coordinators / DM / monitors / study designers / SR reviewers do NOT carry vote by default; they can be granted via a Role assignment if a workflow requires it.
+- **Frontend** — `watches.html` gains a "Group subscriptions" section at the top of the page. Each subscription card shows quorum rule (e.g. "≥ max(2, 50%)"), voter + observer counts, a "Show runs + votes" toggle that surfaces recent runs with current tallies + yes/no/abstain buttons, and a "Manage members" panel with an email-invite form. "+ New subscription" form pre-fills against the existing watches list.
+- **Tests**: 21 new tests in `tests/unit/test_watch_subscriptions_repo.py` cover CRUD, member upsert + role validation, vote idempotency, non-member + observer rejection, the quorum threshold math (3 / 5 with min_votes=3 → cleared; 5 / 10 with min_fraction=0.6 → NOT cleared; observers excluded from denominator), and the service-level vote+fan-out path (including idempotent re-vote not re-firing the group alert). Plus 5 router-factory + DTO smoke tests in `test_watch_subscriptions_router.py`. Plus 2 new tests in `test_rbac_matrix.py` pinning the new permission across all roles. 1373 tests pass.
+- **What's deferred**:
+  - **Watch-runner auto-tally trigger.** Today a vote drives the tally; if a member never votes, the run goes unflagged. A future hook in `watch_runner` could surface tallies on the runs-awaiting-vote feed proactively and email members "you have 3 runs pending your vote".
+  - **Per-paper voting (instead of run-level).** Discussed during scoping; chose run-level for v1 to match how guideline committees actually deliberate. Per-paper votes would let panels drill in but adds bookkeeping.
+  - **Email digest for pending votes.** SES is already wired for the reminder subsystem (P1 #5); reuse it to ping members when their vote backlog hits a threshold.
+  - **Quorum-clear → cross-platform handoff into manuscript / GRADE / SR-protocol.** When a panel agrees a run is practice-changing, surfacing a "Compose a rapid review from this evidence" handoff would close the loop.
+  - **Org-level subscriptions** (anyone in the institution sees them). Considered during scoping; rejected for v1 — ad-hoc invites match guideline-committee membership better. Easy to add later by inverting the membership check.
+  - **Pause-on-quorum.** Subscriptions can be manually paused; auto-pause after N consecutive quorum-clears (or N below-threshold runs) would be a useful health signal.
 
 #### ~~Patient-facing / lay summaries~~ · ✅ shipped 2026-05-31 · M
 

@@ -143,7 +143,7 @@ extraction.audit_read
 ip.catalogue · ip.receive · ip.dispense · ip.return · ip.reconcile
 portfolio.read_org
 library.read · library.write
-watch.read · watch.manage
+watch.read · watch.manage · watch_subscription.vote
 study.read · study.author · study.publish · study.create
 deployment.manage
 data.read · data.enter
