@@ -454,28 +454,6 @@ Cross-cutting infrastructure (auth, RBAC, library, budget tracking, portfolio da
 
 ---
 
-## What it costs to run
-
-Two variable costs to plan around: LLM tokens on AWS Bedrock, and web-search calls on Tavily. Everything else — paper database access, paper storage, the FastAPI app, the sandbox — sits on infrastructure you already own.
-
-| Metric | Envelope | Notes |
-|---|---|---|
-| **Active research day, per user** | **$200 – $300** | A productive day across multiple phases: SR screening, meta-analysis, manuscript drafting, CSR section writing. |
-| **Re-open / inspect an existing thread** | **≈ $0** | Past tool results, papers, extractions, generated code, AE records, lab batches are already in the local store. |
-| **Re-using a paper across reviews** | **≈ $0** | The RAG pipeline hits the local research store first. |
-
-**Built-in budget visibility.** The portfolio dashboard surfaces a real-time spend rollup per user, per workflow, and per model tier. Admins see the org-wide breakdown with top spenders. Re-built every page-load — no separate billing pipeline.
-
-**Cost-control levers:**
-
-- Local cache + RAG (no repeat API spend on content already paid for)
-- Workflow-gated tools (expensive tools unreachable until the workflow needs them)
-- Per-turn ceilings (`max_model_requests`, `agent_timeout_seconds`)
-- Configurable model tier per workflow (Sonnet / Haiku / Opus)
-- Tavily consumed only by general Q&A + protocol drafting — clinical search runs against bibliographic databases and does not consume Tavily credits
-
----
-
 ## Deployment & governance
 
 - **Flexible deployment.** Runs on-premises or in your cloud (AWS, GCP, Azure). Single-tenant by default; same codebase, your choice of trust boundary.
