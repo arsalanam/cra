@@ -37,6 +37,7 @@ class Permission(StrEnum):
     SKILL_CSR_DRAFTER = "skill.csr_drafter"
     SKILL_GRADE_DRAFTER = "skill.grade_drafter"
     SKILL_TRIAL_STATS = "skill.trial_stats"
+    SKILL_NMA = "skill.nma"
 
     # ── Library (cached publications + RAG) ──────────────────────────────
     LIBRARY_READ = "library.read"
@@ -206,6 +207,10 @@ _EVIDENCE_SKILLS: Final[frozenset[Permission]] = frozenset(
         # Composes ADaM datasets into the regulator-readable analysis
         # numbers that feed the CSR Efficacy section.
         Permission.SKILL_TRIAL_STATS,
+        # Synthesis tier: network meta-analysis (≥3 interventions,
+        # indirect comparisons through common comparators). League
+        # table + SUCRA + network geometry.
+        Permission.SKILL_NMA,
     }
 )
 
@@ -571,6 +576,7 @@ SKILL_PERMISSION: Final[dict[str, Permission]] = {
     "csr_drafter": Permission.SKILL_CSR_DRAFTER,
     "grade_drafter": Permission.SKILL_GRADE_DRAFTER,
     "trial_stats": Permission.SKILL_TRIAL_STATS,
+    "nma": Permission.SKILL_NMA,
 }
 
 

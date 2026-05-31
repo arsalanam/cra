@@ -36,6 +36,7 @@ from .specialists import (
     irb_drafter,
     manuscript_drafter,
     meta_analysis,
+    nma,
     registration_drafter,
     risk_of_bias,
     sap_drafter,
@@ -103,6 +104,10 @@ _SLASH_COMMANDS: dict[str, str] = {
     "efficacy": trial_stats.WORKFLOW_NAME,
     "km": trial_stats.WORKFLOW_NAME,
     "mmrm": trial_stats.WORKFLOW_NAME,
+    "nma": nma.WORKFLOW_NAME,
+    "network-ma": nma.WORKFLOW_NAME,
+    "indirect-comparison": nma.WORKFLOW_NAME,
+    "league-table": nma.WORKFLOW_NAME,
     "general": general_qa.WORKFLOW_NAME,
     "ask": general_qa.WORKFLOW_NAME,
     # Future: "gap" -> "research_gap", "ecrf" -> "ecrf_design"
@@ -199,6 +204,14 @@ _WORKFLOW_CONTINUATIONS: dict[str, tuple[str, ...]] = {
         "Finalize trial-stats",
         "Draft trial-stats from ADTTE",  # handoff seed
         "Draft trial-stats from CDISC",  # handoff seed
+    ),
+    nma.WORKFLOW_NAME: (
+        "NMA PICO confirmed",
+        "NMA studies selected",
+        "NMA extraction confirmed",
+        "Run Bayesian NMA",
+        "Refine NMA:",
+        "Finalize NMA",
     ),
     # Future: research_gap / ecrf continuations
 }
@@ -318,6 +331,25 @@ _TRIGGER_KEYWORDS: list[tuple[str, list[re.Pattern[str]]]] = [
             re.compile(r"\bcertainty\s+of\s+evidence\b"),
             re.compile(r"\bprisma\s+(checklist|2020|reporting)\b"),
             re.compile(r"\b(draft|generate)\s+(a|the|my)?\s*grade\s+(table|sof)\b"),
+        ],
+    ),
+    # nma: network meta-analysis (≥3 interventions; indirect comparisons).
+    # Checked BEFORE meta_analysis so "compare 5 DOACs" routes to NMA
+    # rather than the pairwise specialist.
+    (
+        nma.WORKFLOW_NAME,
+        [
+            re.compile(r"\bnetwork\s+meta[-\s]analysis\b"),
+            re.compile(r"\bnma\b"),
+            re.compile(r"\bindirect\s+comparison\b"),
+            re.compile(r"\bleague\s+table\b"),
+            re.compile(r"\bsucra\b"),
+            re.compile(r"\bmixed[-\s]treatment\s+comparison\b"),
+            re.compile(r"\bmtc\b"),
+            re.compile(r"\b(rank|ranking)\s+(of\s+)?treatments?\b"),
+            # "compare N <noun>" with N >= 3 — gives NMA the multi-arm
+            # canonical shape ("compare 5 DOACs", "compare 4 statins").
+            re.compile(r"\bcompare\s+([3-9]|\d{2,})\s+\w+"),
         ],
     ),
     # trial_stats: post-lock analyses (K-M / MMRM / Cox / subgroup forest).

@@ -311,6 +311,8 @@ def test_skill_permission_covers_every_specialist() -> None:
         "grade_drafter",
         # Post-lock analyses: K-M / log-rank / Cox PH / MMRM / binary / subgroup
         "trial_stats",
+        # Network meta-analysis (≥3 interventions, indirect comparisons)
+        "nma",
     }
     assert set(SKILL_PERMISSION) == expected_workflows
 
@@ -514,6 +516,28 @@ def test_coordinator_records_screening_pi_dm_update_monitor_auditor_read() -> No
         Permission.SCREENING_READ,
     ):
         assert p not in student
+
+
+def test_researcher_can_run_nma_but_student_cannot() -> None:
+    """Network meta-analysis (P1 #6) — researcher tier; student blocked
+    even though it builds on the pairwise meta-analysis they can run."""
+    assert Permission.SKILL_NMA in ROLE_PERMISSIONS[Role.RESEARCHER]
+    assert Permission.SKILL_NMA in ROLE_PERMISSIONS[Role.ADMIN]
+    assert Permission.SKILL_NMA not in ROLE_PERMISSIONS[Role.STUDENT]
+    for r in (
+        Role.STUDY_DESIGNER,
+        Role.PRINCIPAL_INVESTIGATOR,
+        Role.COORDINATOR,
+        Role.DATA_MANAGER,
+        Role.MONITOR,
+        Role.AUDITOR,
+        Role.REVIEWER_1,
+        Role.REVIEWER_2,
+        Role.ADJUDICATOR,
+    ):
+        assert Permission.SKILL_NMA not in ROLE_PERMISSIONS[r], (
+            f"{r.value} should not have skill.nma"
+        )
 
 
 def test_researcher_can_run_trial_stats_but_student_cannot() -> None:

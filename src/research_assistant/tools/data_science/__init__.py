@@ -7,6 +7,7 @@ citation-network analysis).
 
 from . import (
     calculator,
+    nma_analysis,
     python_repl,
     sample_size,
     sandbox_exec,
@@ -16,6 +17,7 @@ from . import (
 
 __all__ = [
     "calculator",
+    "nma_analysis",
     "python_repl",
     "sample_size",
     "sandbox_exec",

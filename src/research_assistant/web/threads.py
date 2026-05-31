@@ -27,6 +27,7 @@ from ..reports import grade as _grade_report
 from ..reports import irb as _irb_report
 from ..reports import manuscript as _manuscript_report
 from ..reports import meta_analysis as _ma_report
+from ..reports import nma as _nma_report
 from ..reports import registration as _registration_report
 from ..reports import risk_of_bias as _rob_report
 from ..reports import sap as _sap_report
@@ -337,6 +338,13 @@ def create_thread_router() -> APIRouter:
             _trial_stats_report.build_docx,
             "trial-stats",
             "trial-statistics analysis",
+        ),
+        "nma": (
+            _nma_report.assemble_report_data,
+            _nma_report.build_pdf,
+            _nma_report.build_docx,
+            "nma",
+            "network meta-analysis",
         ),
     }
 
