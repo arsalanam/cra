@@ -140,6 +140,7 @@ participant_contact.manage · reminder.read · reminder.send
 source_document.upload · source_document.read ·
 extraction_mapping.author · extraction_mapping.apply ·
 extraction.audit_read
+ip.catalogue · ip.receive · ip.dispense · ip.return · ip.reconcile
 portfolio.read_org
 library.read · library.write
 watch.read · watch.manage
@@ -190,6 +191,11 @@ that role needs; the implementation expands them to the full catalogue.
 | `cdisc.derive` | ✓ | – | – | – | – | – | ✓ | – | – |
 | `cdisc.read` | ✓ | – | – | – | ✓ | – | ✓ | ✓ | ✓ |
 | `cdisc.export` | ✓ | – | – | – | ✓ | – | ✓ | – | – |
+| `ip.catalogue` | ✓ | – | – | ✓ | – | – | ✓ | – | – |
+| `ip.receive` | ✓ | – | – | – | – | ✓ | ✓ | – | – |
+| `ip.dispense` | ✓ | – | – | – | ✓ | ✓ | – | – | – |
+| `ip.return` | ✓ | – | – | – | – | ✓ | – | – | – |
+| `ip.reconcile` | ✓ | – | – | – | r | – | r | r | r |
 | `user.manage` / `source.manage` | ✓ | – | – | – | – | – | – | – | – |
 
 **Why `student` gets `skill.general_qa` despite being "meta-analysis only":** the

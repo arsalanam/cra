@@ -69,7 +69,7 @@ Where the item sits in the research lifecycle:
 | Cross-cutting | Portfolio dashboard across reviews + trials | **P1** | ✅ shipped 2026-05-31 | M |
 | Synthesis | Group-level living-review subscriptions (quorum notifications) | **P2** | 📝 planned (feature-guide) | M |
 | Dissemination | Patient-facing / lay summaries | **P2** | 📝 planned (feature-guide) | M |
-| Execution | Drug accountability (IP receipt → dispense → return) | **P2** | 💡 proposed | M |
+| Execution | Drug accountability (IP receipt → dispense → return) | **P2** | ✅ shipped 2026-05-31 | M |
 | Execution | Lab-data feeds (HL7 / CDISC LAB) | **P2** | 💡 proposed | L |
 | Cross-cutting | Multi-site / multi-tenant coordination roll-up | **P2** | 💡 proposed | M |
 | Cross-cutting | Budget + cost rollup across studies | **P2** | ✅ shipped 2026-05-31 | S |
@@ -430,9 +430,46 @@ In the feature-guide roadmap. Plain-language summaries of a study's objectives, 
 
 - **Adjacency:** if extended into ICF drafting, becomes a P0 (above).
 
-#### Drug accountability · 💡 · M
+#### ~~Drug accountability~~ · ✅ shipped 2026-05-31 · M
 
-IP receipt → dispensing → return reconciliation. Often the messiest paperwork in a trial; mostly absent here.
+Shipped as the second P2 — closes the GCP-mandated IP-tracking gap that the eCRF subsystem otherwise leaves open. Builds entirely on the ClinicalBase + repo + endpoint pattern established in E1–E8.
+
+- **4 new ClinicalBase tables** in `persistence/clinical/models.py`:
+  - `InvestigationalProduct` — per-deployment catalogue (drug + strength + units + optional kit_id pattern). UNIQUE on (deployment_id, drug_name, strength) so the same lot of "DrugX 10 mg" can't be registered twice.
+  - `DrugReceipt` — shipments arriving at a site or central depot. Carries `lot_number`, `expiry_date`, `temp_excursion_flag` (cold-chain breaks surface on the data-manager triage queue via the existing audit + notes path), and `packing_slip_ref` for source-data traceability.
+  - `DrugDispensation` — kit-to-subject events. Optional `planned_visit_id` ties dispenses to the P1 #4 visit calendar when the calendar is in use. `kit_id` keys per-kit reconciliation.
+  - `DrugReturn` — return events. Carries `quantity_returned` (what came back), `quantity_used` (consumed compliance count), `quantity_lost` (missing). The remainder (returned − used − lost) re-enters lot inventory.
+- **Repository state invariants** in `persistence/clinical/repository.py` — every invariant raises `ClinicalError` at the repository layer (not the API), so direct repo callers can't bypass them:
+  - dispense > current lot inventory → reject (`"only N tablet(s) of lot LOT-X in inventory"`)
+  - cross-deployment subject vs IP → reject
+  - return without prior dispensation → reject (FK + lookup)
+  - `quantity_used + quantity_lost > quantity_returned` → reject
+  - `quantity_returned > quantity_dispensed` → reject
+  - negative quantities → reject
+  - invalid return_reason → reject (allowed set: end_of_visit / end_of_treatment / early_termination / adverse_event / other)
+- **Per-lot reconciliation rollup** computed in Python (portable across SQLite-for-tests + Postgres-at-runtime): keys `f"{ip_id}|{lot_number}"` → `{received, dispensed, returned, used, lost, current_inventory}`. `current_inventory = received + (returned − used − lost) − dispensed`. Top-level `totals` aggregates across all lots.
+- **9 new endpoints** under `/api/edc/`:
+  - `POST/GET /deployments/{deployment_id}/ip-catalogue` — register + list IPs
+  - `POST/GET /deployments/{deployment_id}/drug-receipts` — log + list receipts (with `ip_id` + `lot_number` query filters)
+  - `POST/GET /deployments/{deployment_id}/drug-dispensations` — log + list dispenses
+  - `POST /drug-dispensations/{dispensation_id}/return` — log a return against a prior dispense
+  - `GET /deployments/{deployment_id}/drug-returns` — list returns
+  - `GET /deployments/{deployment_id}/drug-reconciliation` — per-lot rollup, gated on `ip.reconcile`
+- **5 new permissions** in the RBAC matrix (`auth/rbac.py` + `rbac-design.md` §4.4):
+  - `ip.catalogue` — study_designer + data_manager (design-time + mid-study additions)
+  - `ip.receive` — coordinator (point-of-care) + data_manager (central depot)
+  - `ip.dispense` — coordinator (POC) + PI (co-signature at sites that require it)
+  - `ip.return` — coordinator only (logged at end-of-visit)
+  - `ip.reconcile` — data_manager + monitor + auditor + PI (read-side; mutating roles excluded so coordinators don't see the cross-site rollup)
+- **Lock-aware writes** — every mutating endpoint calls `_require_deployment_unlocked` so the IP catalogue + receipts + dispenses + returns are all refused with 409 once the study is locked (E7 hardening). The return endpoint walks `dispensation_id → deployment_id` first to resolve the lock check.
+- **Resolvers added to `web/authz.py`**: `resolve_ip_scope` (InvestigationalProduct → deployment scope) + `resolve_dispensation_scope` (DrugDispensation → subject scope, so site-scoped coordinators only return kits at their own site).
+- **Collector UI panel** — `web/static/collector.html` gains a "Drug accountability" card alongside Source extraction + Recruitment + Visit calendar. Loads the IP catalogue + reconciliation rollup, shows top 5 IPs + top 6 lots with stock / dispensed / returned counts, lets the designer register new IPs inline. The reconciliation block degrades gracefully when the viewer lacks `ip.reconcile`.
+- **30 new tests** in `tests/unit/test_drug_accountability.py` cover the catalogue + receipts + dispensations + returns CRUD, every state invariant via `pytest.raises(ClinicalError, match=...)`, the inventory accounting (received + returned-remainder − dispensed), the per-lot reconciliation rollup (two lots, multi-event), the empty-deployment edge case, and the RBAC matrix per role.
+- **What's deferred**:
+  - `kit_id` pattern enforcement (catalogue carries the regex; not enforced yet)
+  - Per-subject compliance metric (used / dispensed × 100) — straightforward extension of the rollup, deferred until a sponsor asks
+  - Temperature-excursion CAPA auto-link — `temp_excursion_flag` is logged but not yet wired to the protocol-deviation workflow
+  - IRT integration for dispensation — kits are operator-selected today; randomisation-driven kit selection lives in the IRT subsystem (E8) but the join is not yet automatic
 
 #### Lab-data feeds (HL7 / CDISC LAB) · 💡 · L
 
