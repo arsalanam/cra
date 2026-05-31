@@ -72,7 +72,7 @@ Where the item sits in the research lifecycle:
 | Execution | Drug accountability (IP receipt → dispense → return) | **P2** | 💡 proposed | M |
 | Execution | Lab-data feeds (HL7 / CDISC LAB) | **P2** | 💡 proposed | L |
 | Cross-cutting | Multi-site / multi-tenant coordination roll-up | **P2** | 💡 proposed | M |
-| Cross-cutting | Budget + cost rollup across studies | **P2** | 💡 proposed | S |
+| Cross-cutting | Budget + cost rollup across studies | **P2** | ✅ shipped 2026-05-31 | S |
 | Design | Research-gap analysis specialist | **P3** | 📝 planned (feature-guide) | M |
 | Start-up | DSMB / DMC charter + blinded views | **P3** | 💡 proposed | L |
 | Analysis | HTA / payer-grade dossier generation | **P3** | 💡 proposed | XL |
@@ -442,9 +442,24 @@ Central labs deliver via these standards. The eCRF re-keys lab values today. Wor
 
 Site-level aggregations are partial today; central-coordinator view of multi-site enrolment, query backlog, and per-site monitor visit status would close it.
 
-#### Budget + cost rollup across studies · 💡 · S
+#### ~~Budget + cost rollup across studies~~ · ✅ shipped 2026-05-31 · S
 
-Per-user envelope exists in the feature guide; institutional cost-per-study and cost-per-evidence-output are absent. Low effort once portfolio dashboard (P1) is in place.
+Shipped as the first P2. Builds on the portfolio dashboard (P1 #9) and the existing done-event token tracking — no new persistence:
+
+- **`config/bedrock_pricing.py`** — per-model USD-per-1K-token table covering Claude 4.x (Haiku 4.5, Sonnet 4.6, Opus 4.7) + legacy Claude 3 family. `lookup(model_id)` normalises both short ids ("claude-haiku-4-5") and full Bedrock inference-profile ids ("us.anthropic.claude-haiku-4-5-20251001-v1:0") to the same pricing row. Unknown / future model ids fall back to Sonnet 4.6 (conservative overestimate).
+- **`services/cost_rollup.py`** — three async functions: `rollup_for_user(session, user_id)` aggregates per-workflow + per-model-family + monthly + cumulative; `rollup_for_thread(session, thread_id)` returns the per-thread total; `rollup_for_org(session)` admin-only org-wide rollup + per-user breakdowns. All read-side aggregations over the existing `done` `StreamEvent`s — no new tables.
+- **`web/dispatch.py`** — done event's `usage` dict now carries the `model_id` setting at write time. Legacy events (no model_id) fall back to the default pricing at read time. Forward-looking cost attribution is per-model; backward-looking attribution is best-effort.
+- **Two new endpoints**:
+  - `GET /api/portfolio/costs` — per-user cost rollup. Inherits the top-level auth dependency; no new permission. Returns `{usd_total, usd_this_month, input_tokens, output_tokens, by_workflow, by_model_family, n_turns}`.
+  - `GET /api/portfolio/org/costs` — admin-only, gated by the existing `portfolio.read_org` permission (from P1 #9). Returns org totals + per-user rollups sorted by spend descending.
+- **`PortfolioThreadOut` extended with `cost_usd`** — each thread row on `/api/portfolio/threads` now carries its cumulative cost. Lets the dashboard show which threads are the spend hot-spots.
+- **`portfolio.html` extended with**:
+  - "Spend (USD)" section with This-month / Cumulative / Turns / Tokens cards + by-workflow + by-model-family breakdowns
+  - "Cost" column on the threads table
+  - Admin-only "Top-spend users" section that surfaces the per-user rollups from `/org/costs`
+- **No new RBAC permission** — `portfolio.read_org` from the P1 #9 portfolio dashboard already covers the admin org cost view. Per-user routes use the top-level auth dependency.
+- **Pricing-table provenance documented in the UI** ("AWS Bedrock public rates as of 2026-05. Verify before invoicing."). Operators relying on these numbers for sponsor billing should re-verify against the current AWS pricing page.
+- **Six-decimal rounding** in the `CostRollup.as_dict()` shape — enough for fractions of a cent without showing IEEE-754 float noise like `0.30000000000000004`.
 
 ---
 
