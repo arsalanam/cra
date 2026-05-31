@@ -852,6 +852,14 @@ const LIFECYCLE_SECTIONS = [
         desc: "Compose a finished analysis into a journal-ready paper (NEJM / Lancet / BMJ / JAMA / generic). Iterates point-by-point reviewer responses with cover letter.",
         foot: "/manuscript · /imrad",
       },
+      {
+        perm: "skill.lay_summary",
+        icon: "🗣️",
+        title: "Lay summary (PLS)",
+        starter: "/lay-summary plain-language summary at grade 6 English for parents of children with asthma",
+        desc: "Patient-facing plain-language summary — three sources: recruitment (from protocol), evidence (from meta-analysis), or results (from CSR). Flesch-Kincaid grade computed host-side; multilingual en/es/fr/de.",
+        foot: "/lay · /pls · /plain-language",
+      },
     ],
   },
   {
@@ -1226,6 +1234,38 @@ function App() {
     await _runHandoff(`Meta-analysis: ${researchQuestion.slice(0, 100)}`, seed);
   }
 
+  /* meta_analysis → lay_summary hand-off. The dispatcher's continuation
+     prefix "Draft lay summary from meta-analysis" pins the new thread to
+     the lay_summary workflow; the seed pastes the meta-analysis JSON so
+     the drafter has authoritative numbers + PMIDs to ground the
+     plain-language draft in (no fabricated effect sizes, no fabricated
+     PMIDs). Operator picks the audience profile in the next turn. */
+  async function handoffToLaySummary(metaAnalysisTurn) {
+    let researchQuestion = "";
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (m.role === "user" && m.input_text) {
+        researchQuestion = m.input_text;
+        break;
+      }
+    }
+    if (!researchQuestion) researchQuestion = "(see prior conversation)";
+    const sourceJson = JSON.stringify(metaAnalysisTurn, null, 2);
+    const seed = [
+      "Draft lay summary from meta-analysis",
+      "",
+      `Research question: ${researchQuestion}`,
+      "",
+      "Audience profile: please ask me for target reading grade, language, region, and population descriptor before drafting.",
+      "",
+      "Source artefact (meta_analysis turn JSON — ground all numbers + PMIDs in this verbatim, do not invent):",
+      "```json",
+      sourceJson,
+      "```",
+    ].join("\n");
+    await _runHandoff(`Lay summary: ${researchQuestion.slice(0, 80)}`, seed);
+  }
+
   /* meta_analysis → manuscript_drafter hand-off. The dispatcher's
      continuation prefix "Draft as manuscript from meta-analysis" pins
      the new thread to the manuscript workflow; the seed pastes the full
@@ -1369,7 +1409,7 @@ function App() {
           <>
             <div className="conversation" ref={conversationRef}>
               {messages.map(m => (
-                <Turn key={m.id} message={m} onSend={sendMessage} onHandoff={handoffToMetaAnalysis} onHandoffProtocolToSearch={handoffToSearchStrategy} onHandoffProtocolToMeta={handoffProtocolToMetaAnalysis} onWatch={openWatchModal} onHandoffToRob={handoffToRobFromExtraction} onHandoffRobToMeta={handoffRobToMetaSensitivity} onHandoffToManuscript={handoffToManuscript} running={running} />
+                <Turn key={m.id} message={m} onSend={sendMessage} onHandoff={handoffToMetaAnalysis} onHandoffProtocolToSearch={handoffToSearchStrategy} onHandoffProtocolToMeta={handoffProtocolToMetaAnalysis} onWatch={openWatchModal} onHandoffToRob={handoffToRobFromExtraction} onHandoffRobToMeta={handoffRobToMetaSensitivity} onHandoffToManuscript={handoffToManuscript} onHandoffToLaySummary={handoffToLaySummary} running={running} />
               ))}
               {running && <div className="turn"><div className="loading"><div className="spinner" />Agent is thinking…</div></div>}
               {error && <div className="turn"><div className="error-banner">{error}</div></div>}
@@ -1405,7 +1445,7 @@ function App() {
 
 /* ── Single conversation turn (user bubble OR assistant card) ──────────── */
 
-function Turn({ message, onSend, onHandoff, onHandoffProtocolToSearch, onHandoffProtocolToMeta, onWatch, onHandoffToRob, onHandoffRobToMeta, onHandoffToManuscript, running }) {
+function Turn({ message, onSend, onHandoff, onHandoffProtocolToSearch, onHandoffProtocolToMeta, onWatch, onHandoffToRob, onHandoffRobToMeta, onHandoffToManuscript, onHandoffToLaySummary, running }) {
   if (message.role === "user") {
     return (
       <div className="turn">
@@ -1444,7 +1484,7 @@ function Turn({ message, onSend, onHandoff, onHandoffProtocolToSearch, onHandoff
         {turn.kind === "pico"             && <PicoCard turn={turn} onSend={onSend} disabled={running} />}
         {turn.kind === "search_results"   && <SearchResultsCard turn={turn} onSend={onSend} disabled={running} />}
         {turn.kind === "data_extraction"  && <DataExtractionCard turn={turn} onSend={onSend} onHandoffToRob={onHandoffToRob} disabled={running} />}
-        {turn.kind === "meta_analysis"    && <MetaAnalysisCard turn={turn} threadId={message.thread_id} onHandoffToManuscript={onHandoffToManuscript} />}
+        {turn.kind === "meta_analysis"    && <MetaAnalysisCard turn={turn} threadId={message.thread_id} onHandoffToManuscript={onHandoffToManuscript} onHandoffToLaySummary={onHandoffToLaySummary} />}
         {turn.kind === "answer"           && <AnswerCard turn={turn} />}
         {turn.kind === "query_blocks"     && <QueryBlocksCard turn={turn} onSend={onSend} disabled={running} />}
         {turn.kind === "strategy_result"  && <StrategyResultCard turn={turn} onSend={onSend} onHandoff={onHandoff} onWatch={onWatch} disabled={running} />}
@@ -1892,7 +1932,7 @@ function NumField({ label, value, onChange }) {
 
 /* ── Meta-analysis ────────────────────────────────────────────────────── */
 
-function MetaAnalysisCard({ turn, threadId, onHandoffToManuscript }) {
+function MetaAnalysisCard({ turn, threadId, onHandoffToManuscript, onHandoffToLaySummary }) {
   // Browser-driven download: cookie-based auth travels with the GET, the
   // backend sets Content-Disposition: attachment, so the browser writes the
   // file to disk instead of rendering it inline.
@@ -1948,6 +1988,14 @@ function MetaAnalysisCard({ turn, threadId, onHandoffToManuscript }) {
           <div className="text">Compose this analysis into a journal-ready IMRaD manuscript.</div>
           <button className="btn-secondary" onClick={() => onHandoffToManuscript && onHandoffToManuscript(turn)}>
             → Draft as manuscript
+          </button>
+        </div>
+      )}
+      {hasResults && (
+        <div className="handoff-cta" style={{ marginTop: 8 }}>
+          <div className="text">Turn this evidence into a patient-facing plain-language summary for shared decision-making.</div>
+          <button className="btn-secondary" onClick={() => onHandoffToLaySummary && onHandoffToLaySummary(turn)}>
+            → Draft lay summary
           </button>
         </div>
       )}

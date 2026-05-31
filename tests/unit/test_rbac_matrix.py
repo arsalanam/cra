@@ -315,6 +315,8 @@ def test_skill_permission_covers_every_specialist() -> None:
         "nma",
         # Individual patient data meta-analysis (pools subject-level rows)
         "ipd",
+        # Dissemination tier: patient-facing plain-language summaries
+        "lay_summary",
     }
     assert set(SKILL_PERMISSION) == expected_workflows
 
@@ -341,6 +343,15 @@ def test_researcher_can_run_irb_drafter_but_student_cannot() -> None:
     assert Permission.SKILL_IRB_DRAFTER not in ROLE_PERMISSIONS[Role.STUDENT]
 
 
+def test_researcher_can_run_lay_summary_but_student_cannot() -> None:
+    """Dissemination tier: patient-facing plain-language summaries are
+    researcher-tier — student is meta-analysis-only per the locked
+    decision."""
+    assert Permission.SKILL_LAY_SUMMARY in ROLE_PERMISSIONS[Role.RESEARCHER]
+    assert Permission.SKILL_LAY_SUMMARY in ROLE_PERMISSIONS[Role.ADMIN]
+    assert Permission.SKILL_LAY_SUMMARY not in ROLE_PERMISSIONS[Role.STUDENT]
+
+
 def test_researcher_can_run_csr_drafter_but_student_cannot() -> None:
     """Analysis-finale tier: CSR (ICH E3) drafter is researcher-tier."""
     assert Permission.SKILL_CSR_DRAFTER in ROLE_PERMISSIONS[Role.RESEARCHER]
@@ -357,12 +368,12 @@ def test_researcher_can_run_grade_drafter_but_student_cannot() -> None:
 
 def test_source_extraction_permissions_per_role() -> None:
     """P1 #5 source-document extraction:
-      - study_designer: authors mappings + reads source docs.
-      - coordinator: uploads + reads + applies at point-of-care.
-      - data_manager: primary owner — uploads + authors + applies +
-        audit-reads.
-      - PI: reads docs + extraction-fill audit (source verification).
-      - monitor + auditor: read-only for SDV.
+    - study_designer: authors mappings + reads source docs.
+    - coordinator: uploads + reads + applies at point-of-care.
+    - data_manager: primary owner — uploads + authors + applies +
+      audit-reads.
+    - PI: reads docs + extraction-fill audit (source verification).
+    - monitor + auditor: read-only for SDV.
     """
     designer = ROLE_PERMISSIONS[Role.STUDY_DESIGNER]
     assert Permission.EXTRACTION_MAPPING_AUTHOR in designer
@@ -415,13 +426,13 @@ def test_source_extraction_permissions_per_role() -> None:
 
 def test_visit_schedule_permissions_per_role() -> None:
     """P1 #4 visit scheduling + reminders:
-      - study_designer: authors schedule + reads.
-      - coordinator: reads schedule, marks visits complete, manages
-        participant contact (point-of-care).
-      - PI: reads schedule, updates visits, reads reminder audit.
-      - data_manager: activates schedule + reads + sends reminders
-        manually.
-      - monitor + auditor: read-only.
+    - study_designer: authors schedule + reads.
+    - coordinator: reads schedule, marks visits complete, manages
+      participant contact (point-of-care).
+    - PI: reads schedule, updates visits, reads reminder audit.
+    - data_manager: activates schedule + reads + sends reminders
+      manually.
+    - monitor + auditor: read-only.
     """
     designer = ROLE_PERMISSIONS[Role.STUDY_DESIGNER]
     assert Permission.VISIT_SCHEDULE_AUTHOR in designer
@@ -479,12 +490,12 @@ def test_visit_schedule_permissions_per_role() -> None:
 
 def test_coordinator_records_screening_pi_dm_update_monitor_auditor_read() -> None:
     """Recruitment / screening (P1 #3):
-      - Coordinator records + updates + reads (point-of-care).
-      - PI: updates eligibility/consent/enrolment + reads.
-      - DM: updates (reclassification) + reads, no record.
-      - Monitor: read for SDV; no mutations.
-      - Auditor: read only.
-      - Student: blocked from everything (researcher-tier skill, not eCRF).
+    - Coordinator records + updates + reads (point-of-care).
+    - PI: updates eligibility/consent/enrolment + reads.
+    - DM: updates (reclassification) + reads, no record.
+    - Monitor: read for SDV; no mutations.
+    - Auditor: read only.
+    - Student: blocked from everything (researcher-tier skill, not eCRF).
     """
     coord = ROLE_PERMISSIONS[Role.COORDINATOR]
     assert Permission.SCREENING_RECORD in coord

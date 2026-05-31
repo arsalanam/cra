@@ -35,6 +35,7 @@ from .specialists import (
     grade_drafter,
     ipd,
     irb_drafter,
+    lay_summary,
     manuscript_drafter,
     meta_analysis,
     nma,
@@ -113,6 +114,11 @@ _SLASH_COMMANDS: dict[str, str] = {
     "ipdma": ipd.WORKFLOW_NAME,
     "ipd-ma": ipd.WORKFLOW_NAME,
     "subject-level": ipd.WORKFLOW_NAME,
+    "lay": lay_summary.WORKFLOW_NAME,
+    "lay-summary": lay_summary.WORKFLOW_NAME,
+    "plain-language": lay_summary.WORKFLOW_NAME,
+    "pls": lay_summary.WORKFLOW_NAME,
+    "patient-summary": lay_summary.WORKFLOW_NAME,
     "general": general_qa.WORKFLOW_NAME,
     "ask": general_qa.WORKFLOW_NAME,
     # Future: "gap" -> "research_gap", "ecrf" -> "ecrf_design"
@@ -227,6 +233,18 @@ _WORKFLOW_CONTINUATIONS: dict[str, tuple[str, ...]] = {
         "Refine IPD:",
         "Finalize IPD",
     ),
+    lay_summary.WORKFLOW_NAME: (
+        "Recruitment intake confirmed",
+        "Evidence intake confirmed",
+        "Results intake confirmed",
+        "Draft confirmed",
+        "Reduce reading level",
+        "Refine lay summary:",
+        "Finalize lay summary",
+        "Draft lay summary from meta-analysis",  # handoff seed
+        "Draft lay summary from CSR",  # handoff seed
+        "Draft lay summary from IRB packet",  # handoff seed
+    ),
     # Future: research_gap / ecrf continuations
 }
 
@@ -258,6 +276,23 @@ _TRIGGER_KEYWORDS: list[tuple[str, list[re.Pattern[str]]]] = [
             re.compile(r"\bROBINS[-\s]?I\b", re.I),
             re.compile(r"\bNewcastle[-\s]Ottawa\b", re.I),
             re.compile(r"\bQUADAS[-\s]?2\b", re.I),
+        ],
+    ),
+    # lay_summary checked BEFORE manuscript_drafter so "draft a lay
+    # summary" doesn't get grabbed by the manuscript_drafter "draft a
+    # manuscript" regex. Same posture as NMA + IPD being checked
+    # before meta_analysis.
+    (
+        lay_summary.WORKFLOW_NAME,
+        [
+            re.compile(r"\blay\s+(language\s+)?summary\b", re.I),
+            re.compile(r"\bplain[-\s]language\s+summary\b", re.I),
+            re.compile(r"\bpatient[-\s]facing\s+summary\b", re.I),
+            re.compile(r"\bplain[-\s]english\s+summary\b", re.I),
+            re.compile(r"\bdraft\s+(a|the)?\s*(lay|plain[-\s]language|patient)\s+summary\b", re.I),
+            re.compile(r"\breturn[-\s]of[-\s]results\s+(letter|summary)\b", re.I),
+            re.compile(r"\b(participant|patient)[-\s]facing\b", re.I),
+            re.compile(r"\bPLS\s+(draft|summary)\b"),  # case-sensitive: PLS uppercase
         ],
     ),
     # manuscript_drafter checked early: "draft a manuscript on …" mentions

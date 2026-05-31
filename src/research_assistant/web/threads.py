@@ -26,6 +26,7 @@ from ..reports import csr as _csr_report
 from ..reports import grade as _grade_report
 from ..reports import ipd as _ipd_report
 from ..reports import irb as _irb_report
+from ..reports import lay_summary as _lay_summary_report
 from ..reports import manuscript as _manuscript_report
 from ..reports import meta_analysis as _ma_report
 from ..reports import nma as _nma_report
@@ -353,6 +354,13 @@ def create_thread_router() -> APIRouter:
             _ipd_report.build_docx,
             "ipd-ma",
             "individual patient data meta-analysis",
+        ),
+        "lay_summary": (
+            _lay_summary_report.assemble_report_data,
+            _lay_summary_report.build_pdf,
+            _lay_summary_report.build_docx,
+            "lay-summary",
+            "patient-facing lay summary",
         ),
     }
 
