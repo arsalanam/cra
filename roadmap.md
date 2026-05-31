@@ -68,7 +68,7 @@ Where the item sits in the research lifecycle:
 | Cross-cutting | Citation-manager integration (Zotero / EndNote / Mendeley) | **P1** | ✅ shipped 2026-05-31 | S |
 | Cross-cutting | Portfolio dashboard across reviews + trials | **P1** | ✅ shipped 2026-05-31 | M |
 | Synthesis | Group-level living-review subscriptions (quorum notifications) | **P2** | 📝 planned (feature-guide) | M |
-| Dissemination | Patient-facing / lay summaries | **P2** | 📝 planned (feature-guide) | M |
+| Dissemination | Patient-facing / lay summaries | **P2** | ✅ shipped 2026-05-31 | M |
 | Execution | Drug accountability (IP receipt → dispense → return) | **P2** | ✅ shipped 2026-05-31 | M |
 | Execution | Lab-data feeds (HL7 / CDISC LAB) | **P2** | 💡 proposed | L |
 | Cross-cutting | Multi-site / multi-tenant coordination roll-up | **P2** | 💡 proposed | M |
@@ -424,11 +424,31 @@ Shipped as a focused per-user dashboard with an admin-only org rollup, no new pe
 
 In the feature-guide roadmap. Group watches with quorum-based notification rules — designed for guideline committees and HTA bodies who need consensus signalling on practice-changing evidence rather than per-user alerts.
 
-#### Patient-facing / lay summaries · 📝 · M
+#### ~~Patient-facing / lay summaries~~ · ✅ shipped 2026-05-31 · M
 
-In the feature-guide roadmap. Plain-language summaries of a study's objectives, what participation involves, and what early evidence suggests — at a configurable reading level, in the patient's preferred language. Designed for recruitment, shared-decision-making, and post-study return-of-results.
+Shipped as the third P2 — closes the dissemination gap between the regulator-facing artefacts (CSR, IRB packet, manuscript) and the patient-facing surface (recruitment posters, shared-decision aids, return-of-results letters). Brand-new `lay_summary` specialist + host-side readability service.
 
-- **Adjacency:** if extended into ICF drafting, becomes a P0 (above).
+- **New `lay_summary` specialist** (`agent/specialists/lay_summary.py`) with 3-stage workflow (intake → draft → document). Three intake variants discriminated by `kind`: `recruitment_intake` (protocol synopsis), `evidence_intake` (meta-analysis), `results_intake` (CSR / trial_stats). The specialist composes with `irb_drafter` (recruitment), `meta_analysis` (evidence), and `csr_drafter` / `trial_stats` (results).
+- **Host-side Flesch-Kincaid grade computation** in `services/readability.py` (stdlib only, no `textstat` dep). Vowel-group syllable estimator with the standard silent-e + le-after-consonant rules. The model may estimate but the document's `grade_actual` is overwritten with the host's number before persistence — eliminates the irb_drafter weakness where the model self-reported its own grade.
+- **Compute + report + iterate posture (the user-chosen scoping option)**. When a first draft scores > 8.0 grade, the specialist re-prompts with "Reduce reading level. The previous draft scored too high…" and ships the better of the two passes. `LaySummaryDocument.readability_attempts` records 1, 2, or 3 (capped) so the operator sees how hard the system worked to land under target. A chronically-over-target document still ships with the actual grade visible, not falsified.
+- **AudienceProfile schema** (`target_grade` 4-12, `language` en/es/fr/de, free-text `region`, `population_descriptor`). Same multilingual posture as `irb_drafter`. `region` lets the same source generate a Spanish-Mexico draft distinct from Spanish-Spain — drives idiom + metric/imperial choice. Default target_grade = 6 (CISCRP general-adult-patient target).
+- **5 plain-language sections in CISCRP / NIH order**: `what_this_is_about` → `what_we_did` → `what_we_found` → `what_this_means_for_you` → `next_steps`. The `section_id` Literal forces the order schema-side. Optional plain-language glossary as a list of `{"term": ..., "gloss": ...}` entries rendered as a sidebar on the report.
+- **Anti-hallucination posture**:
+  - Evidence variant: every PMID cited must be in `pmid_sources` (operator-pasted). Same posture as `meta_analysis` / `manuscript_drafter`.
+  - Results variant: every numeric claim must trace to a `derived_from_ids` entry (operator-pasted). Same posture as `csr_drafter` / `trial_stats`.
+  - Recruitment variant: never promise the trial will succeed; only describe what's being tested.
+  - All variants: no medical-decision language ("you should", "you must"); only "may help" / "might give doctors more information" framings.
+- **Reports package** — new `reports/lay_summary.py` with `assemble_report_data` + `build_pdf` + `build_docx`. Cover band shows source label + language + region + reading-grade badge (green within target+1, amber over). Footer is "not medical advice" disclaimer. Downloadable at `/api/threads/{thread_id}/report/lay_summary/{pdf|docx}`.
+- **Dispatcher routing** — keyword triggers checked BEFORE `manuscript_drafter` so "draft a lay summary" doesn't get grabbed by "draft a manuscript". 5 slash commands (`/lay`, `/lay-summary`, `/plain-language`, `/pls`, `/patient-summary`). 10 continuation prefixes including 3 handoff seeds (`Draft lay summary from meta-analysis|CSR|IRB packet`).
+- **RBAC** — new `Permission.SKILL_LAY_SUMMARY` (researcher-tier, student blocked, admin gets it via `_ALL_PERMS`). Same evidence-skills set as the other dissemination-tier drafters (manuscript / GRADE).
+- **Frontend** — new tile in the "Analysis & reporting" section of the welcome page. New `handoffToLaySummary` function + button on the `MetaAnalysisCard` (evidence variant); the operator pastes the meta-analysis JSON via the handoff seed and the lay summary cites the underlying PMIDs verbatim.
+- **30+ new tests** in 4 files: `test_readability.py` (FK math + syllable rules + edge cases), `test_lay_summary_domain.py` (3 intake variants + AudienceProfile + draft 5-section rule + document round-trip + readability_attempts cap), `test_dispatcher_lay_summary.py` (slash commands + keyword triggers + continuations + "draft a manuscript" stays in manuscript_drafter), `test_lay_summary_report.py` (assembler + PDF + DOCX signature + over-target round-trip + glossary). 1345 tests pass.
+- **What's deferred**:
+  - **Multi-language Flesch-Kincaid.** The FK formula was built for English; Spanish / French / German need analogue formulas (Fernández-Huerta for Spanish, Kandel-Moles for French, LIX for German). Today the host computes FK regardless of the language tag; the specialist's system prompt still nudges the model toward short words. Add per-language formulas when a real ES/FR/DE pilot lands.
+  - **PDF cover art / illustrations.** The current PDF is text-only. CISCRP-style patient-facing materials usually carry an illustration band; deferred until a sponsor asks.
+  - **EMA Reg (EU) No 536/2014 templated lay summary.** The EMA lay-summary obligations have a specific 10-section structure. The results variant's 5 sections cover the spirit but not the letter. Add an EMA-specific export when an EU trial lands.
+  - **Reading-level enforcement loop > 2 passes.** Cap is intentionally 3; chronically high-grade content usually means the source material itself is jargon-heavy, and retrying further wastes tokens. Raise the cap if a quality study contradicts that assumption.
+  - **Cross-handoff into `irb_drafter`.** Today the lay summary references a protocol synopsis but doesn't draft an ICF supplement. The pieces are adjacent — a single click could compose both.
 
 #### ~~Drug accountability~~ · ✅ shipped 2026-05-31 · M
 
