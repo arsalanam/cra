@@ -16,7 +16,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
@@ -690,6 +690,83 @@ class ReminderRunResultOut(BaseModel):
     sent: int
     failed: int
     skipped: int
+
+
+# ── Source-document extraction DTOs (P1 #5) ──────────────────────────────
+
+
+class SourceDocumentOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    deployment_id: str
+    filename: str
+    content_hash: str
+    row_count: int
+    headers_json: str
+    uploaded_by_sub: str | None
+    uploaded_at: datetime
+    notes: str
+
+
+class SourceRowOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    source_document_id: str
+    row_index: int
+    payload_json: str
+    subject_code_hint: str | None
+
+
+class ExtractionMappingIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    deployed_form_id: str
+    subject_code_field: str
+    mapping: dict[str, str]
+    name: str = "default"
+    notes: str = ""
+
+
+class ExtractionMappingOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    deployment_id: str
+    deployed_form_id: str
+    name: str
+    version: int
+    subject_code_field: str
+    mapping_json: str
+    is_active: bool
+    created_by_sub: str | None
+    created_at: datetime
+    notes: str
+
+
+class ExtractionApplyIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    source_document_id: str
+    mode: str = "subjects"  # "subjects" → eCRF pre-fill; "table" → flat output
+
+
+class ExtractionApplyResultOut(BaseModel):
+    mode: str
+    subjects_filled: int = 0
+    items_written: int = 0
+    source_rows_unmatched: int = 0
+    table_rows: list[dict[str, object]] = Field(default_factory=list)
+
+
+class ExtractionFillOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    source_row_id: str
+    source_field: str
+    mapping_id: str
+    mapping_version: int
+    target_kind: str
+    target_id: str
+    applied_value: str | None
+    applied_by_sub: str | None
+    applied_at: datetime
 
 
 class CapaOut(BaseModel):
@@ -2850,5 +2927,203 @@ def create_edc_router() -> APIRouter:
 
         result = await fire_due_reminders(deployment_id)
         return ReminderRunResultOut.model_validate(result.as_dict())
+
+    # ── Source-document extraction (P1 #5) ───────────────────────────────
+
+    _MAX_SOURCE_UPLOAD_BYTES = 20 * 1024 * 1024  # 20 MB
+
+    @router.post(
+        "/deployments/{deployment_id}/source-documents",
+        response_model=SourceDocumentOut,
+        status_code=201,
+    )
+    async def upload_source_document(
+        deployment_id: str,
+        file: UploadFile = File(...),  # noqa: B008
+        subject_code_field: str | None = Form(default=None),
+        notes: str = Form(default=""),
+        user: SessionPayload = require_permission_scoped(
+            Permission.SOURCE_DOCUMENT_UPLOAD, resource_param="deployment_id"
+        ),
+    ) -> SourceDocumentOut:
+        """Upload a CSV source-data file.
+
+        The platform does NOT enforce de-identification — operators are
+        expected to upload pre-de-identified data per their protocol's
+        PHI policy. Content-hash dedupe: re-uploading the same file
+        returns the existing row.
+        """
+        data = await file.read()
+        if not data:
+            raise HTTPException(422, "Empty file.")
+        if len(data) > _MAX_SOURCE_UPLOAD_BYTES:
+            raise HTTPException(
+                413,
+                f"File exceeds {_MAX_SOURCE_UPLOAD_BYTES // (1024 * 1024)} MB limit.",
+            )
+        async with get_clinical_session() as s:
+            try:
+                doc, _added = await ClinicalRepository(s).ingest_source_document(
+                    deployment_id,
+                    filename=file.filename or "upload.csv",
+                    raw_bytes=data,
+                    subject_code_field=subject_code_field,
+                    actor_sub=user.sub,
+                )
+                if notes:
+                    doc.notes = notes
+                    await s.flush()
+            except ClinicalError as e:
+                raise HTTPException(422, str(e)) from e
+            return SourceDocumentOut.model_validate(doc)
+
+    @router.get(
+        "/deployments/{deployment_id}/source-documents",
+        response_model=list[SourceDocumentOut],
+    )
+    async def list_deployment_source_documents(
+        deployment_id: str,
+        user: SessionPayload = require_permission_scoped(
+            Permission.SOURCE_DOCUMENT_READ, resource_param="deployment_id"
+        ),
+    ) -> list[SourceDocumentOut]:
+        async with get_clinical_session() as s:
+            rows = await ClinicalRepository(s).list_source_documents(deployment_id)
+            return [SourceDocumentOut.model_validate(r) for r in rows]
+
+    @router.get(
+        "/source-documents/{doc_id}/rows",
+        response_model=list[SourceRowOut],
+    )
+    async def list_source_rows(
+        doc_id: str,
+        user: SessionPayload = require_permission_scoped(
+            Permission.SOURCE_DOCUMENT_READ, resource_param="doc_id"
+        ),
+    ) -> list[SourceRowOut]:
+        async with get_clinical_session() as s:
+            rows = await ClinicalRepository(s).list_source_rows(doc_id)
+            return [SourceRowOut.model_validate(r) for r in rows]
+
+    @router.post(
+        "/deployments/{deployment_id}/extraction-mappings",
+        response_model=ExtractionMappingOut,
+        status_code=201,
+    )
+    async def create_extraction_mapping(
+        deployment_id: str,
+        body: ExtractionMappingIn,
+        user: SessionPayload = require_permission_scoped(
+            Permission.EXTRACTION_MAPPING_AUTHOR, resource_param="deployment_id"
+        ),
+    ) -> ExtractionMappingOut:
+        async with get_clinical_session() as s:
+            try:
+                m = await ClinicalRepository(s).create_extraction_mapping(
+                    deployment_id,
+                    deployed_form_id=body.deployed_form_id,
+                    name=body.name,
+                    subject_code_field=body.subject_code_field,
+                    mapping=body.mapping,
+                    notes=body.notes,
+                    actor_sub=user.sub,
+                )
+            except ClinicalError as e:
+                raise HTTPException(422, str(e)) from e
+            return ExtractionMappingOut.model_validate(m)
+
+    @router.get(
+        "/deployments/{deployment_id}/extraction-mappings",
+        response_model=list[ExtractionMappingOut],
+    )
+    async def list_extraction_mappings(
+        deployment_id: str,
+        user: SessionPayload = require_permission_scoped(
+            Permission.SOURCE_DOCUMENT_READ, resource_param="deployment_id"
+        ),
+        deployed_form_id: str | None = None,
+    ) -> list[ExtractionMappingOut]:
+        async with get_clinical_session() as s:
+            rows = await ClinicalRepository(s).list_extraction_mappings(
+                deployment_id, deployed_form_id=deployed_form_id
+            )
+            return [ExtractionMappingOut.model_validate(r) for r in rows]
+
+    @router.post(
+        "/extraction-mappings/{mapping_id}/dry-run",
+    )
+    async def dry_run_extraction(
+        mapping_id: str,
+        source_document_id: str,
+        user: SessionPayload = require_permission_scoped(
+            Permission.EXTRACTION_MAPPING_APPLY, resource_param="mapping_id"
+        ),
+    ) -> list[dict[str, object]]:
+        async with get_clinical_session() as s:
+            try:
+                return await ClinicalRepository(s).dry_run_extraction(
+                    mapping_id, source_document_id=source_document_id
+                )
+            except ClinicalError as e:
+                raise HTTPException(422, str(e)) from e
+
+    @router.post(
+        "/extraction-mappings/{mapping_id}/apply",
+        response_model=ExtractionApplyResultOut,
+    )
+    async def apply_extraction(
+        mapping_id: str,
+        body: ExtractionApplyIn,
+        user: SessionPayload = require_permission_scoped(
+            Permission.EXTRACTION_MAPPING_APPLY, resource_param="mapping_id"
+        ),
+    ) -> ExtractionApplyResultOut:
+        if body.mode not in ("subjects", "table"):
+            raise HTTPException(
+                422,
+                f"Invalid mode {body.mode!r}; choose 'subjects' or 'table'.",
+            )
+        async with get_clinical_session() as s:
+            try:
+                if body.mode == "subjects":
+                    summary = await ClinicalRepository(s).apply_extraction_to_subjects(
+                        mapping_id,
+                        source_document_id=body.source_document_id,
+                        actor_sub=user.sub,
+                    )
+                    return ExtractionApplyResultOut(
+                        mode="subjects",
+                        subjects_filled=summary["subjects_filled"],
+                        items_written=summary["items_written"],
+                        source_rows_unmatched=summary["source_rows_unmatched"],
+                    )
+                table = await ClinicalRepository(s).apply_extraction_to_table(
+                    mapping_id,
+                    source_document_id=body.source_document_id,
+                    actor_sub=user.sub,
+                )
+                return ExtractionApplyResultOut(mode="table", table_rows=table)
+            except ClinicalError as e:
+                raise HTTPException(422, str(e)) from e
+
+    @router.get(
+        "/deployments/{deployment_id}/extraction-fills",
+        response_model=list[ExtractionFillOut],
+    )
+    async def list_extraction_fills(
+        deployment_id: str,
+        user: SessionPayload = require_permission_scoped(
+            Permission.EXTRACTION_AUDIT_READ, resource_param="deployment_id"
+        ),
+        target_id: str | None = None,
+        source_document_id: str | None = None,
+    ) -> list[ExtractionFillOut]:
+        async with get_clinical_session() as s:
+            rows = await ClinicalRepository(s).list_extraction_fills(
+                deployment_id=deployment_id,
+                target_id=target_id,
+                source_document_id=source_document_id,
+            )
+            return [ExtractionFillOut.model_validate(r) for r in rows]
 
     return router

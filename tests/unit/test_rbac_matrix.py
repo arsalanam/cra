@@ -351,6 +351,64 @@ def test_researcher_can_run_grade_drafter_but_student_cannot() -> None:
     assert Permission.SKILL_GRADE_DRAFTER not in ROLE_PERMISSIONS[Role.STUDENT]
 
 
+def test_source_extraction_permissions_per_role() -> None:
+    """P1 #5 source-document extraction:
+      - study_designer: authors mappings + reads source docs.
+      - coordinator: uploads + reads + applies at point-of-care.
+      - data_manager: primary owner — uploads + authors + applies +
+        audit-reads.
+      - PI: reads docs + extraction-fill audit (source verification).
+      - monitor + auditor: read-only for SDV.
+    """
+    designer = ROLE_PERMISSIONS[Role.STUDY_DESIGNER]
+    assert Permission.EXTRACTION_MAPPING_AUTHOR in designer
+    assert Permission.SOURCE_DOCUMENT_READ in designer
+    assert Permission.SOURCE_DOCUMENT_UPLOAD not in designer
+    assert Permission.EXTRACTION_MAPPING_APPLY not in designer
+
+    coord = ROLE_PERMISSIONS[Role.COORDINATOR]
+    assert Permission.SOURCE_DOCUMENT_UPLOAD in coord
+    assert Permission.SOURCE_DOCUMENT_READ in coord
+    assert Permission.EXTRACTION_MAPPING_APPLY in coord
+    assert Permission.EXTRACTION_MAPPING_AUTHOR not in coord
+    assert Permission.EXTRACTION_AUDIT_READ not in coord
+
+    pi = ROLE_PERMISSIONS[Role.PRINCIPAL_INVESTIGATOR]
+    assert Permission.SOURCE_DOCUMENT_READ in pi
+    assert Permission.EXTRACTION_AUDIT_READ in pi
+    assert Permission.SOURCE_DOCUMENT_UPLOAD not in pi
+    assert Permission.EXTRACTION_MAPPING_APPLY not in pi
+
+    dm = ROLE_PERMISSIONS[Role.DATA_MANAGER]
+    assert Permission.SOURCE_DOCUMENT_UPLOAD in dm
+    assert Permission.SOURCE_DOCUMENT_READ in dm
+    assert Permission.EXTRACTION_MAPPING_AUTHOR in dm
+    assert Permission.EXTRACTION_MAPPING_APPLY in dm
+    assert Permission.EXTRACTION_AUDIT_READ in dm
+
+    mon = ROLE_PERMISSIONS[Role.MONITOR]
+    assert Permission.SOURCE_DOCUMENT_READ in mon
+    assert Permission.EXTRACTION_AUDIT_READ in mon
+    assert Permission.SOURCE_DOCUMENT_UPLOAD not in mon
+    assert Permission.EXTRACTION_MAPPING_APPLY not in mon
+
+    aud = ROLE_PERMISSIONS[Role.AUDITOR]
+    assert Permission.SOURCE_DOCUMENT_READ in aud
+    assert Permission.EXTRACTION_AUDIT_READ in aud
+    assert Permission.SOURCE_DOCUMENT_UPLOAD not in aud
+    assert Permission.EXTRACTION_MAPPING_APPLY not in aud
+
+    student = ROLE_PERMISSIONS[Role.STUDENT]
+    for p in (
+        Permission.SOURCE_DOCUMENT_UPLOAD,
+        Permission.SOURCE_DOCUMENT_READ,
+        Permission.EXTRACTION_MAPPING_AUTHOR,
+        Permission.EXTRACTION_MAPPING_APPLY,
+        Permission.EXTRACTION_AUDIT_READ,
+    ):
+        assert p not in student
+
+
 def test_visit_schedule_permissions_per_role() -> None:
     """P1 #4 visit scheduling + reminders:
       - study_designer: authors schedule + reads.

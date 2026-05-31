@@ -180,6 +180,28 @@ async def resolve_participant_access_scope(access_id: str) -> Scope:
         return await resolve_subject_scope(access.subject_id)
 
 
+async def resolve_source_document_scope(doc_id: str) -> Scope:
+    """SourceDocument → its deployment scope (P1 #5)."""
+    from ..persistence.clinical.models import SourceDocument
+
+    async with get_clinical_session() as s:
+        doc = await s.get(SourceDocument, doc_id)
+        if doc is None:
+            raise HTTPException(404, "Source document not found")
+        return await resolve_deployment_scope(doc.deployment_id)
+
+
+async def resolve_extraction_mapping_scope(mapping_id: str) -> Scope:
+    """ExtractionMapping → its deployment scope (P1 #5)."""
+    from ..persistence.clinical.models import ExtractionMapping
+
+    async with get_clinical_session() as s:
+        mapping = await s.get(ExtractionMapping, mapping_id)
+        if mapping is None:
+            raise HTTPException(404, "Extraction mapping not found")
+        return await resolve_deployment_scope(mapping.deployment_id)
+
+
 # ecrf StudyOut / FormOut path params resolve straight to (study_id, None).
 async def resolve_ecrf_study_scope(study_id: str) -> Scope:
     return (study_id, None, None)
@@ -238,6 +260,8 @@ RESOURCE_RESOLVERS: dict[str, ResolverFn] = {
     "schedule_id": resolve_visit_schedule_scope,
     "planned_visit_id": resolve_planned_visit_scope,
     "access_id": resolve_participant_access_scope,
+    "doc_id": resolve_source_document_scope,
+    "mapping_id": resolve_extraction_mapping_scope,
 }
 
 

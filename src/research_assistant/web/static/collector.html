@@ -70,6 +70,10 @@
           <div id="cal-summary" class="muted">Select a deployment to view the visit calendar.</div>
         </div>
         <div class="card">
+          <h2>Source extraction <span id="src-badge" class="muted" style="font-size:11px"></span></h2>
+          <div id="src-summary" class="muted">Select a deployment to upload source-data files.</div>
+        </div>
+        <div class="card">
           <h2>Study lock <span id="lock-badge" class="muted" style="font-size:11px"></span></h2>
           <div id="lock-summary" class="muted">Select a deployment to view its lock state.</div>
         </div>
@@ -806,7 +810,80 @@
     if(r.ok){ await loadVisitCalendar(); }
   }
 
-  /* Reload the CDISC + lock + randomisation + recruitment + calendar panels when the user picks a different deployment. */
+  /* ── Source-document extraction (P1 #5) ──────────────────────────── */
+
+  async function loadSourceExtraction(){
+    const root = document.getElementById("src-summary");
+    const badge = document.getElementById("src-badge");
+    if(!depId){ root.className="muted"; root.textContent="Select a deployment."; badge.textContent=""; return; }
+    try {
+      const [docsR, mappingsR] = await Promise.all([
+        api(`/api/edc/deployments/${depId}/source-documents`),
+        api(`/api/edc/deployments/${depId}/extraction-mappings`),
+      ]);
+      if(docsR.status === 403 || mappingsR.status === 403){
+        root.className="muted"; root.textContent="Source extraction requires source_document.read.";
+        badge.textContent=""; return;
+      }
+      const docs = await docsR.json();
+      const mappings = await mappingsR.json();
+      const docCount = docs.length;
+      const mappingCount = mappings.filter(m => m.is_active).length;
+      badge.textContent = `${docCount} doc(s) · ${mappingCount} active map(s)`;
+      badge.className = docCount > 0 ? "ok" : "muted";
+
+      const docRows = docs.slice(0, 5).map(d => `
+        <div style="display:flex;justify-content:space-between;border-top:1px solid #1f232c;padding:5px 0;font-size:12px">
+          <span><b>${esc(d.filename)}</b> · ${d.row_count} rows</span>
+          <span class="muted">${esc(d.content_hash.slice(0,8))}</span>
+        </div>
+      `).join("") || `<div class="muted" style="font-size:12px">No uploads yet.</div>`;
+
+      const mapRows = mappings.slice(0, 5).map(m => `
+        <div style="display:flex;justify-content:space-between;border-top:1px solid #1f232c;padding:5px 0;font-size:12px">
+          <span>${esc(m.name)} v${m.version}${m.is_active ? " <b>(active)</b>" : ""}</span>
+          <span class="muted">subj=${esc(m.subject_code_field)}</span>
+        </div>
+      `).join("") || `<div class="muted" style="font-size:12px">No mappings authored yet.</div>`;
+
+      root.className="";
+      root.innerHTML = `
+        <div class="sec-title" style="margin:0 0 4px">Uploaded source files</div>
+        ${docRows}
+        <div class="row" style="margin-top:6px">
+          <input type="file" id="src-file" accept=".csv" style="flex:1;font-size:11px" />
+          <input type="text" id="src-subject-field" placeholder="subject_code col" style="width:130px" />
+          <button class="btn secondary" onclick="uploadSourceDoc()">Upload</button>
+        </div>
+        <div class="sec-title" style="margin:10px 0 4px">Mappings</div>
+        ${mapRows}
+        <div id="src-status" class="status"></div>
+      `;
+    } catch (e) { root.className="muted"; root.textContent="Source extraction unavailable."; badge.textContent=""; }
+  }
+
+  async function uploadSourceDoc(){
+    const fileEl = document.getElementById("src-file");
+    if(!fileEl.files || !fileEl.files[0]) return;
+    const subjField = document.getElementById("src-subject-field").value.trim();
+    const fd = new FormData();
+    fd.append("file", fileEl.files[0]);
+    if(subjField) fd.append("subject_code_field", subjField);
+    const r = await api(`/api/edc/deployments/${depId}/source-documents`, {
+      method:"POST", body: fd,
+    });
+    const status = document.getElementById("src-status");
+    if(r.ok){
+      const d = await r.json();
+      status.className="status ok"; status.textContent=`Uploaded ${esc(d.filename)} — ${d.row_count} rows.`;
+      await loadSourceExtraction();
+    } else {
+      const err = await r.json().catch(()=>({detail:r.statusText}));
+      status.className="status err"; status.textContent=`Failed: ${err.detail || r.statusText}`;
+    }
+  }
+
+  /* Reload the CDISC + lock + randomisation + recruitment + calendar + source-extraction panels when the user picks a different deployment. */
   const originalSelectDeployment = selectDeployment;
   selectDeployment = async function(id){
     await originalSelectDeployment(id);
@@ -815,6 +892,7 @@
     await loadRandomisation();
     await loadRecruitment();
     await loadVisitCalendar();
+    await loadSourceExtraction();
   };
 
   loadDeployments();

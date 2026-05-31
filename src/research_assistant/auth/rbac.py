@@ -102,6 +102,13 @@ class Permission(StrEnum):
     REMINDER_READ = "reminder.read"
     REMINDER_SEND = "reminder.send"
 
+    # ── Source-document extraction (P1 #5) ───────────────────────────────
+    SOURCE_DOCUMENT_UPLOAD = "source_document.upload"
+    SOURCE_DOCUMENT_READ = "source_document.read"
+    EXTRACTION_MAPPING_AUTHOR = "extraction_mapping.author"
+    EXTRACTION_MAPPING_APPLY = "extraction_mapping.apply"
+    EXTRACTION_AUDIT_READ = "extraction.audit_read"
+
     # ── CDISC submission pipeline (SDTM → ADaM → TLF) ────────────────────
     CDISC_DERIVE = "cdisc.derive"
     CDISC_READ = "cdisc.read"
@@ -249,6 +256,10 @@ ROLE_PERMISSIONS: Final[dict[Role, frozenset[Permission]]] = {
             # Visit schedule + reminders: read-only for audit trails.
             Permission.VISIT_SCHEDULE_READ,
             Permission.REMINDER_READ,
+            # Source-document extraction: auditor reads source docs +
+            # extraction-fill provenance chain.
+            Permission.SOURCE_DOCUMENT_READ,
+            Permission.EXTRACTION_AUDIT_READ,
         }
     ),
     Role.STUDY_DESIGNER: frozenset(
@@ -264,6 +275,10 @@ ROLE_PERMISSIONS: Final[dict[Role, frozenset[Permission]]] = {
             # form definitions.
             Permission.VISIT_SCHEDULE_AUTHOR,
             Permission.VISIT_SCHEDULE_READ,
+            # Source-document extraction: designer authors mappings
+            # alongside the form definitions.
+            Permission.EXTRACTION_MAPPING_AUTHOR,
+            Permission.SOURCE_DOCUMENT_READ,
         }
     ),
     Role.PRINCIPAL_INVESTIGATOR: frozenset(
@@ -300,6 +315,10 @@ ROLE_PERMISSIONS: Final[dict[Role, frozenset[Permission]]] = {
             Permission.VISIT_SCHEDULE_READ,
             Permission.VISIT_UPDATE,
             Permission.REMINDER_READ,
+            # Source-document extraction: PI reads source docs +
+            # extraction-fill provenance for source data verification.
+            Permission.SOURCE_DOCUMENT_READ,
+            Permission.EXTRACTION_AUDIT_READ,
         }
     ),
     Role.COORDINATOR: frozenset(
@@ -329,6 +348,12 @@ ROLE_PERMISSIONS: Final[dict[Role, frozenset[Permission]]] = {
             Permission.VISIT_SCHEDULE_READ,
             Permission.VISIT_UPDATE,
             Permission.PARTICIPANT_CONTACT_MANAGE,
+            # Source-document extraction: coordinator uploads + applies
+            # mappings at point-of-care (e.g. importing this week's
+            # lab CSV per site).
+            Permission.SOURCE_DOCUMENT_UPLOAD,
+            Permission.SOURCE_DOCUMENT_READ,
+            Permission.EXTRACTION_MAPPING_APPLY,
         }
     ),
     Role.DATA_MANAGER: frozenset(
@@ -353,6 +378,13 @@ ROLE_PERMISSIONS: Final[dict[Role, frozenset[Permission]]] = {
             Permission.VISIT_SCHEDULE_READ,
             Permission.REMINDER_READ,
             Permission.REMINDER_SEND,
+            # Source-document extraction: DM is the primary author of
+            # mappings + uploader + applier + audit reader.
+            Permission.SOURCE_DOCUMENT_UPLOAD,
+            Permission.SOURCE_DOCUMENT_READ,
+            Permission.EXTRACTION_MAPPING_AUTHOR,
+            Permission.EXTRACTION_MAPPING_APPLY,
+            Permission.EXTRACTION_AUDIT_READ,
             # Data managers classify deviations + author CAPAs; they also
             # have sae.report so the IND-safety report can be produced
             # outside the PI's signing flow.
@@ -398,6 +430,10 @@ ROLE_PERMISSIONS: Final[dict[Role, frozenset[Permission]]] = {
             # Visit schedule + reminders: read-only for SDV.
             Permission.VISIT_SCHEDULE_READ,
             Permission.REMINDER_READ,
+            # Source-document extraction: monitors verify derived data
+            # against the audit trail — read-only.
+            Permission.SOURCE_DOCUMENT_READ,
+            Permission.EXTRACTION_AUDIT_READ,
         }
     ),
     # SR screening roles — always granted at sr_review scope, never global.

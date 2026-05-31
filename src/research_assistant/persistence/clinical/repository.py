@@ -12,6 +12,7 @@ import hashlib
 import json
 import logging
 import secrets
+import uuid as _uuid_mod
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -29,6 +30,8 @@ from .models import (
     CodeBreakEvent,
     DeployedForm,
     EventInstance,
+    ExtractionFill,
+    ExtractionMapping,
     FormInstance,
     ItemData,
     ParticipantAccess,
@@ -43,6 +46,8 @@ from .models import (
     SentReminder,
     Signature,
     Site,
+    SourceDocument,
+    SourceRow,
     StudyDeployment,
     StudyLock,
     Subject,
@@ -2389,4 +2394,478 @@ class ClinicalRepository:
             stmt = stmt.where(SentReminder.subject_id.in_(subject_ids_stmt))
         if since is not None:
             stmt = stmt.where(SentReminder.queued_at >= since)
+        return list((await self._s.scalars(stmt)).all())
+
+    # ── Source-document extraction (P1 #5) ─────────────────────────────
+
+    async def ingest_source_document(
+        self,
+        deployment_id: str,
+        *,
+        filename: str,
+        raw_bytes: bytes,
+        subject_code_field: str | None = None,
+        actor_sub: str | None = None,
+    ) -> tuple[SourceDocument, int]:
+        """Parse a CSV upload + persist SourceDocument + SourceRow rows.
+
+        Content-hash deduplicated: re-uploading the same file in the
+        same deployment returns the existing row and `(0, ...)` rows
+        added. Returns `(document, rows_added)`.
+
+        `subject_code_field` is OPTIONAL at upload time — if supplied,
+        each row's value of that column is denormalised onto
+        `SourceRow.subject_code_hint` for fast apply-time lookup.
+        """
+        deployment = await self._s.get(StudyDeployment, deployment_id)
+        if deployment is None:
+            raise ClinicalError(f"Deployment {deployment_id!r} not found.")
+        content_hash = hashlib.sha256(raw_bytes).hexdigest()
+        existing = await self._s.scalar(
+            select(SourceDocument).where(
+                SourceDocument.deployment_id == deployment_id,
+                SourceDocument.content_hash == content_hash,
+            )
+        )
+        if existing is not None:
+            return existing, 0
+        # Parse CSV using stdlib (bounded uploads — keep dependencies light).
+        import csv
+        import io
+
+        text = raw_bytes.decode("utf-8", errors="replace")
+        reader = csv.DictReader(io.StringIO(text))
+        headers = list(reader.fieldnames or [])
+        if not headers:
+            raise ClinicalError(
+                "CSV must have a header row (first line of column names)."
+            )
+        if subject_code_field is not None and subject_code_field not in headers:
+            raise ClinicalError(
+                f"subject_code_field {subject_code_field!r} not in CSV headers "
+                f"({', '.join(headers)})."
+            )
+        doc = SourceDocument(
+            deployment_id=deployment_id,
+            filename=filename,
+            content_hash=content_hash,
+            row_count=0,
+            headers_json=json.dumps(headers),
+            uploaded_by_sub=actor_sub,
+        )
+        self._s.add(doc)
+        await self._s.flush()
+        rows_added = 0
+        for idx, row in enumerate(reader):
+            payload = {k: (v if v is not None else "") for k, v in row.items()}
+            self._s.add(
+                SourceRow(
+                    source_document_id=doc.id,
+                    row_index=idx,
+                    payload_json=json.dumps(payload),
+                    subject_code_hint=(
+                        payload.get(subject_code_field)
+                        if subject_code_field
+                        else None
+                    ),
+                )
+            )
+            rows_added += 1
+        doc.row_count = rows_added
+        await self._s.flush()
+        self._audit(
+            entity_type="source_document",
+            entity_id=doc.id,
+            action="ingest",
+            actor_sub=actor_sub,
+            new_value=f"rows={rows_added}",
+        )
+        return doc, rows_added
+
+    async def get_source_document(self, doc_id: str) -> SourceDocument | None:
+        return await self._s.get(SourceDocument, doc_id)
+
+    async def list_source_documents(
+        self, deployment_id: str
+    ) -> list[SourceDocument]:
+        rows = await self._s.scalars(
+            select(SourceDocument)
+            .where(SourceDocument.deployment_id == deployment_id)
+            .order_by(SourceDocument.uploaded_at.desc())
+        )
+        return list(rows)
+
+    async def list_source_rows(self, doc_id: str) -> list[SourceRow]:
+        rows = await self._s.scalars(
+            select(SourceRow)
+            .where(SourceRow.source_document_id == doc_id)
+            .order_by(SourceRow.row_index)
+        )
+        return list(rows)
+
+    async def create_extraction_mapping(
+        self,
+        deployment_id: str,
+        *,
+        deployed_form_id: str,
+        name: str = "default",
+        subject_code_field: str,
+        mapping: dict[str, str],
+        notes: str = "",
+        actor_sub: str | None = None,
+    ) -> ExtractionMapping:
+        """Create a new mapping spec. If a mapping for the same
+        (deployment, deployed_form) already exists, this CREATES A NEW
+        VERSION (auto-bumped) and deactivates the prior one.
+
+        `mapping` is `{source_field: item_id}` — the source CSV column
+        name → the form definition's Item id. Empty mappings are
+        permitted (for staged authoring) but apply will skip them.
+        """
+        df = await self._s.get(DeployedForm, deployed_form_id)
+        if df is None or df.deployment_id != deployment_id:
+            raise ClinicalError(
+                f"Deployed form {deployed_form_id!r} not found in this deployment."
+            )
+        prior = await self._s.scalars(
+            select(ExtractionMapping).where(
+                ExtractionMapping.deployment_id == deployment_id,
+                ExtractionMapping.deployed_form_id == deployed_form_id,
+            )
+        )
+        prior_rows = list(prior)
+        next_version = (
+            max((m.version for m in prior_rows), default=0) + 1
+        )
+        # Deactivate prior active versions.
+        for m in prior_rows:
+            if m.is_active:
+                m.is_active = False
+        new_mapping = ExtractionMapping(
+            deployment_id=deployment_id,
+            deployed_form_id=deployed_form_id,
+            name=name,
+            version=next_version,
+            subject_code_field=subject_code_field,
+            mapping_json=json.dumps(mapping),
+            is_active=True,
+            notes=notes,
+            created_by_sub=actor_sub,
+        )
+        self._s.add(new_mapping)
+        await self._s.flush()
+        self._audit(
+            entity_type="extraction_mapping",
+            entity_id=new_mapping.id,
+            action="create",
+            actor_sub=actor_sub,
+            new_value=f"version={next_version}",
+        )
+        return new_mapping
+
+    async def get_active_mapping(
+        self, deployment_id: str, deployed_form_id: str
+    ) -> ExtractionMapping | None:
+        result: ExtractionMapping | None = await self._s.scalar(
+            select(ExtractionMapping).where(
+                ExtractionMapping.deployment_id == deployment_id,
+                ExtractionMapping.deployed_form_id == deployed_form_id,
+                ExtractionMapping.is_active.is_(True),
+            )
+        )
+        return result
+
+    async def list_extraction_mappings(
+        self, deployment_id: str, deployed_form_id: str | None = None
+    ) -> list[ExtractionMapping]:
+        stmt = select(ExtractionMapping).where(
+            ExtractionMapping.deployment_id == deployment_id
+        )
+        if deployed_form_id is not None:
+            stmt = stmt.where(
+                ExtractionMapping.deployed_form_id == deployed_form_id
+            )
+        stmt = stmt.order_by(
+            ExtractionMapping.deployed_form_id, ExtractionMapping.version.desc()
+        )
+        return list((await self._s.scalars(stmt)).all())
+
+    async def dry_run_extraction(
+        self,
+        mapping_id: str,
+        *,
+        source_document_id: str,
+    ) -> list[dict[str, object]]:
+        """Return a per-row preview of what `apply_extraction_to_subjects`
+        would write. Each entry: `{subject_code, source_row_id,
+        proposed_items: [{item_id, source_field, value}]}`. No DB writes.
+        """
+        mapping = await self._s.get(ExtractionMapping, mapping_id)
+        if mapping is None:
+            raise ClinicalError(f"Mapping {mapping_id!r} not found.")
+        try:
+            spec: dict[str, str] = json.loads(mapping.mapping_json) or {}
+        except json.JSONDecodeError as e:
+            raise ClinicalError(
+                f"Mapping {mapping_id!r} has malformed mapping_json: {e}"
+            ) from e
+        rows = await self.list_source_rows(source_document_id)
+        out: list[dict[str, object]] = []
+        for row in rows:
+            try:
+                payload: dict[str, object] = json.loads(row.payload_json) or {}
+            except json.JSONDecodeError:
+                continue
+            subject_code = (
+                payload.get(mapping.subject_code_field) or row.subject_code_hint
+            )
+            items: list[dict[str, object]] = []
+            for source_field, item_id in spec.items():
+                if source_field not in payload:
+                    continue
+                items.append(
+                    {
+                        "item_id": item_id,
+                        "source_field": source_field,
+                        "value": payload[source_field],
+                    }
+                )
+            out.append(
+                {
+                    "subject_code": subject_code,
+                    "source_row_id": row.id,
+                    "proposed_items": items,
+                }
+            )
+        return out
+
+    async def apply_extraction_to_subjects(
+        self,
+        mapping_id: str,
+        *,
+        source_document_id: str,
+        actor_sub: str | None = None,
+    ) -> dict[str, int]:
+        """Apply the mapping to every SourceRow in the document that
+        matches a Subject in the deployment. Creates a FormInstance (if
+        absent) + ItemData rows + ExtractionFill audit rows.
+
+        Returns `{subjects_filled, items_written, source_rows_unmatched}`.
+        Idempotent at the (form_instance_id, item_id) level — re-applying
+        the same source row to the same subject overwrites existing
+        ItemData (the ExtractionFill audit row is still appended so the
+        provenance chain stays complete).
+        """
+        mapping = await self._s.get(ExtractionMapping, mapping_id)
+        if mapping is None:
+            raise ClinicalError(f"Mapping {mapping_id!r} not found.")
+        deployed_form = await self._s.get(DeployedForm, mapping.deployed_form_id)
+        if deployed_form is None:
+            raise ClinicalError("Deployed form not found.")
+        try:
+            spec: dict[str, str] = json.loads(mapping.mapping_json) or {}
+        except json.JSONDecodeError as e:
+            raise ClinicalError(
+                f"Mapping has malformed mapping_json: {e}"
+            ) from e
+        rows = await self.list_source_rows(source_document_id)
+
+        subject_codes = {
+            (
+                json.loads(r.payload_json).get(mapping.subject_code_field)
+                or r.subject_code_hint
+            )
+            for r in rows
+        }
+        subject_codes.discard(None)
+        subjects_by_code: dict[str, Subject] = {}
+        for code in subject_codes:
+            if not code:
+                continue
+            subject = await self._s.scalar(
+                select(Subject).where(
+                    Subject.deployment_id == mapping.deployment_id,
+                    Subject.subject_code == code,
+                )
+            )
+            if subject is not None:
+                subjects_by_code[str(code)] = subject
+
+        items_written = 0
+        subjects_filled: set[str] = set()
+        unmatched = 0
+        for row in rows:
+            try:
+                payload = json.loads(row.payload_json) or {}
+            except json.JSONDecodeError:
+                unmatched += 1
+                continue
+            code = payload.get(mapping.subject_code_field) or row.subject_code_hint
+            if not code or str(code) not in subjects_by_code:
+                unmatched += 1
+                continue
+            subject = subjects_by_code[str(code)]
+            # Find-or-create a FormInstance for this subject + deployed_form.
+            fi = await self._s.scalar(
+                select(FormInstance).where(
+                    FormInstance.subject_id == subject.id,
+                    FormInstance.deployed_form_id == deployed_form.id,
+                )
+            )
+            if fi is None:
+                fi = FormInstance(
+                    subject_id=subject.id,
+                    deployed_form_id=deployed_form.id,
+                    created_by=actor_sub,
+                )
+                self._s.add(fi)
+                await self._s.flush()
+            for source_field, item_id in spec.items():
+                if source_field not in payload:
+                    continue
+                value = (
+                    str(payload[source_field])
+                    if payload[source_field] is not None
+                    else None
+                )
+                existing_item = await self._s.scalar(
+                    select(ItemData).where(
+                        ItemData.form_instance_id == fi.id,
+                        ItemData.item_id == item_id,
+                    )
+                )
+                if existing_item is None:
+                    item = ItemData(
+                        form_instance_id=fi.id,
+                        item_id=item_id,
+                        value=value,
+                        entered_by=actor_sub,
+                    )
+                    self._s.add(item)
+                    await self._s.flush()
+                else:
+                    existing_item.value = value
+                    item = existing_item
+                self._s.add(
+                    ExtractionFill(
+                        source_row_id=row.id,
+                        source_field=source_field,
+                        mapping_id=mapping.id,
+                        mapping_version=mapping.version,
+                        target_kind="item_data",
+                        target_id=item.id,
+                        applied_value=value,
+                        applied_by_sub=actor_sub,
+                    )
+                )
+                items_written += 1
+            subjects_filled.add(subject.id)
+        await self._s.flush()
+        self._audit(
+            entity_type="extraction_mapping",
+            entity_id=mapping.id,
+            action="apply",
+            actor_sub=actor_sub,
+            new_value=(
+                f"subjects={len(subjects_filled)},items={items_written},"
+                f"unmatched={unmatched}"
+            ),
+        )
+        return {
+            "subjects_filled": len(subjects_filled),
+            "items_written": items_written,
+            "source_rows_unmatched": unmatched,
+        }
+
+    async def apply_extraction_to_table(
+        self,
+        mapping_id: str,
+        *,
+        source_document_id: str,
+        actor_sub: str | None = None,
+    ) -> list[dict[str, object]]:
+        """Produce a flat extraction-table output for retrospective
+        studies / IPD meta-analyses. NO eCRF write — just the per-row
+        per-field projection + ExtractionFill audit rows tying each
+        cell back to its source.
+
+        Returns a list of dicts: `{subject_code, source_row_id,
+        <item_id>: <value>, ...}`. The caller renders or exports.
+        """
+        mapping = await self._s.get(ExtractionMapping, mapping_id)
+        if mapping is None:
+            raise ClinicalError(f"Mapping {mapping_id!r} not found.")
+        try:
+            spec: dict[str, str] = json.loads(mapping.mapping_json) or {}
+        except json.JSONDecodeError as e:
+            raise ClinicalError(
+                f"Mapping has malformed mapping_json: {e}"
+            ) from e
+        rows = await self.list_source_rows(source_document_id)
+        out: list[dict[str, object]] = []
+        for row in rows:
+            try:
+                payload = json.loads(row.payload_json) or {}
+            except json.JSONDecodeError:
+                continue
+            code = payload.get(mapping.subject_code_field) or row.subject_code_hint
+            extraction_cell_id = str(_uuid_mod.uuid4())
+            cells: dict[str, object] = {
+                "subject_code": code,
+                "source_row_id": row.id,
+                "_extraction_cell_id": extraction_cell_id,
+            }
+            for source_field, item_id in spec.items():
+                if source_field not in payload:
+                    continue
+                cells[item_id] = payload[source_field]
+                self._s.add(
+                    ExtractionFill(
+                        source_row_id=row.id,
+                        source_field=source_field,
+                        mapping_id=mapping.id,
+                        mapping_version=mapping.version,
+                        target_kind="extraction_cell",
+                        target_id=extraction_cell_id,
+                        applied_value=(
+                            str(payload[source_field])
+                            if payload[source_field] is not None
+                            else None
+                        ),
+                        applied_by_sub=actor_sub,
+                    )
+                )
+            out.append(cells)
+        await self._s.flush()
+        self._audit(
+            entity_type="extraction_mapping",
+            entity_id=mapping.id,
+            action="apply_to_table",
+            actor_sub=actor_sub,
+            new_value=f"rows={len(out)}",
+        )
+        return out
+
+    async def list_extraction_fills(
+        self,
+        *,
+        deployment_id: str | None = None,
+        target_id: str | None = None,
+        source_document_id: str | None = None,
+    ) -> list[ExtractionFill]:
+        stmt = select(ExtractionFill).order_by(
+            ExtractionFill.applied_at.desc()
+        )
+        if target_id is not None:
+            stmt = stmt.where(ExtractionFill.target_id == target_id)
+        elif source_document_id is not None:
+            row_ids_stmt = select(SourceRow.id).where(
+                SourceRow.source_document_id == source_document_id
+            )
+            stmt = stmt.where(ExtractionFill.source_row_id.in_(row_ids_stmt))
+        elif deployment_id is not None:
+            mapping_ids_stmt = select(ExtractionMapping.id).where(
+                ExtractionMapping.deployment_id == deployment_id
+            )
+            stmt = stmt.where(ExtractionFill.mapping_id.in_(mapping_ids_stmt))
         return list((await self._s.scalars(stmt)).all())

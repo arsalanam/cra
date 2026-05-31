@@ -1602,3 +1602,171 @@ class SentReminder(ClinicalBase):
     sent_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True, default=None
     )
+
+
+# ── Source-document extraction (P1 #5) ──────────────────────────────────
+
+
+class SourceDocument(ClinicalBase):
+    """An uploaded source-data file (CSV-only this slice).
+
+    Provenance anchor for both prospective eCRF pre-fill AND retrospective
+    extraction-table output. The platform stores the file's parsed rows
+    but does NOT enforce de-identification — operators upload
+    pre-de-identified data per the protocol's PHI policy.
+
+    `content_hash` is the SHA-256 of the raw file bytes; uploading the
+    same file twice in a deployment returns the existing row instead of
+    re-ingesting. `headers_json` is a JSON list of the source column
+    names so the mapping UI can offer field-name autocomplete.
+    """
+
+    __tablename__ = "source_documents"
+    __table_args__ = (
+        UniqueConstraint(
+            "deployment_id", "content_hash", name="uq_source_document_hash"
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    deployment_id: Mapped[str] = mapped_column(
+        ForeignKey("study_deployments.id", ondelete="CASCADE"), index=True
+    )
+    filename: Mapped[str] = mapped_column(Text)
+    content_hash: Mapped[str] = mapped_column(Text, index=True)
+    row_count: Mapped[int] = mapped_column(Integer, default=0)
+    headers_json: Mapped[str] = mapped_column(Text, default="[]")
+    uploaded_by_sub: Mapped[str | None] = mapped_column(
+        Text, nullable=True, default=None
+    )
+    uploaded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
+    notes: Mapped[str] = mapped_column(Text, default="")
+
+    rows: Mapped[list[SourceRow]] = relationship(
+        back_populates="source_document", cascade="all, delete-orphan"
+    )
+
+
+class SourceRow(ClinicalBase):
+    """One row from a SourceDocument.
+
+    `payload_json` is the raw row as a JSON object keyed by header name.
+    `subject_code_hint` is the value of the column the operator
+    designated as the subject identifier in the file (e.g. 'mrn',
+    'subject_id', 'patient_code') — used at apply-time to match the
+    row to a Subject.
+    """
+
+    __tablename__ = "source_rows"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    source_document_id: Mapped[str] = mapped_column(
+        ForeignKey("source_documents.id", ondelete="CASCADE"), index=True
+    )
+    row_index: Mapped[int] = mapped_column(
+        Integer, doc="Zero-based row number in the source file (excludes header)."
+    )
+    payload_json: Mapped[str] = mapped_column(Text)
+    subject_code_hint: Mapped[str | None] = mapped_column(
+        Text, nullable=True, index=True, default=None
+    )
+
+    source_document: Mapped[SourceDocument] = relationship(back_populates="rows")
+
+
+class ExtractionMapping(ClinicalBase):
+    """Per-deployment + per-DeployedForm mapping spec.
+
+    `mapping_json` is `{source_field: item_id}` — the source CSV's
+    column → the form definition's Item.id. `subject_code_field` is
+    the source column that carries the subject identifier (must match
+    `SourceRow.subject_code_hint` for the apply step to find subjects).
+    `version` bumps on every mutation so ExtractionFill rows can be
+    tied to the exact mapping spec at apply time (regulator audit).
+
+    Only one mapping per (deployment_id, deployed_form_id) is
+    `is_active=True` at a time — the active one is what gets used
+    by default at apply time.
+    """
+
+    __tablename__ = "extraction_mappings"
+    __table_args__ = (
+        UniqueConstraint(
+            "deployment_id",
+            "deployed_form_id",
+            "version",
+            name="uq_extraction_mapping_version",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    deployment_id: Mapped[str] = mapped_column(
+        ForeignKey("study_deployments.id", ondelete="CASCADE"), index=True
+    )
+    deployed_form_id: Mapped[str] = mapped_column(
+        ForeignKey("deployed_forms.id", ondelete="RESTRICT"), index=True
+    )
+    name: Mapped[str] = mapped_column(Text, default="default")
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    subject_code_field: Mapped[str] = mapped_column(
+        Text,
+        doc=(
+            "Source column carrying the subject identifier. Used to "
+            "match SourceRow → Subject at apply time."
+        ),
+    )
+    mapping_json: Mapped[str] = mapped_column(
+        Text,
+        default="{}",
+        doc="JSON object {source_field: item_id} from form definition.",
+    )
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_by_sub: Mapped[str | None] = mapped_column(
+        Text, nullable=True, default=None
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
+    notes: Mapped[str] = mapped_column(Text, default="")
+
+
+class ExtractionFill(ClinicalBase):
+    """Per-cell audit row: source_row → target cell.
+
+    Regulator can click any ItemData / extraction-table cell and trace
+    it back to the exact source row + field + mapping version that
+    produced it. `target_kind='item_data'` points at an
+    `ItemData.id`; `target_kind='extraction_cell'` points at a
+    flat extraction-row id (the apply-to-extraction-table path).
+
+    `mapping_version` is denormalised so the audit survives the
+    ExtractionMapping row being mutated (CASCADE-on-delete is
+    deliberately RESTRICT for the mapping FK).
+    """
+
+    __tablename__ = "extraction_fills"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    source_row_id: Mapped[str] = mapped_column(
+        ForeignKey("source_rows.id", ondelete="CASCADE"), index=True
+    )
+    source_field: Mapped[str] = mapped_column(Text)
+    mapping_id: Mapped[str] = mapped_column(
+        ForeignKey("extraction_mappings.id", ondelete="RESTRICT"), index=True
+    )
+    mapping_version: Mapped[int] = mapped_column(Integer)
+    target_kind: Mapped[str] = mapped_column(
+        Text, doc="item_data | extraction_cell"
+    )
+    target_id: Mapped[str] = mapped_column(Text, index=True)
+    applied_value: Mapped[str | None] = mapped_column(
+        Text, nullable=True, default=None
+    )
+    applied_by_sub: Mapped[str | None] = mapped_column(
+        Text, nullable=True, default=None
+    )
+    applied_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
