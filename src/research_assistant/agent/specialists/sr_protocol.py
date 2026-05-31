@@ -32,7 +32,7 @@ from ...config import get_settings
 from ...domain.sr_protocol import SrProtocolTurn
 from ...tools import ToolModule
 from ...tools.clinical import mesh_lookup, search_papers
-from ...tools.general import web_search, wikipedia
+from ...tools.general import import_citations, web_search, wikipedia
 from ..deps import AgentDeps, drain_tool_usage
 from ..model import build_bedrock_model
 
@@ -361,7 +361,13 @@ def build_agent() -> Agent[AgentDeps, SrProtocolTurn]:
     # disease/mechanism context and guideline lookups. No fetch_pmc,
     # sandbox_exec, calculator etc. — this specialist doesn't extract
     # numbers or run analyses.
-    specialist_tools: list[ToolModule] = [mesh_lookup, search_papers, wikipedia, web_search]
+    specialist_tools: list[ToolModule] = [
+        mesh_lookup,
+        search_papers,
+        wikipedia,
+        web_search,
+        import_citations,
+    ]
     for mod in specialist_tools:
         mod.register(agent)
 

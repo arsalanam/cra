@@ -27,6 +27,7 @@ from ..rag import register_embedding_drain
 from ..services.scheduler import start_scheduler, stop_scheduler
 from .admin import create_admin_router
 from .auth import create_auth_router, current_user
+from .citations import create_citations_router
 from .dispatch import create_dispatch_router
 from .ecrf import create_ecrf_router
 from .edc import create_edc_router
@@ -93,6 +94,7 @@ def create_app() -> FastAPI:
     app.include_router(create_ecrf_router(), prefix="/api", dependencies=auth_dep)
     app.include_router(create_edc_router(), prefix="/api", dependencies=auth_dep)
     app.include_router(create_sr_router(), prefix="/api", dependencies=auth_dep)
+    app.include_router(create_citations_router(), prefix="/api", dependencies=auth_dep)
     # ePRO is token-authenticated (participants are not Cognito users) — no
     # session dependency; the magic-link token is the credential.
     app.include_router(create_epro_router(), prefix="/api")

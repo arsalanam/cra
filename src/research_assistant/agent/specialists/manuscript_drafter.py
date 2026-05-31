@@ -37,7 +37,7 @@ from ...config import get_settings
 from ...domain.manuscript import ManuscriptTurn
 from ...tools import ToolModule
 from ...tools.clinical import search_papers
-from ...tools.general import web_search, wikipedia
+from ...tools.general import import_citations, web_search, wikipedia
 from ..deps import AgentDeps, drain_tool_usage
 from ..model import build_bedrock_model
 
@@ -246,7 +246,12 @@ def build_agent() -> Agent[AgentDeps, ManuscriptTurn]:
     # citations) + general (web_search, wikipedia for guideline lookups
     # and disease-area context). No mesh_lookup / fetch_pmc / sandbox —
     # composition doesn't need them.
-    specialist_tools: list[ToolModule] = [search_papers, web_search, wikipedia]
+    specialist_tools: list[ToolModule] = [
+        search_papers,
+        web_search,
+        wikipedia,
+        import_citations,
+    ]
     for mod in specialist_tools:
         mod.register(agent)
 

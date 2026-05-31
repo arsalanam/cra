@@ -2279,6 +2279,85 @@ const SYNTHESIS_METHODS = [
 ];
 const EFFECT_MEASURES = ["OR", "RR", "MD", "SMD"];
 
+/* Citation-library importer (P1 #8) — drag/drop a .bib or .ris and seed
+   the next turn with the parsed reference list. Used by manuscript +
+   sr_protocol cards. */
+function CitationImporter({ onSend, disabled, label }) {
+  const [status, setStatus] = useState({ kind: "idle", message: "" });
+  const inputRef = useRef(null);
+
+  async function handleFiles(files) {
+    if (!files || !files[0]) return;
+    const file = files[0];
+    setStatus({ kind: "uploading", message: `Parsing ${file.name}…` });
+    const fd = new FormData();
+    fd.append("file", file);
+    try {
+      const r = await fetch("/api/citations/parse", { method: "POST", body: fd });
+      if (r.status === 401) { window.location.href = "/auth/login"; return; }
+      const data = await r.json();
+      if (!r.ok) {
+        setStatus({ kind: "error", message: data.detail || r.statusText });
+        return;
+      }
+      setStatus({
+        kind: "ok",
+        message: `Parsed ${data.count} ${data.format_detected.toUpperCase()} references from ${file.name}`,
+      });
+      const payload = `Imported citations (${data.format_detected}, ${data.count} refs):\n\n${JSON.stringify(data.citations, null, 2)}`;
+      onSend(payload);
+    } catch (e) {
+      setStatus({ kind: "error", message: `Failed: ${e.message || e}` });
+    }
+  }
+
+  function onDrop(e) {
+    e.preventDefault();
+    if (disabled) return;
+    handleFiles(e.dataTransfer && e.dataTransfer.files);
+  }
+  return (
+    <div
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={onDrop}
+      style={{
+        marginTop: 10,
+        padding: "10px 12px",
+        border: "1px dashed #2a2f3a",
+        borderRadius: 6,
+        background: "#0f1115",
+        fontSize: 12,
+        color: "#8b93a7",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <span style={{ fontWeight: 600, color: "#cdd3df" }}>📚 {label || "Import citation library"}</span>
+        <span>Drop a .bib or .ris file here or</span>
+        <input
+          ref={inputRef}
+          type="file"
+          accept=".bib,.ris,.txt"
+          style={{ display: "none" }}
+          onChange={(e) => handleFiles(e.target.files)}
+        />
+        <button
+          onClick={() => inputRef.current && inputRef.current.click()}
+          disabled={disabled}
+          style={{
+            background: "#2a2f3a", color: "#cdd3df", border: 0, borderRadius: 5,
+            padding: "4px 9px", fontSize: 12, cursor: "pointer",
+          }}
+        >
+          choose file
+        </button>
+        {status.kind === "ok" && <span style={{ color: "#6bcf7f" }}>{status.message}</span>}
+        {status.kind === "uploading" && <span>{status.message}</span>}
+        {status.kind === "error" && <span style={{ color: "#d97a7a" }}>{status.message}</span>}
+      </div>
+    </div>
+  );
+}
+
 function ProtocolMethodsCard({ turn, onSend, disabled }) {
   const [methods, setMethods] = useState(() => structuredClone(turn));
 
@@ -2396,6 +2475,8 @@ function ProtocolMethodsCard({ turn, onSend, disabled }) {
       </div>
 
       {methods.notes && <div className="rationale">{methods.notes}</div>}
+
+      <CitationImporter onSend={onSend} disabled={disabled} label="Import library for protocol references" />
 
       <div className="card-actions">
         <button className="btn-primary" onClick={submit} disabled={disabled}>
@@ -3139,6 +3220,7 @@ function ManuscriptIntakeCard({ turn, onSend, disabled }) {
         </details>
       )}
       {turn.notes && <div className="caveats" style={{ marginTop: 8 }}><strong>Notes:</strong> {turn.notes}</div>}
+      <CitationImporter onSend={onSend} disabled={disabled} label="Import library for manuscript references" />
       <div className="handoff-cta" style={{ marginTop: 14 }}>
         <button className="btn-primary" disabled={disabled} onClick={() => onSend("Manuscript intake confirmed — proceed to STEP 2 and produce the full IMRaD draft.")}>
           Intake confirmed → STEP 2
