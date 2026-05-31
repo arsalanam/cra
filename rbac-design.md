@@ -140,6 +140,7 @@ participant_contact.manage · reminder.read · reminder.send
 source_document.upload · source_document.read ·
 extraction_mapping.author · extraction_mapping.apply ·
 extraction.audit_read
+portfolio.read_org
 library.read · library.write
 watch.read · watch.manage
 study.read · study.author · study.publish · study.create
