@@ -87,6 +87,10 @@
   .csv-drop { border: 2px dashed #2a2f3a; border-radius: 8px; padding: 30px; text-align: center; color: #8b93a7; cursor: pointer; }
   .csv-drop.over { border-color: #4a7fd9; background: #1a2332; color: #e6e6e6; }
 
+  .tab-btn { background: transparent; border: none; color: #8b93a7; font-size: 13px; padding: 6px 12px; cursor: pointer; border-bottom: 2px solid transparent; }
+  .tab-btn:hover { color: #e6e6e6; }
+  .tab-btn.active { color: #4a7fd9; border-bottom-color: #4a7fd9; }
+
   .catalogue-entry { padding: 14px 0; border-bottom: 1px solid #262a33; }
   .catalogue-entry:last-child { border-bottom: none; }
   .catalogue-entry .label { font-weight: 700; color: #e6e6e6; font-size: 14px; }
@@ -118,7 +122,17 @@
       required-fields per role are surfaced so onboarding can complete (ICH E6 §4.2.4).
     </p>
 
+    <!-- Sprint U4 — tab nav -->
+    <div class="filters" style="margin-bottom:14px;border-bottom:1px solid #262a33;padding-bottom:8px">
+      <button class="btn tab-btn active" data-tab="users" onclick="switchTab('users')">Users</button>
+      <button class="btn tab-btn" data-tab="audit" onclick="switchTab('audit')">Audit log</button>
+      <button class="btn tab-btn" data-tab="queue" onclick="switchTab('queue')">PI sign queue</button>
+      <button class="btn tab-btn" data-tab="expiry" onclick="switchTab('expiry')">Training expiring</button>
+      <button class="btn tab-btn" data-tab="reports" onclick="switchTab('reports')">Reports</button>
+    </div>
+
     <!-- Filters -->
+    <div id="tab-users" class="tab-pane">
     <div class="section">
       <h2>Filters</h2>
       <div class="filters">
@@ -158,6 +172,101 @@
 
     <!-- User detail (shown inline below the list when a row is selected) -->
     <div id="detail" style="display:none"></div>
+    </div><!-- /tab-users -->
+
+    <!-- Sprint U4 — Audit log tab -->
+    <div id="tab-audit" class="tab-pane" style="display:none">
+      <div class="section">
+        <h2>Filters</h2>
+        <div class="filters">
+          <label>Action
+            <select id="a-action"><option value="">Any</option></select>
+          </label>
+          <label>Actor user_id
+            <input id="a-actor" type="text" placeholder="actor user id" />
+          </label>
+          <label>Target user_id
+            <input id="a-target" type="text" placeholder="target user id" />
+          </label>
+          <label>From
+            <input id="a-from" type="date" />
+          </label>
+          <label>To
+            <input id="a-to" type="date" />
+          </label>
+          <button class="btn primary" onclick="loadAudit()">Apply</button>
+          <button class="btn" onclick="downloadAuditPdf()">Download PDF</button>
+        </div>
+      </div>
+      <div id="audit-list" class="loading">Click Apply to load audit entries.</div>
+    </div>
+
+    <!-- Sprint U4 — PI sign queue tab -->
+    <div id="tab-queue" class="tab-pane" style="display:none">
+      <div class="section">
+        <h2>Pending delegation signatures</h2>
+        <p style="font-size:12px;color:#8b93a7;margin:0 0 12px">
+          Delegation entries captured by team members during onboarding awaiting your PI countersignature
+          (ICH E6 §4.1.5; password reauth per 21 CFR Part 11 §11.200). Only entries on trials you're PI on appear here.
+        </p>
+        <div id="queue-list" class="loading">Loading queue…</div>
+      </div>
+    </div>
+
+    <!-- Sprint U4 — Training expiring tab -->
+    <div id="tab-expiry" class="tab-pane" style="display:none">
+      <div class="section">
+        <h2>Training records expiring soon</h2>
+        <div class="filters">
+          <label>Within N days
+            <input id="exp-within" type="number" min="1" max="365" value="30" />
+          </label>
+          <button class="btn primary" onclick="loadExpiry()">Apply</button>
+        </div>
+        <div id="expiry-list" class="loading">Click Apply to load training records.</div>
+      </div>
+    </div>
+
+    <!-- Sprint U4 — Reports tab -->
+    <div id="tab-reports" class="tab-pane" style="display:none">
+      <div class="section">
+        <h2>Regulatory PDF reports</h2>
+        <p style="font-size:12px;color:#8b93a7;margin:0 0 12px">
+          PDF exports for inspector / sponsor audit use.
+        </p>
+        <h3>Per-trial delegation log (ICH E6 §4.1.5)</h3>
+        <div class="row">
+          <input id="rep-trial-id" type="text" placeholder="trial id" style="flex:1" />
+          <button class="btn primary" onclick="downloadDelegationLog()">Download</button>
+        </div>
+        <h3 style="margin-top:18px">Per-site training matrix (ICH E6 §4.2.4)</h3>
+        <div class="row">
+          <input id="rep-site-id" type="text" placeholder="account site id" style="flex:1" />
+          <button class="btn primary" onclick="downloadTrainingMatrix()">Download</button>
+        </div>
+        <h3 style="margin-top:18px">User-admin audit log (Part 11 §11.10(e))</h3>
+        <button class="btn primary" onclick="downloadAuditPdf()">Download full audit</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sprint U4 — Sign delegation password modal -->
+  <div id="sign-modal" class="modal">
+    <div class="card">
+      <h2>Countersign delegation entry</h2>
+      <p style="font-size:12px;color:#8b93a7;margin:0 0 12px">
+        21 CFR Part 11 §11.200 requires password re-authentication for electronic signatures.
+        Target entry: <b id="sign-entry-id">—</b>
+      </p>
+      <label style="font-size:11px;color:#8b93a7">Password
+        <input id="sign-password" type="password" />
+      </label>
+      <div class="row" style="justify-content:flex-end;margin-top:14px">
+        <button class="btn" onclick="closeModal('sign-modal')">Cancel</button>
+        <button class="btn primary" onclick="submitSign()">Sign</button>
+      </div>
+      <div id="sign-status" class="status"></div>
+    </div>
   </div>
 
   <!-- Invite modal -->
@@ -959,6 +1068,217 @@ async function submitCsv() {
 }
 
 // ── Catalogue drawer ──────────────────────────────────────────────────
+
+// ── Sprint U4 — Tab nav + audit + queue + expiry + reports ──────────
+
+let currentTab = "users";
+async function switchTab(name) {
+  currentTab = name;
+  document.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === name));
+  document.querySelectorAll(".tab-pane").forEach(p => p.style.display = "none");
+  $("tab-" + name).style.display = "block";
+  if (name === "audit") {
+    populateAuditActions();
+    loadAudit();
+  } else if (name === "queue") {
+    loadQueue();
+  } else if (name === "expiry") {
+    loadExpiry();
+  }
+}
+
+async function populateAuditActions() {
+  const sel = $("a-action");
+  if (sel.options.length > 1) return;
+  try {
+    const r = await api("/api/user-admin/audit/actions");
+    if (!r.ok) return;
+    const actions = await r.json();
+    for (const a of actions) {
+      const opt = document.createElement("option");
+      opt.value = a; opt.textContent = a; sel.appendChild(opt);
+    }
+  } catch {}
+}
+
+async function loadAudit() {
+  $("audit-list").className = "loading";
+  $("audit-list").textContent = "Loading audit log…";
+  const params = new URLSearchParams();
+  const action = $("a-action").value;
+  const actor = $("a-actor").value.trim();
+  const target = $("a-target").value.trim();
+  const from = $("a-from").value;
+  const to = $("a-to").value;
+  if (action) params.set("action", action);
+  if (actor) params.set("actor_user_id", actor);
+  if (target) params.set("target_user_id", target);
+  if (from) params.set("from", new Date(from).toISOString());
+  if (to) params.set("to", new Date(to).toISOString());
+  try {
+    const r = await api("/api/user-admin/audit?" + params.toString());
+    if (!r.ok) throw new Error(await r.text() || r.statusText);
+    const rows = await r.json();
+    if (rows.length === 0) {
+      $("audit-list").className = "empty";
+      $("audit-list").textContent = "No audit entries match the filter.";
+      return;
+    }
+    $("audit-list").className = "section";
+    $("audit-list").innerHTML = `
+      <h2>${rows.length} event(s)</h2>
+      <table>
+        <thead><tr><th>When</th><th>Actor</th><th>Action</th><th>Target</th><th>Scope</th><th>Payload</th></tr></thead>
+        <tbody>${rows.map(e => `
+          <tr>
+            <td style="font-family:monospace;font-size:11px">${esc(e.created_at).slice(0,16).replace("T"," ")}</td>
+            <td style="font-family:monospace;font-size:11px">${esc((e.actor_user_id || "—").slice(0,8))}</td>
+            <td><span class="pill">${esc(e.action)}</span></td>
+            <td style="font-family:monospace;font-size:11px">${esc((e.target_user_id || "—").slice(0,8))}</td>
+            <td>${e.scope_type ? esc(e.scope_type) + (e.scope_id ? ":" + esc(e.scope_id.slice(0,8)) : "") : "—"}</td>
+            <td style="font-family:monospace;font-size:10px">${esc(e.payload_json).slice(0,200)}</td>
+          </tr>
+        `).join("")}</tbody>
+      </table>
+    `;
+  } catch (e) {
+    $("audit-list").className = "err";
+    $("audit-list").textContent = "Failed: " + (e.message || e);
+  }
+}
+
+function downloadAuditPdf() {
+  const params = new URLSearchParams();
+  const action = $("a-action") && $("a-action").value;
+  const from = $("a-from") && $("a-from").value;
+  const to = $("a-to") && $("a-to").value;
+  if (action) params.set("action", action);
+  if (from) params.set("from", new Date(from).toISOString());
+  if (to) params.set("to", new Date(to).toISOString());
+  const url = "/api/user-admin/reports/audit-log.pdf" + (params.toString() ? "?" + params : "");
+  window.open(url, "_blank");
+}
+
+async function loadQueue() {
+  $("queue-list").className = "loading";
+  $("queue-list").textContent = "Loading queue…";
+  try {
+    const r = await api("/api/user-admin/delegation-queue");
+    if (!r.ok) throw new Error(await r.text() || r.statusText);
+    const entries = await r.json();
+    if (entries.length === 0) {
+      $("queue-list").className = "empty";
+      $("queue-list").textContent = "No pending delegation signatures.";
+      return;
+    }
+    $("queue-list").className = "";
+    $("queue-list").innerHTML = `
+      <table>
+        <thead><tr><th>Trial</th><th>Member user_id</th><th>Study role</th><th>Tasks</th><th>Period</th><th></th></tr></thead>
+        <tbody>${entries.map(e => {
+          let tasks = "—";
+          try { tasks = JSON.parse(e.delegated_tasks_json).join(", "); } catch {}
+          const start = e.start_date ? new Date(e.start_date).toLocaleDateString() : "—";
+          const end = e.end_date ? new Date(e.end_date).toLocaleDateString() : "ongoing";
+          return `
+            <tr>
+              <td style="font-family:monospace;font-size:11px">${esc(e.trial_id.slice(0,8))}</td>
+              <td style="font-family:monospace;font-size:11px">${esc(e.user_id.slice(0,8))}</td>
+              <td><b>${esc(e.study_role)}</b></td>
+              <td>${esc(tasks)}</td>
+              <td>${start} → ${end}</td>
+              <td><button class="btn primary" onclick="openSignModal('${e.id}')">Sign</button></td>
+            </tr>
+          `;
+        }).join("")}</tbody>
+      </table>
+    `;
+  } catch (e) {
+    $("queue-list").className = "err";
+    $("queue-list").textContent = "Failed: " + (e.message || e);
+  }
+}
+
+let signEntryId = null;
+function openSignModal(entryId) {
+  signEntryId = entryId;
+  $("sign-entry-id").textContent = entryId;
+  $("sign-password").value = "";
+  $("sign-status").className = "status";
+  openModal("sign-modal");
+}
+
+async function submitSign() {
+  const password = $("sign-password").value;
+  if (!password) { setStatus("sign-status", "Password required.", "err"); return; }
+  try {
+    const r = await api(`/api/user-admin/delegation-entries/${signEntryId}/sign`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password }),
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({ detail: r.statusText }));
+      throw new Error(typeof err.detail === "string" ? err.detail : JSON.stringify(err.detail));
+    }
+    setStatus("sign-status", "Signed.", "ok");
+    setTimeout(() => { closeModal("sign-modal"); loadQueue(); }, 600);
+  } catch (e) {
+    setStatus("sign-status", "Failed: " + (e.message || e), "err");
+  }
+}
+
+async function loadExpiry() {
+  $("expiry-list").className = "loading";
+  $("expiry-list").textContent = "Loading training records…";
+  const within = $("exp-within").value || 30;
+  try {
+    const r = await api(`/api/user-admin/training-expiring?within_days=${within}`);
+    if (!r.ok) throw new Error(await r.text() || r.statusText);
+    const records = await r.json();
+    if (records.length === 0) {
+      $("expiry-list").className = "empty";
+      $("expiry-list").textContent = "No training records expiring in that window.";
+      return;
+    }
+    const now = new Date();
+    $("expiry-list").className = "";
+    $("expiry-list").innerHTML = `
+      <table>
+        <thead><tr><th>User</th><th>Training</th><th>Provider</th><th>Completed</th><th>Expires</th><th>Status</th></tr></thead>
+        <tbody>${records.map(r => {
+          const expires = r.expires_date ? new Date(r.expires_date) : null;
+          const expired = expires && expires <= now;
+          const pillClass = expired ? "pill suspended" : "pill incomplete";
+          return `
+            <tr>
+              <td style="font-family:monospace;font-size:11px">${esc(r.user_id.slice(0,8))}</td>
+              <td>${esc(r.topic)}</td>
+              <td>${esc(r.provider || "—")}</td>
+              <td>${r.completed_date ? esc(new Date(r.completed_date).toLocaleDateString()) : "—"}</td>
+              <td>${expires ? esc(expires.toLocaleDateString()) : "—"}</td>
+              <td><span class="${pillClass}">${expired ? "EXPIRED" : "DUE SOON"}</span></td>
+            </tr>
+          `;
+        }).join("")}</tbody>
+      </table>
+    `;
+  } catch (e) {
+    $("expiry-list").className = "err";
+    $("expiry-list").textContent = "Failed: " + (e.message || e);
+  }
+}
+
+function downloadDelegationLog() {
+  const tid = $("rep-trial-id").value.trim();
+  if (!tid) { alert("Trial id required."); return; }
+  window.open(`/api/user-admin/reports/delegation-log/${encodeURIComponent(tid)}.pdf`, "_blank");
+}
+function downloadTrainingMatrix() {
+  const sid = $("rep-site-id").value.trim();
+  if (!sid) { alert("Site id required."); return; }
+  window.open(`/api/user-admin/reports/training-matrix/${encodeURIComponent(sid)}.pdf`, "_blank");
+}
 
 function openCatalogue() {
   const body = rolesCatalogue.map(r => `

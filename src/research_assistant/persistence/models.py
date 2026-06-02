@@ -358,6 +358,69 @@ class TrainingRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
+class UserAdminAuditEntry(Base):
+    """Sprint U4 — append-only audit log of every user-admin lifecycle event.
+
+    Records: who did what to whom, when, with what payload.
+
+    Append-only by convention (no UPDATE / DELETE methods on the repo).
+    DB-level enforcement (triggers) is a polish slice — the eCRF
+    AuditEntry has it (E6); U4 keeps the same posture without the
+    triggers because the audit is over staff-data not patient-data and
+    the trust boundary is the same admin who'd write the trigger.
+
+    `action` is a free-text canonical string — not an enum — so future
+    actions don't require a migration. The U4 admin recorders use the
+    `_ACTION_*` constants in services/user_admin_audit.py.
+
+    `payload_json` is the unredacted payload (whatever the operator
+    provided: role + scope_id for grants, reason for suspend, etc.).
+    PHI is never in scope here — UserAdmin events are staff actions, not
+    patient data.
+
+    `ip_address` captured when available (FastAPI request.client.host);
+    None for CLI / in-process callers (e.g. init_db backfill).
+    """
+
+    __tablename__ = "user_admin_audit_entries"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    actor_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        default=None,
+        doc="The admin / operator performing the action. NULL for system events.",
+    )
+    action: Mapped[str] = mapped_column(
+        Text,
+        index=True,
+        doc=(
+            "Canonical event name from services/user_admin_audit._ACTION_*. "
+            "Free-text so new actions don't require a migration."
+        ),
+    )
+    target_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        default=None,
+        index=True,
+        doc="The user being acted upon. NULL for events without a target user.",
+    )
+    scope_type: Mapped[str | None] = mapped_column(
+        Text, nullable=True, default=None, doc="When applicable (study / site / trial)."
+    )
+    scope_id: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    payload_json: Mapped[str] = mapped_column(
+        Text,
+        default="{}",
+        doc="JSON payload — role / reason / fields changed / override_rationale / etc.",
+    )
+    ip_address: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, index=True
+    )
+
+
 class Thread(Base):
     __tablename__ = "threads"
 

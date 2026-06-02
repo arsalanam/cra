@@ -5,6 +5,11 @@ invite + validation-pack endpoints). The new surface here is
 regulatory-aware: scoped invitations, SoD enforcement, required-fields
 guidance, delegation log + training records.
 
+Sprint U4 extends this router with audit-log queries, PI countersigning,
+training-expiring + delegation-queue endpoints, and report download
+surfaces. Every state-changing endpoint also writes an audit row via
+`services/user_admin_audit.record_event`.
+
 All endpoints require `Permission.USER_MANAGE` (admin role today).
 The matrices live in `services/user_admin.py`; this router is a thin
 DTO + repo wrapper.
@@ -16,8 +21,9 @@ import logging
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from ..auth.cognito_admin import (
@@ -40,7 +46,31 @@ from ..services.user_admin import (
     detect_grant_conflicts,
     missing_required_fields,
 )
+from ..services.user_admin_audit import (
+    ACTION_DELEGATION_SIGNED,
+    ACTION_INVITE_CREATED,
+    ACTION_INVITE_RESENT,
+    ACTION_INVITE_REVOKED,
+    ACTION_PROFILE_PATCHED,
+    ACTION_ROLE_GRANT_OVERRIDDEN,
+    ACTION_ROLE_GRANTED,
+    ACTION_ROLE_REVOKED,
+    ACTION_TRAINING_RECORDED,
+    ACTION_USER_REACTIVATED,
+    ACTION_USER_SUSPENDED,
+    KNOWN_ACTIONS,
+    record_event,
+)
 from .auth import AdminUser
+
+
+def _client_ip(request: Request) -> str | None:
+    """Best-effort caller IP. FastAPI sets request.client to None in
+    some test transports; fall back to None."""
+    if request.client is None:
+        return None
+    return request.client.host
+
 
 logger = logging.getLogger(__name__)
 
@@ -347,7 +377,7 @@ def create_user_admin_router() -> APIRouter:
     # ── Invitations ─────────────────────────────────────────────────
 
     @router.post("/invitations", response_model=InviteOut, status_code=201)
-    async def invite(body: InviteIn, admin: AdminUser) -> InviteOut:
+    async def invite(body: InviteIn, request: Request, admin: AdminUser) -> InviteOut:
         settings = get_settings()
         email = body.email.strip().lower()
         domain = email.rsplit("@", 1)[-1] if "@" in email else ""
@@ -398,6 +428,17 @@ def create_user_admin_router() -> APIRouter:
                 )
             except UserAdminError as e:
                 raise HTTPException(422, str(e)) from e
+            await record_event(
+                session,
+                actor_user_id=inviter.id if inviter else None,
+                action=ACTION_INVITE_CREATED,
+                payload={
+                    "email": email,
+                    "assignments": assignments_payload,
+                    "cognito_status": cognito_status,
+                },
+                ip_address=_client_ip(request),
+            )
 
         logger.info(
             "Admin %s invited %s with %d scoped assignments (cognito=%s)",
@@ -413,7 +454,9 @@ def create_user_admin_router() -> APIRouter:
         )
 
     @router.post("/invitations/{invitation_id}/resend")
-    async def resend_invitation(invitation_id: str, admin: AdminUser) -> dict[str, str]:
+    async def resend_invitation(
+        invitation_id: str, request: Request, admin: AdminUser
+    ) -> dict[str, str]:
         from ..persistence.models import PendingInvitation
 
         settings = get_settings()
@@ -435,6 +478,16 @@ def create_user_admin_router() -> APIRouter:
             )
         except CognitoAdminError as e:
             raise HTTPException(502, str(e)) from e
+        async with get_db_session() as session:
+            user_repo = UserRepository(session)
+            actor = await user_repo.get_by_sub(admin.sub)
+            await record_event(
+                session,
+                actor_user_id=actor.id if actor else None,
+                action=ACTION_INVITE_RESENT,
+                payload={"email": email, "cognito_status": status},
+                ip_address=_client_ip(request),
+            )
         logger.info("Admin %s resent invite for %s (cognito=%s)", admin.sub, email, status)
         return {"email": email, "cognito_status": status}
 
@@ -470,12 +523,21 @@ def create_user_admin_router() -> APIRouter:
         return {"email": email, "cognito_status": status}
 
     @router.delete("/invitations/{invitation_id}", status_code=204)
-    async def revoke_invitation(invitation_id: str, admin: AdminUser) -> None:
+    async def revoke_invitation(invitation_id: str, request: Request, admin: AdminUser) -> None:
         async with get_db_session() as session:
             admin_repo = UserAdminRepository(session)
             ok = await admin_repo.revoke_invitation(invitation_id)
             if not ok:
                 raise HTTPException(404, "Invitation not found or already consumed.")
+            user_repo = UserRepository(session)
+            actor = await user_repo.get_by_sub(admin.sub)
+            await record_event(
+                session,
+                actor_user_id=actor.id if actor else None,
+                action=ACTION_INVITE_REVOKED,
+                payload={"invitation_id": invitation_id},
+                ip_address=_client_ip(request),
+            )
         logger.info("Admin %s revoked invitation %s", admin.sub, invitation_id)
 
     # ── Users ───────────────────────────────────────────────────────
@@ -524,19 +586,32 @@ def create_user_admin_router() -> APIRouter:
         )
 
     @router.patch("/users/{user_id}/profile", response_model=ProfileOut)
-    async def patch_profile(user_id: str, body: ProfileIn, _: AdminUser) -> ProfileOut:
+    async def patch_profile(
+        user_id: str, body: ProfileIn, request: Request, admin: AdminUser
+    ) -> ProfileOut:
         async with get_db_session() as session:
             admin_repo = UserAdminRepository(session)
+            user_repo = UserRepository(session)
+            actor = await user_repo.get_by_sub(admin.sub)
             try:
-                profile = await admin_repo.upsert_profile(
-                    user_id, **body.model_dump(exclude_unset=True)
-                )
+                changed = body.model_dump(exclude_unset=True)
+                profile = await admin_repo.upsert_profile(user_id, **changed)
             except UserAdminError as e:
                 raise HTTPException(422, str(e)) from e
+            await record_event(
+                session,
+                actor_user_id=actor.id if actor else None,
+                action=ACTION_PROFILE_PATCHED,
+                target_user_id=user_id,
+                payload={"fields_changed": sorted(changed.keys())},
+                ip_address=_client_ip(request),
+            )
             return ProfileOut.model_validate(profile)
 
     @router.post("/users/{user_id}/suspend", response_model=ProfileOut)
-    async def suspend(user_id: str, body: SuspendIn, admin: AdminUser) -> ProfileOut:
+    async def suspend(
+        user_id: str, body: SuspendIn, request: Request, admin: AdminUser
+    ) -> ProfileOut:
         async with get_db_session() as session:
             admin_repo = UserAdminRepository(session)
             user_repo = UserRepository(session)
@@ -549,22 +624,41 @@ def create_user_admin_router() -> APIRouter:
                 )
             except UserAdminError as e:
                 raise HTTPException(422, str(e)) from e
+            await record_event(
+                session,
+                actor_user_id=actor.id if actor else None,
+                action=ACTION_USER_SUSPENDED,
+                target_user_id=user_id,
+                payload={"reason": body.reason},
+                ip_address=_client_ip(request),
+            )
             return ProfileOut.model_validate(profile)
 
     @router.post("/users/{user_id}/reactivate", response_model=ProfileOut)
-    async def reactivate(user_id: str, _: AdminUser) -> ProfileOut:
+    async def reactivate(user_id: str, request: Request, admin: AdminUser) -> ProfileOut:
         async with get_db_session() as session:
             admin_repo = UserAdminRepository(session)
+            user_repo = UserRepository(session)
+            actor = await user_repo.get_by_sub(admin.sub)
             try:
                 profile = await admin_repo.reactivate(user_id)
             except UserAdminError as e:
                 raise HTTPException(422, str(e)) from e
+            await record_event(
+                session,
+                actor_user_id=actor.id if actor else None,
+                action=ACTION_USER_REACTIVATED,
+                target_user_id=user_id,
+                ip_address=_client_ip(request),
+            )
             return ProfileOut.model_validate(profile)
 
     # ── Role assignments ───────────────────────────────────────────
 
     @router.post("/users/{user_id}/role-assignments", response_model=AssignmentOut, status_code=201)
-    async def grant(user_id: str, body: AssignmentIn, admin: AdminUser) -> AssignmentOut:
+    async def grant(
+        user_id: str, body: AssignmentIn, request: Request, admin: AdminUser
+    ) -> AssignmentOut:
         _validate_assignment(body)
         async with get_db_session() as session:
             admin_repo = UserAdminRepository(session)
@@ -591,20 +685,76 @@ def create_user_admin_router() -> APIRouter:
                 )
             except ValueError as e:
                 raise HTTPException(422, str(e)) from e
+            # When an override_rationale was supplied AND conflicts were
+            # detected, log the override separately so auditor queries
+            # can filter for `role.grant_overridden` regardless of
+            # whether the underlying grant succeeded.
+            await record_event(
+                session,
+                actor_user_id=actor.id if actor else None,
+                action=ACTION_ROLE_GRANTED,
+                target_user_id=user_id,
+                scope_type=body.scope_type,
+                scope_id=body.scope_id,
+                payload={
+                    "role": body.role,
+                    "override_rationale": body.override_rationale,
+                    "conflicts_detected": [c.proposed_role.value for c in conflicts],
+                },
+                ip_address=_client_ip(request),
+            )
+            if conflicts and body.override_rationale:
+                await record_event(
+                    session,
+                    actor_user_id=actor.id if actor else None,
+                    action=ACTION_ROLE_GRANT_OVERRIDDEN,
+                    target_user_id=user_id,
+                    scope_type=body.scope_type,
+                    scope_id=body.scope_id,
+                    payload={
+                        "role": body.role,
+                        "override_rationale": body.override_rationale,
+                        "conflicts": [
+                            {
+                                "existing_role": c.existing_role.value,
+                                "proposed_role": c.proposed_role.value,
+                                "rationale": c.rationale,
+                            }
+                            for c in conflicts
+                        ],
+                    },
+                    ip_address=_client_ip(request),
+                )
         return AssignmentOut.model_validate(assignment)
 
     @router.delete("/users/{user_id}/role-assignments/{assignment_id}", status_code=204)
-    async def revoke(user_id: str, assignment_id: str, _: AdminUser) -> None:
+    async def revoke(user_id: str, assignment_id: str, request: Request, admin: AdminUser) -> None:
         async with get_db_session() as session:
             user_repo = UserRepository(session)
+            from ..persistence.models import RoleAssignment
+
+            existing = await session.get(RoleAssignment, assignment_id)
             ok = await user_repo.revoke_role(assignment_id)
             if not ok:
                 raise HTTPException(404, "Assignment not found.")
+            actor = await user_repo.get_by_sub(admin.sub)
+            await record_event(
+                session,
+                actor_user_id=actor.id if actor else None,
+                action=ACTION_ROLE_REVOKED,
+                target_user_id=user_id,
+                scope_type=existing.scope_type if existing else None,
+                scope_id=existing.scope_id if existing else None,
+                payload={"role": existing.role if existing else None},
+                ip_address=_client_ip(request),
+            )
 
     # ── Training records ───────────────────────────────────────────
 
     @router.post("/users/{user_id}/training-records", response_model=TrainingOut, status_code=201)
-    async def add_training(user_id: str, body: TrainingIn, admin: AdminUser) -> TrainingOut:
+    async def add_training(
+        user_id: str, body: TrainingIn, request: Request, admin: AdminUser
+    ) -> TrainingOut:
         async with get_db_session() as session:
             admin_repo = UserAdminRepository(session)
             user_repo = UserRepository(session)
@@ -622,6 +772,18 @@ def create_user_admin_router() -> APIRouter:
                 )
             except UserAdminError as e:
                 raise HTTPException(422, str(e)) from e
+            await record_event(
+                session,
+                actor_user_id=actor.id if actor else None,
+                action=ACTION_TRAINING_RECORDED,
+                target_user_id=user_id,
+                payload={
+                    "training_type": body.training_type,
+                    "topic": body.topic,
+                    "verified": body.verify,
+                },
+                ip_address=_client_ip(request),
+            )
         return TrainingOut.model_validate(record)
 
     @router.get("/users/{user_id}/training-records", response_model=list[TrainingOut])
@@ -664,5 +826,459 @@ def create_user_admin_router() -> APIRouter:
             admin_repo = UserAdminRepository(session)
             entries = await admin_repo.list_delegation_entries_for_trial(trial_id)
         return [DelegationOut.model_validate(e) for e in entries]
+
+    # ── Sprint U4 — PI countersigning ──────────────────────────────
+
+    class _CountersignIn(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+        password: str = Field(
+            ...,
+            description=(
+                "Caller's password — re-verified against Cognito per "
+                "21 CFR Part 11 §11.200 (two signature components: the "
+                "active session + an explicit credential challenge)."
+            ),
+        )
+
+    @router.post("/delegation-entries/{entry_id}/sign", response_model=DelegationOut)
+    async def sign_delegation_entry(
+        entry_id: str,
+        body: _CountersignIn,
+        request: Request,
+        admin: AdminUser,
+    ) -> DelegationOut:
+        """PI countersigns a delegation entry their team member captured
+        in onboarding. Reauths password per Part 11 §11.200, then sets
+        signed_by_pi_user_id + signed_at. Caller must hold the
+        principal_investigator role at trial or study scope matching the
+        entry's trial.
+        """
+        from sqlalchemy import select
+
+        from ..auth.cognito_admin import verify_user_password_async
+        from ..persistence.models import DelegationLogEntry, EcrfStudy
+
+        settings = get_settings()
+        async with get_db_session() as session:
+            entry = await session.get(DelegationLogEntry, entry_id)
+            if entry is None:
+                raise HTTPException(404, "Delegation entry not found.")
+            if entry.signed_at is not None:
+                raise HTTPException(422, "Entry already signed.")
+
+            user_repo = UserRepository(session)
+            actor = await user_repo.get_by_sub(admin.sub)
+            if actor is None:
+                raise HTTPException(404, "Caller has no local user record.")
+
+            # Check PI authority on this trial. Acceptable scopes:
+            #   - global PI grant (super-admin posture)
+            #   - trial:<entry.trial_id> PI grant
+            #   - study:<id> where EcrfStudy.trial_id == entry.trial_id
+            assignments = await user_repo.assignments_for_user(actor.id)
+            study_ids = list(
+                (
+                    await session.scalars(
+                        select(EcrfStudy.id).where(EcrfStudy.trial_id == entry.trial_id)
+                    )
+                ).all()
+            )
+            is_pi = any(
+                a.role == "principal_investigator"
+                and (
+                    a.scope_type == "global"
+                    or (a.scope_type == "trial" and a.scope_id == entry.trial_id)
+                    or (a.scope_type == "study" and a.scope_id in study_ids)
+                )
+                for a in assignments
+            )
+            if not is_pi:
+                raise HTTPException(
+                    403,
+                    "Only the Principal Investigator on this trial can countersign.",
+                )
+
+            # Part 11 §11.200 password reauth — only when Cognito is wired.
+            if settings.auth_enabled:
+                ok = await verify_user_password_async(
+                    admin.sub,
+                    body.password,
+                    region=settings.cognito_region,
+                    user_pool_id=settings.cognito_user_pool_id,
+                    client_id=settings.cognito_client_id,
+                    client_secret=settings.cognito_client_secret or "",
+                )
+                if not ok:
+                    raise HTTPException(401, "Password re-authentication failed.")
+
+            from datetime import UTC as _UTC
+            from datetime import datetime as _datetime
+
+            entry.signed_by_pi_user_id = actor.id
+            entry.signed_at = _datetime.now(_UTC)
+            await session.flush()
+
+            await record_event(
+                session,
+                actor_user_id=actor.id,
+                action=ACTION_DELEGATION_SIGNED,
+                target_user_id=entry.user_id,
+                scope_type="trial",
+                scope_id=entry.trial_id,
+                payload={"entry_id": entry_id, "study_role": entry.study_role},
+                ip_address=_client_ip(request),
+            )
+            return DelegationOut.model_validate(entry)
+
+    # ── Sprint U4 — Delegation queue + training-expiring ───────────
+
+    @router.get("/delegation-queue", response_model=list[DelegationOut])
+    async def delegation_queue(admin: AdminUser) -> list[DelegationOut]:
+        """Unsigned delegation entries on any trial the caller is PI on.
+        Used by the U4 admin UI to surface a PI's pending sign queue.
+        """
+        from sqlalchemy import select
+
+        from ..persistence.models import DelegationLogEntry, EcrfStudy
+
+        async with get_db_session() as session:
+            user_repo = UserRepository(session)
+            actor = await user_repo.get_by_sub(admin.sub)
+            if actor is None:
+                return []
+            assignments = await user_repo.assignments_for_user(actor.id)
+            pi_trial_ids: set[str] = set()
+            for a in assignments:
+                if a.role != "principal_investigator":
+                    continue
+                if a.scope_type == "trial" and a.scope_id:
+                    pi_trial_ids.add(a.scope_id)
+                elif a.scope_type == "study" and a.scope_id:
+                    study = await session.get(EcrfStudy, a.scope_id)
+                    if study and study.trial_id:
+                        pi_trial_ids.add(study.trial_id)
+                # global PI sees everything — fall through to a
+                # broader query.
+            if any(
+                a.role == "principal_investigator" and a.scope_type == "global" for a in assignments
+            ):
+                # Global PI: all unsigned entries.
+                stmt = (
+                    select(DelegationLogEntry)
+                    .where(DelegationLogEntry.signed_at.is_(None))
+                    .order_by(DelegationLogEntry.start_date)
+                )
+            elif pi_trial_ids:
+                stmt = (
+                    select(DelegationLogEntry)
+                    .where(
+                        DelegationLogEntry.trial_id.in_(pi_trial_ids),
+                        DelegationLogEntry.signed_at.is_(None),
+                    )
+                    .order_by(DelegationLogEntry.start_date)
+                )
+            else:
+                return []
+            entries = list((await session.scalars(stmt)).all())
+        return [DelegationOut.model_validate(e) for e in entries]
+
+    @router.get("/training-expiring", response_model=list[TrainingOut])
+    async def training_expiring(
+        _: AdminUser,
+        within_days: int = Query(default=30, ge=1, le=365),
+    ) -> list[TrainingOut]:
+        """Training records whose expires_date is within `within_days` of
+        now, or already expired. Drives the U4 admin "expiry alerts"
+        panel + supports an internal cron job (future)."""
+        from datetime import UTC as _UTC
+        from datetime import datetime as _datetime
+        from datetime import timedelta as _td
+
+        from sqlalchemy import select
+
+        from ..persistence.models import TrainingRecord
+
+        cutoff = _datetime.now(_UTC) + _td(days=within_days)
+        async with get_db_session() as session:
+            stmt = (
+                select(TrainingRecord)
+                .where(
+                    TrainingRecord.expires_date.isnot(None),
+                    TrainingRecord.expires_date <= cutoff,
+                )
+                .order_by(TrainingRecord.expires_date)
+            )
+            records = list((await session.scalars(stmt)).all())
+        return [TrainingOut.model_validate(r) for r in records]
+
+    # ── Sprint U4 — Audit query endpoint ───────────────────────────
+
+    class AuditEntryOut(BaseModel):
+        model_config = ConfigDict(from_attributes=True)
+        id: str
+        actor_user_id: str | None
+        action: str
+        target_user_id: str | None
+        scope_type: str | None
+        scope_id: str | None
+        payload_json: str
+        ip_address: str | None
+        created_at: datetime
+
+    @router.get("/audit", response_model=list[AuditEntryOut])
+    async def query_audit(
+        _: AdminUser,
+        actor_user_id: str | None = Query(default=None),
+        target_user_id: str | None = Query(default=None),
+        action: str | None = Query(default=None),
+        from_ts: datetime | None = Query(default=None, alias="from"),
+        to_ts: datetime | None = Query(default=None, alias="to"),
+        limit: int = Query(default=200, ge=1, le=1000),
+    ) -> list[AuditEntryOut]:
+        """Filtered audit-log query — drives the U4 admin Audit tab.
+        Append-only data; this endpoint never mutates."""
+        from sqlalchemy import select
+
+        from ..persistence.models import UserAdminAuditEntry
+
+        if action is not None and action not in KNOWN_ACTIONS:
+            raise HTTPException(422, f"Unknown action {action!r}.")
+        async with get_db_session() as session:
+            stmt = select(UserAdminAuditEntry).order_by(UserAdminAuditEntry.created_at.desc())
+            if actor_user_id is not None:
+                stmt = stmt.where(UserAdminAuditEntry.actor_user_id == actor_user_id)
+            if target_user_id is not None:
+                stmt = stmt.where(UserAdminAuditEntry.target_user_id == target_user_id)
+            if action is not None:
+                stmt = stmt.where(UserAdminAuditEntry.action == action)
+            if from_ts is not None:
+                stmt = stmt.where(UserAdminAuditEntry.created_at >= from_ts)
+            if to_ts is not None:
+                stmt = stmt.where(UserAdminAuditEntry.created_at <= to_ts)
+            stmt = stmt.limit(limit)
+            rows = list((await session.scalars(stmt)).all())
+        return [AuditEntryOut.model_validate(r) for r in rows]
+
+    @router.get("/audit/actions", response_model=list[str])
+    async def list_audit_actions(_: AdminUser) -> list[str]:
+        """Canonical action names — drives the U4 admin filter dropdown."""
+        return sorted(KNOWN_ACTIONS)
+
+    # ── Sprint U4 — PDF reports ────────────────────────────────────
+
+    @router.get("/reports/delegation-log/{trial_id}.pdf")
+    async def report_delegation_log(trial_id: str, _: AdminUser) -> Response:
+        from sqlalchemy import select
+
+        from ..persistence.models import ClinicalTrial, User, UserProfile
+        from ..reports.user_admin_reports import (
+            assemble_delegation_log_data,
+            build_delegation_log_pdf,
+        )
+
+        async with get_db_session() as session:
+            trial = await session.get(ClinicalTrial, trial_id)
+            if trial is None:
+                raise HTTPException(404, "Trial not found.")
+            admin_repo = UserAdminRepository(session)
+            entries = await admin_repo.list_delegation_entries_for_trial(trial_id)
+            user_ids = {e.user_id for e in entries} | {
+                e.signed_by_pi_user_id for e in entries if e.signed_by_pi_user_id
+            }
+            users_by_id: dict[str, Any] = {}
+            profiles_by_id: dict[str, Any] = {}
+            if user_ids:
+                users = await session.scalars(select(User).where(User.id.in_(user_ids)))
+                users_by_id = {u.id: u for u in users}
+                profiles = await session.scalars(
+                    select(UserProfile).where(UserProfile.user_id.in_(user_ids))
+                )
+                profiles_by_id = {p.user_id: p for p in profiles}
+            data = assemble_delegation_log_data(
+                trial_id=trial.id,
+                trial_title=trial.title,
+                sponsor=trial.sponsor,
+                indication=trial.indication,
+                entries=entries,
+                users_by_id=users_by_id,
+                profiles_by_id=profiles_by_id,
+            )
+        pdf = build_delegation_log_pdf(data)
+        return Response(
+            content=pdf,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": (
+                    f'attachment; filename="delegation-log-{trial.id[:8]}.pdf"'
+                ),
+            },
+        )
+
+    @router.get("/reports/training-matrix/{site_id}.pdf")
+    async def report_training_matrix(site_id: str, _: AdminUser) -> Response:
+        from datetime import UTC as _UTC
+        from datetime import datetime as _datetime
+        from datetime import timedelta as _td
+
+        from sqlalchemy import select
+
+        from ..persistence.models import (
+            AccountSite,
+            RoleAssignment,
+            TrainingRecord,
+            User,
+            UserProfile,
+        )
+        from ..reports.user_admin_reports import (
+            TrainingMatrixData,
+            TrainingRow,
+            build_training_matrix_pdf,
+        )
+
+        async with get_db_session() as session:
+            site = await session.get(AccountSite, site_id)
+            if site is None:
+                raise HTTPException(404, "Site not found.")
+            # Members: users with a RoleAssignment scoped to this site.
+            assignments = await session.scalars(
+                select(RoleAssignment).where(
+                    RoleAssignment.scope_type == "site",
+                    RoleAssignment.scope_id == site_id,
+                )
+            )
+            user_ids = list({a.user_id for a in assignments.all()})
+            users_by_id: dict[str, Any] = {}
+            profiles_by_id: dict[str, Any] = {}
+            records: list[Any] = []
+            if user_ids:
+                users = await session.scalars(select(User).where(User.id.in_(user_ids)))
+                users_by_id = {u.id: u for u in users}
+                profiles = await session.scalars(
+                    select(UserProfile).where(UserProfile.user_id.in_(user_ids))
+                )
+                profiles_by_id = {p.user_id: p for p in profiles}
+                trs = await session.scalars(
+                    select(TrainingRecord).where(TrainingRecord.user_id.in_(user_ids))
+                )
+                records = list(trs)
+            now = _datetime.now(_UTC)
+            soon = now + _td(days=30)
+            rows: list[TrainingRow] = []
+            expired_count = 0
+            expiring_count = 0
+            for r in records:
+                user = users_by_id.get(r.user_id)
+                profile = profiles_by_id.get(r.user_id)
+                name = " ".join(
+                    filter(
+                        None,
+                        [profile and profile.first_name, profile and profile.last_name],
+                    )
+                )
+                expired = bool(r.expires_date and r.expires_date <= now)
+                expiring_soon = bool(r.expires_date and not expired and r.expires_date <= soon)
+                if expired:
+                    expired_count += 1
+                elif expiring_soon:
+                    expiring_count += 1
+                rows.append(
+                    TrainingRow(
+                        user_email=user.email if user else "—",
+                        user_name=name,
+                        topic=r.topic,
+                        provider=r.provider,
+                        completed_date=r.completed_date,
+                        expires_date=r.expires_date,
+                        expired=expired,
+                        expiring_soon=expiring_soon,
+                    )
+                )
+            data = TrainingMatrixData(
+                site_id=site.id,
+                site_name=site.name,
+                site_code=site.code,
+                members=len(user_ids),
+                expired_count=expired_count,
+                expiring_soon_count=expiring_count,
+                rows=rows,
+            )
+        pdf = build_training_matrix_pdf(data)
+        return Response(
+            content=pdf,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": (
+                    f'attachment; filename="training-matrix-{site.id[:8]}.pdf"'
+                ),
+            },
+        )
+
+    @router.get("/reports/audit-log.pdf")
+    async def report_audit_log(
+        _: AdminUser,
+        from_ts: datetime | None = Query(default=None, alias="from"),
+        to_ts: datetime | None = Query(default=None, alias="to"),
+        action: str | None = Query(default=None),
+    ) -> Response:
+        from sqlalchemy import select
+
+        from ..persistence.models import User, UserAdminAuditEntry
+        from ..reports.user_admin_reports import (
+            AuditLogData,
+            AuditLogRow,
+            build_audit_log_pdf,
+        )
+
+        async with get_db_session() as session:
+            stmt = select(UserAdminAuditEntry).order_by(UserAdminAuditEntry.created_at.desc())
+            if from_ts is not None:
+                stmt = stmt.where(UserAdminAuditEntry.created_at >= from_ts)
+            if to_ts is not None:
+                stmt = stmt.where(UserAdminAuditEntry.created_at <= to_ts)
+            if action is not None:
+                if action not in KNOWN_ACTIONS:
+                    raise HTTPException(422, f"Unknown action {action!r}.")
+                stmt = stmt.where(UserAdminAuditEntry.action == action)
+            stmt = stmt.limit(5000)
+            entries = list((await session.scalars(stmt)).all())
+            user_ids = {e.actor_user_id for e in entries if e.actor_user_id} | {
+                e.target_user_id for e in entries if e.target_user_id
+            }
+            user_emails: dict[str, str] = {}
+            if user_ids:
+                users = await session.scalars(select(User).where(User.id.in_(user_ids)))
+                for u in users:
+                    if u.email:
+                        user_emails[u.id] = u.email
+            rows = [
+                AuditLogRow(
+                    created_at=e.created_at,
+                    actor_email=user_emails.get(e.actor_user_id) if e.actor_user_id else None,
+                    action=e.action,
+                    target_email=user_emails.get(e.target_user_id) if e.target_user_id else None,
+                    scope_type=e.scope_type,
+                    scope_id=e.scope_id,
+                    payload_json=e.payload_json,
+                    ip_address=e.ip_address,
+                )
+                for e in entries
+            ]
+        filter_bits = []
+        if action:
+            filter_bits.append(f"action={action}")
+        filter_summary = " · ".join(filter_bits) if filter_bits else "(no filters)"
+        data = AuditLogData(
+            title="User-admin audit log",
+            from_ts=from_ts,
+            to_ts=to_ts,
+            filter_summary=filter_summary,
+            rows=rows,
+        )
+        pdf = build_audit_log_pdf(data)
+        return Response(
+            content=pdf,
+            media_type="application/pdf",
+            headers={"Content-Disposition": 'attachment; filename="user-admin-audit.pdf"'},
+        )
 
     return router

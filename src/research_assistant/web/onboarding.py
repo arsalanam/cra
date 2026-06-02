@@ -21,7 +21,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict
 
 from ..persistence.database import get_db_session
@@ -290,11 +290,16 @@ def create_onboarding_router() -> APIRouter:
         return DelegationOut.model_validate(entry)
 
     @router.post("/me/complete", response_model=ProfileOut)
-    async def complete(user: CurrentUser) -> ProfileOut:
+    async def complete(request: Request, user: CurrentUser) -> ProfileOut:
         """Mark the user as onboarded. Validates that EVERY required field
         for EVERY held role is filled; 422 with the missing-fields map
         otherwise so the wizard can route the user back to the right
         step."""
+        from ..services.user_admin_audit import (
+            ACTION_ONBOARDING_COMPLETED,
+            record_event,
+        )
+
         uid = await _resolve_caller_user_id(user.sub)
         async with get_db_session() as session:
             admin_repo = UserAdminRepository(session)
@@ -315,6 +320,17 @@ def create_onboarding_router() -> APIRouter:
                     },
                 )
             updated = await admin_repo.mark_onboarded(uid)
+            # The actor is the user themselves (self-service). Captured
+            # in the audit log so an auditor sees every onboarding
+            # completion event for a per-user trail.
+            await record_event(
+                session,
+                actor_user_id=uid,
+                action=ACTION_ONBOARDING_COMPLETED,
+                target_user_id=uid,
+                payload={"roles": sorted({a.role for a in assignments})},
+                ip_address=(request.client.host if request.client else None),
+            )
         logger.info("User %s completed onboarding", uid)
         return ProfileOut.model_validate(updated)
 

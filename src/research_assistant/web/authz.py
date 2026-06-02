@@ -362,25 +362,40 @@ def require_permission_scoped(
                 site_id=site_id,
                 sr_review_id=sr_review_id,
             )
-            # Sprint U3 — onboarding gate. When the caller is going for a
-            # clinical-write permission, also verify they've completed
-            # onboarding (profile filled + Complete clicked). Read-only
-            # perms are unaffected; admin / research-tier work continues
-            # for anyone who has the role.
-            if perm in CLINICAL_WRITE_PERMS:
-                local = await user_repo.get_by_sub(user.sub)
-                if local is not None:
-                    admin_repo = UserAdminRepository(db)
-                    profile = await admin_repo.get_profile(local.id)
-                    if not is_onboarded(profile):
-                        raise HTTPException(
-                            status_code=403,
-                            detail=(
-                                "Onboarding required — complete your profile at "
-                                "/onboarding.html before performing clinical-data "
-                                "actions. (ICH E6 §4.2.4; 21 CFR Part 11 §11.10(d))"
-                            ),
-                        )
+
+            # Sprint U4 — suspension gate. A suspended user is locked out
+            # of EVERY permission check, regardless of clinical / read /
+            # research tier. Distinct error from the onboarding gate so
+            # the operator can tell them apart. Distinct from the U3
+            # onboarding check because suspension is a stronger admin
+            # signal (security incident, departure, etc.).
+            local = await user_repo.get_by_sub(user.sub)
+            if local is not None:
+                admin_repo = UserAdminRepository(db)
+                profile = await admin_repo.get_profile(local.id)
+                if profile is not None and profile.suspended_at is not None:
+                    raise HTTPException(
+                        status_code=403,
+                        detail=(
+                            "Your account is suspended. Contact a platform "
+                            "administrator to reactivate access."
+                        ),
+                    )
+
+                # Sprint U3 — onboarding gate. When the caller is going for a
+                # clinical-write permission, also verify they've completed
+                # onboarding (profile filled + Complete clicked). Read-only
+                # perms are unaffected; admin / research-tier work continues
+                # for anyone who has the role.
+                if perm in CLINICAL_WRITE_PERMS and not is_onboarded(profile):
+                    raise HTTPException(
+                        status_code=403,
+                        detail=(
+                            "Onboarding required — complete your profile at "
+                            "/onboarding.html before performing clinical-data "
+                            "actions. (ICH E6 §4.2.4; 21 CFR Part 11 §11.10(d))"
+                        ),
+                    )
         if perm not in perms:
             scope_bits = []
             if study_id:
