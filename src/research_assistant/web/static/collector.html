@@ -42,6 +42,12 @@
         <div class="card">
           <h2>Deployment</h2>
           <select id="deployments" onchange="selectDeployment(this.value)"></select>
+          <div id="trial-badge" style="display:none;margin-top:10px;padding:8px 10px;background:#0d1812;border:1px solid #28492c;border-radius:6px;font-size:12px">
+            <div style="color:#5a6070;font-size:10px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Owning trial</div>
+            <div><b id="trial-title" style="color:#e6e6e6"></b> <span id="trial-status-pill" style="font-family:monospace;font-size:10px;padding:1px 6px;border-radius:4px;margin-left:4px"></span></div>
+            <div id="trial-meta" style="color:#8b93a7;font-size:11px;margin-top:3px"></div>
+            <a id="trial-link" href="#" style="color:#7aa7d9;text-decoration:none;font-size:11px;margin-top:4px;display:inline-block">Open in account dashboard →</a>
+          </div>
         </div>
         <div class="card">
           <h2>Sites & subjects</h2>
@@ -124,10 +130,37 @@
     const ds=await (await api("/api/edc/deployments")).json();
     document.getElementById("deployments").innerHTML = `<option value="">— select —</option>`+ds.map(d=>`<option value="${d.id}">${esc(d.name)}</option>`).join("");
   }
+  async function loadTrialBadge(depId){
+    const badge = document.getElementById("trial-badge");
+    if (!depId) { badge.style.display = "none"; return; }
+    try {
+      const r = await fetch(`/api/deployments/${depId}/trial`);
+      if (!r.ok || r.status === 204) { badge.style.display = "none"; return; }
+      const trial = await r.json();
+      if (!trial || !trial.id) { badge.style.display = "none"; return; }
+      document.getElementById("trial-title").textContent = trial.title;
+      const pill = document.getElementById("trial-status-pill");
+      pill.textContent = trial.status;
+      const palette = {design:"#8b93a7", draft:"#7aa7d9", deployed:"#6bcf7f", locked:"#d9a84a", archived:"#d97a7a"};
+      pill.style.background = "#1f232c";
+      pill.style.color = palette[trial.status] || "#cdd3df";
+      const meta = [];
+      if (trial.sponsor) meta.push(esc(trial.sponsor));
+      if (trial.indication) meta.push(esc(trial.indication));
+      if (trial.phase) meta.push(esc(trial.phase.replace("_"," ")));
+      document.getElementById("trial-meta").innerHTML = meta.join(" · ") || "<span style='color:#5a6070'>No additional metadata</span>";
+      document.getElementById("trial-link").href = `/accounts.html#trial=${trial.id}`;
+      badge.style.display = "block";
+    } catch (e) {
+      badge.style.display = "none";
+    }
+  }
+
   async function selectDeployment(id){
     depId=id||null; subjectId=null; fiId=null;
     document.getElementById("subjects").innerHTML=""; document.getElementById("instances").innerHTML="Select a subject."; document.getElementById("form-render").innerHTML="Open or select a form instance.";
     document.getElementById("form-actions").style.display="none"; document.getElementById("queries").innerHTML="—";
+    await loadTrialBadge(depId);
     if(!depId) return;
     const [sites,subs,forms]=await Promise.all([
       (await api(`/api/edc/deployments/${depId}/sites`)).json(),

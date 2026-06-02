@@ -206,6 +206,18 @@ class TrialSiteView(BaseModel):
     notes: str
 
 
+class TransferOwnership(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    new_owner_user_id: str | None = None
+    new_owner_email: str | None = None
+
+
+class ArtefactBindIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    kind: str = Field(pattern="^(registration|irb|sap|csr|manuscript)$")
+    thread_id: str | None = None
+
+
 # ── Helpers ──────────────────────────────────────────────────────────────
 
 
@@ -719,6 +731,93 @@ def create_accounts_router() -> APIRouter:
             ok = await repo.unassign_site_from_trial(trial_id=trial_id, account_site_id=site_id)
             if not ok:
                 raise HTTPException(404, "Site assignment not found.")
+
+    @router.post(
+        "/accounts/{account_id}/transfer-ownership",
+        response_model=AccountView,
+    )
+    async def transfer_ownership(
+        account_id: str,
+        body: TransferOwnership,
+        user: SessionPayload = require_permission_scoped(Permission.ACCOUNT_MANAGE),
+    ) -> AccountView:
+        """Transfer Account.owner_user_id to a new member. Caller must
+        be the current owner. New owner is promoted to 'owner'; old
+        owner downgraded to 'admin' (kept in the account)."""
+        caller = await resolve_local_user_id(user)
+        async with get_db_session() as session:
+            repo = AccountRepository(session)
+            account = await repo.get_account(account_id)
+            if account is None:
+                raise HTTPException(404, "Account not found.")
+            # Only the current owner can transfer ownership (admins can't).
+            if account.owner_user_id != caller and caller != DEFAULT_USER_ID:
+                raise HTTPException(403, "Only the current owner can transfer ownership.")
+            try:
+                resolved_uid = await _resolve_invitee_user_id(
+                    session=session,
+                    email=body.new_owner_email,
+                    user_id=body.new_owner_user_id,
+                )
+                updated = await repo.transfer_ownership(
+                    account_id=account_id,
+                    new_owner_user_id=resolved_uid,
+                )
+            except AccountError as e:
+                raise HTTPException(422, str(e)) from e
+            return await _build_account_view(session, updated)
+
+    @router.post(
+        "/trials/{trial_id}/artefacts",
+        response_model=TrialView,
+    )
+    async def bind_artefact(
+        trial_id: str,
+        body: ArtefactBindIn,
+        user: SessionPayload = require_permission_scoped(Permission.TRIAL_MANAGE),
+    ) -> TrialView:
+        """Bind a Thread to one of the Trial's artefact slots
+        (registration / irb / sap / csr / manuscript). Pass
+        thread_id=null to unbind."""
+        caller = await resolve_local_user_id(user)
+        async with get_db_session() as session:
+            repo = AccountRepository(session)
+            trial = await repo.get_trial(trial_id)
+            if trial is None:
+                raise HTTPException(404, "Trial not found.")
+            await _require_account_access(repo, trial.account_id, caller)
+            try:
+                updated = await repo.bind_trial_artefact(
+                    trial_id=trial_id,
+                    kind=body.kind,
+                    thread_id=body.thread_id,
+                )
+            except AccountError as e:
+                raise HTTPException(422, str(e)) from e
+            return TrialView.model_validate(updated)
+
+    @router.get(
+        "/deployments/{deployment_id}/trial",
+        response_model=TrialView | None,
+    )
+    async def get_trial_for_deployment(deployment_id: str, user: CurrentUser) -> TrialView | None:
+        """Cross-store resolver: deployment → trial. Returns null for
+        legacy deployments whose EcrfStudy has no trial_id. Surface for
+        collector.html to render the trial badge."""
+        from ..services.trial_context import resolve_trial_for_deployment
+
+        trial = await resolve_trial_for_deployment(deployment_id)
+        if trial is None:
+            return None
+        # Verify the caller can see the parent account.
+        caller = await resolve_local_user_id(user)
+        async with get_db_session() as session:
+            repo = AccountRepository(session)
+            try:
+                await _require_account_access(repo, trial.account_id, caller)
+            except HTTPException:
+                return None
+        return TrialView.model_validate(trial)
 
     return router
 

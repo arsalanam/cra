@@ -1092,6 +1092,81 @@ class AccountRepository:
         )
         return list((await self._s.scalars(stmt)).all())
 
+    async def transfer_ownership(
+        self,
+        *,
+        account_id: str,
+        new_owner_user_id: str,
+    ) -> Account:
+        """Transfer Account.owner_user_id to a new user.
+
+        New owner must already be a member. Previous owner downgrades to
+        'admin' (kept inside the account, not removed). New owner gets
+        promoted to 'owner'. Idempotent when no-op.
+        """
+        account = await self._s.get(Account, account_id)
+        if account is None:
+            raise AccountError(f"Account {account_id!r} not found.")
+        if account.owner_user_id == new_owner_user_id:
+            return account
+        new_owner_membership = await self._s.scalar(
+            select(AccountMember).where(
+                AccountMember.account_id == account_id,
+                AccountMember.user_id == new_owner_user_id,
+            )
+        )
+        if new_owner_membership is None:
+            raise AccountError("New owner must already be a member of the account.")
+        old_owner_id = account.owner_user_id
+        if old_owner_id is not None:
+            old_membership = await self._s.scalar(
+                select(AccountMember).where(
+                    AccountMember.account_id == account_id,
+                    AccountMember.user_id == old_owner_id,
+                )
+            )
+            if old_membership is not None:
+                old_membership.role = "admin"
+        new_owner_membership.role = "owner"
+        account.owner_user_id = new_owner_user_id
+        await self._s.flush()
+        return account
+
+    async def bind_trial_artefact(
+        self,
+        *,
+        trial_id: str,
+        kind: str,
+        thread_id: str | None,
+    ) -> ClinicalTrial:
+        """Bind a Thread to one of the Trial's artefact slots.
+
+        kind ∈ {registration, irb, sap, csr, manuscript}. Pass
+        thread_id=None to unbind. Returns the updated Trial.
+        """
+        _ALLOWED_KINDS = {
+            "registration": "registration_thread_id",
+            "irb": "irb_thread_id",
+            "sap": "sap_thread_id",
+            "csr": "csr_thread_id",
+            "manuscript": "manuscript_thread_id",
+        }
+        column = _ALLOWED_KINDS.get(kind)
+        if column is None:
+            raise AccountError(
+                f"Invalid artefact kind {kind!r}; choose {', '.join(_ALLOWED_KINDS)}."
+            )
+        trial = await self._s.get(ClinicalTrial, trial_id)
+        if trial is None:
+            raise AccountError(f"Trial {trial_id!r} not found.")
+        if thread_id is not None:
+            thread = await self._s.get(Thread, thread_id)
+            if thread is None:
+                raise AccountError(f"Thread {thread_id!r} not found.")
+        setattr(trial, column, thread_id)
+        await self._s.flush()
+        return trial
+
     # ── Cross-store resolution ───────────────────────────────────────
 
     async def resolve_trial_for_ecrf_study(self, ecrf_study_id: str) -> ClinicalTrial | None:

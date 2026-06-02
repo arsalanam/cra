@@ -38,6 +38,10 @@ class StudyIn(BaseModel):
     name: str
     protocol_id: str | None = None
     description: str | None = None
+    # Sprint A2 account layer: bind the new study to a ClinicalTrial at
+    # creation time. NULL = bind to a Trial under the Default Account.
+    # The endpoint validates that the caller can see the trial.
+    trial_id: str | None = None
 
 
 class StudyUpdate(BaseModel):
@@ -55,6 +59,9 @@ class StudyOut(BaseModel):
     protocol_id: str | None
     description: str | None
     status: str
+    # Sprint A2: owning ClinicalTrial; null only for studies created
+    # before the account layer that haven't been backfilled yet.
+    trial_id: str | None = None
     created_at: datetime
 
 
@@ -115,12 +122,42 @@ def create_ecrf_router() -> APIRouter:
         body: StudyIn,
         user: SessionPayload = require_permission_scoped(Permission.STUDY_CREATE),
     ) -> StudyOut:
+        from sqlalchemy import select as _select
+
+        from ..persistence.models import DEFAULT_ACCOUNT_NAME, Account, ClinicalTrial
+        from ..persistence.repository import AccountRepository
+
         async with get_db_session() as session:
+            trial_id = body.trial_id
+            if trial_id is not None:
+                trial = await session.get(ClinicalTrial, trial_id)
+                if trial is None:
+                    raise HTTPException(404, "Trial not found.")
+            else:
+                # No trial supplied → create a Trial under the Default
+                # Account so the study still lands in the account
+                # hierarchy. Operators using the account-aware UI will
+                # always pass an explicit trial_id; this is the
+                # legacy / dev-mode fallback.
+                default_account = (
+                    await session.scalars(
+                        _select(Account).where(Account.name == DEFAULT_ACCOUNT_NAME)
+                    )
+                ).first()
+                if default_account is not None:
+                    new_trial = await AccountRepository(session).create_trial(
+                        default_account.id,
+                        title=body.name,
+                        protocol_id=body.protocol_id,
+                        created_by_user_id=None,
+                    )
+                    trial_id = new_trial.id
             study = await EcrfRepository(session).create_study(
                 name=body.name,
                 protocol_id=body.protocol_id,
                 description=body.description,
                 created_by=user.sub,
+                trial_id=trial_id,
             )
             return StudyOut.model_validate(study)
 
@@ -235,7 +272,15 @@ def create_ecrf_router() -> APIRouter:
                 form = await EcrfRepository(session).publish_form(form_id)
             except EcrfError as e:
                 raise HTTPException(409, str(e)) from e
-            return FormOut.model_validate(form)
+            study_id = form.study_id
+            view = FormOut.model_validate(form)
+        # Sprint A2 auto-status: first form publish flips the trial
+        # design → draft. No-op for legacy studies without a trial_id
+        # or for trials already deployed/locked.
+        from ..services.trial_status import promote_to_draft_for_study
+
+        await promote_to_draft_for_study(study_id)
+        return view
 
     @router.post("/forms/{form_id}/new-version", response_model=FormOut, status_code=201)
     async def new_version(

@@ -1071,7 +1071,14 @@ def create_edc_router() -> APIRouter:
                 forms=snapshots,
                 actor_sub=user.sub,
             )
-            return DeploymentOut.model_validate(deployment)
+            deployment_id = deployment.id
+            view = DeploymentOut.model_validate(deployment)
+        # Sprint A2 auto-status: deployment create flips the trial to
+        # 'deployed'. No-op for legacy studies without a trial_id.
+        from ..services.trial_status import promote_to_deployed_for_deployment
+
+        await promote_to_deployed_for_deployment(deployment_id)
+        return view
 
     @router.get("/deployments", response_model=list[DeploymentOut])
     async def list_deployments(user: CurrentUser) -> list[DeploymentOut]:
@@ -2300,7 +2307,12 @@ def create_edc_router() -> APIRouter:
                 )
             except ClinicalError as e:
                 raise HTTPException(409, str(e)) from e
-            return StudyLockOut.model_validate(lock)
+            view = StudyLockOut.model_validate(lock)
+        # Sprint A2 auto-status: lock advances the trial to 'locked'.
+        from ..services.trial_status import promote_to_locked_for_deployment
+
+        await promote_to_locked_for_deployment(deployment_id)
+        return view
 
     @router.post(
         "/deployments/{deployment_id}/unlock",
@@ -2322,7 +2334,13 @@ def create_edc_router() -> APIRouter:
                 )
             except ClinicalError as e:
                 raise HTTPException(409, str(e)) from e
-            return StudyLockOut.model_validate(lock)
+            view = StudyLockOut.model_validate(lock)
+        # Sprint A2 auto-status: unlock demotes trial 'locked' →
+        # 'deployed'. One-step regression; archived trials untouched.
+        from ..services.trial_status import demote_to_deployed_for_deployment
+
+        await demote_to_deployed_for_deployment(deployment_id)
+        return view
 
     @router.get(
         "/deployments/{deployment_id}/lock-history",

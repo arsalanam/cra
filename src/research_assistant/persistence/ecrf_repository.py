@@ -35,12 +35,14 @@ class EcrfRepository:
         protocol_id: str | None = None,
         description: str | None = None,
         created_by: str | None = None,
+        trial_id: str | None = None,
     ) -> EcrfStudy:
         study = EcrfStudy(
             name=name,
             protocol_id=protocol_id,
             description=description,
             created_by=created_by,
+            trial_id=trial_id,
         )
         self._s.add(study)
         await self._s.flush()
