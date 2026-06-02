@@ -189,6 +189,16 @@ Each of these is a multi-week-to-multi-quarter effort that opens a new class of 
 
 Concrete, well-scoped tasks we deliberately deferred during the P0 / P1 / P2 sweep. Each one is small enough to be a one-engineer slice. Items are grouped by subsystem so a team member can scan their area and pick the one that fits.
 
+### Account layer (Sprint A1 shipped 2026-06-01)
+
+The structural layer (Account → ClinicalTrial → AccountSite, with TrialSite + AccountMember joins) shipped 2026-06-01. The next two sprints wire the new layer into existing flows and verify resumability across Phase-04 demos.
+
+- **Sprint A2 — wire Account / Trial context into existing flows.** Today the layer is standalone — the eCRF authoring UI doesn't know about trials, the manuscript_drafter / csr_drafter / etc don't seed `trial_id`, and the collector.html surface doesn't show the current Trial. Goal: every Phase-04 surface displays the Trial the user is operating on, and every Phase-05 specialist that produces an artefact persists its `Thread.id` to the Trial's matching artefact link (`registration_thread_id`, `irb_thread_id`, `sap_thread_id`, `csr_thread_id`, `manuscript_thread_id`). **Benefit:** the Account dashboard becomes the deep-link hub for every cross-phase artefact a Trial has produced.
+- **Sprint A3 — persistence + resume audit across Phase-04 demos (X1 → X13).** Walk each demo from demoguide.md and confirm: (a) the state persists across browser reloads + server restarts; (b) the operator can resume the workflow from the Account / Trial dashboard without re-typing. Produce a per-demo checklist + patches for any resumability gaps. **Benefit:** users can step away from a multi-month trial setup and come back without losing context.
+- **Trial-status auto-transitions.** Today `status` is operator-driven. Auto-promote `design → draft` on EcrfStudy publish, `draft → deployed` on StudyDeployment create, `deployed → locked` on E7 lock. **Benefit:** the dashboard reflects reality without operator effort.
+- **RoleAssignment widening across hierarchies.** Today an `account` grant doesn't satisfy a bare `study` check (and vice versa) — they live in separate scope hierarchies. A widening rule (`account` ⊃ `trial` ⊃ `study` ⊃ `site`) would let an account-admin role automatically grant `study.read` on every Trial's Deployment. **Benefit:** fewer per-deployment role grants for institutional admins.
+- **Cross-store consistency check.** A health endpoint that walks `EcrfStudy.trial_id → ClinicalTrial.account_id` + `StudyDeployment.research_study_id → EcrfStudy.id` and reports any orphans (clinical-store Site rows whose `account_site_id` no longer exists, deployments whose study has been deleted, etc). **Benefit:** drift detection for the cross-store relations.
+
 ### Auth + RBAC
 
 - **Per-user / per-tier daily token caps.** Today the cap is global (`config/settings.context_window_messages` + `summarize_after_messages`). Tier-based ceilings would let an institution give researchers a generous budget while capping students at a teaching tier. **Benefit:** institutions can buy a single deployment for a mixed researcher + student audience without one tier exhausting the other's budget.
