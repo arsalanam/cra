@@ -16,7 +16,18 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from ..config import get_settings
-from .models import DEFAULT_USER_ID, Base, RoleAssignment, SourceConfig, User
+from .models import (
+    DEFAULT_ACCOUNT_NAME,
+    DEFAULT_USER_ID,
+    Account,
+    AccountMember,
+    Base,
+    ClinicalTrial,
+    EcrfStudy,
+    RoleAssignment,
+    SourceConfig,
+    User,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +77,12 @@ _COLUMN_MIGRATIONS: dict[str, dict[str, str]] = {
         # watch notifications (legacy shape); set when the row is fanned out
         # from a LiteratureWatchSubscription quorum-clear event.
         "subscription_id": "TEXT REFERENCES literature_watch_subscriptions(id) ON DELETE CASCADE",
+    },
+    "ecrf_studies": {
+        # Sprint A1 account layer. NULL = pre-account legacy. Backfilled by
+        # init_db._backfill_account_layer to point at a Default Account's
+        # auto-generated ClinicalTrial wrapper.
+        "trial_id": "TEXT REFERENCES clinical_trials(id) ON DELETE SET NULL",
     },
 }
 
@@ -181,6 +198,10 @@ async def init_db() -> None:
         # become read-only history.
         await _backfill_role_assignments(session)
 
+        # Sprint A1 account layer: seed a Default Account + wrap legacy
+        # EcrfStudy rows in ClinicalTrial under it. Idempotent.
+        await _backfill_account_layer(session)
+
     logger.info("Database tables initialised")
 
 
@@ -259,3 +280,87 @@ async def get_db_session() -> AsyncIterator[AsyncSession]:
             logger.error("Database session error — rolling back", exc_info=True)
             await session.rollback()
             raise
+
+
+async def _backfill_account_layer(session: AsyncSession) -> None:
+    """Seed the Default Account + wrap legacy EcrfStudy in ClinicalTrial.
+
+    Idempotent: the Default Account is keyed by name; a re-run that
+    finds it skips the seed. Existing studies that already carry a
+    `trial_id` are left alone. Newly-created Trial wrappers inherit
+    the EcrfStudy's status (draft → 'design', active → 'deployed',
+    closed → 'archived').
+    """
+    from sqlalchemy import select
+
+    existing_account = (
+        await session.scalars(select(Account).where(Account.name == DEFAULT_ACCOUNT_NAME))
+    ).first()
+    if existing_account is None:
+        account = Account(
+            name=DEFAULT_ACCOUNT_NAME,
+            description=(
+                "Auto-created on first migration to the account layer. Holds "
+                "every legacy EcrfStudy that pre-dated Sprint A1."
+            ),
+            owner_user_id=DEFAULT_USER_ID,
+            status="active",
+        )
+        session.add(account)
+        await session.flush()
+        # Add the default user as an owner-member so the membership table
+        # is consistent with the owner_user_id pointer.
+        session.add(
+            AccountMember(
+                account_id=account.id,
+                user_id=DEFAULT_USER_ID,
+                role="owner",
+                invited_by_user_id=DEFAULT_USER_ID,
+            )
+        )
+        logger.info("Seeded Default Account %r", account.id)
+    else:
+        account = existing_account
+        # If the owner-member row got lost, restore it.
+        owner_member = (
+            await session.scalars(
+                select(AccountMember).where(
+                    AccountMember.account_id == account.id,
+                    AccountMember.user_id == DEFAULT_USER_ID,
+                )
+            )
+        ).first()
+        if owner_member is None:
+            session.add(
+                AccountMember(
+                    account_id=account.id,
+                    user_id=DEFAULT_USER_ID,
+                    role="owner",
+                    invited_by_user_id=DEFAULT_USER_ID,
+                )
+            )
+
+    # Wrap every legacy EcrfStudy that doesn't yet have a trial.
+    _STATUS_MAP = {"draft": "design", "active": "deployed", "closed": "archived"}
+    legacy_studies = (
+        await session.scalars(select(EcrfStudy).where(EcrfStudy.trial_id.is_(None)))
+    ).all()
+    if not legacy_studies:
+        await session.commit()
+        return
+    wrapped = 0
+    for study in legacy_studies:
+        trial = ClinicalTrial(
+            account_id=account.id,
+            title=study.name,
+            protocol_id=study.protocol_id,
+            status=_STATUS_MAP.get(study.status, "design"),
+            created_by_user_id=DEFAULT_USER_ID,
+        )
+        session.add(trial)
+        await session.flush()
+        study.trial_id = trial.id
+        wrapped += 1
+    if wrapped:
+        await session.commit()
+        logger.info("Wrapped %d legacy EcrfStudy row(s) in ClinicalTrial", wrapped)

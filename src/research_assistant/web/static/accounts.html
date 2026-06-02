@@ -1,0 +1,557 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Accounts · Clinical Research Assistant</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, Segoe UI, Roboto, sans-serif; background: #0f1115; color: #e6e6e6; }
+  .header { padding: 14px 24px; border-bottom: 1px solid #262a33; display: flex; justify-content: space-between; align-items: center; background: #171a21; }
+  .header h1 { margin: 0; font-size: 16px; }
+  .header a { color: #8b93a7; text-decoration: none; font-size: 13px; }
+  .header a:hover { color: #e6e6e6; }
+
+  .container { max-width: 1180px; margin: 22px auto; padding: 0 24px; }
+  .lead { color: #8b93a7; font-size: 13px; margin: 0 0 18px; line-height: 1.5; }
+
+  .section { background: #171a21; border: 1px solid #262a33; border-radius: 8px; padding: 18px 20px; margin-bottom: 18px; }
+  h2 { font-size: 13px; text-transform: uppercase; color: #8b93a7; letter-spacing: .6px; margin: 0 0 12px; font-weight: 700; }
+  h3 { font-size: 14px; color: #e6e6e6; margin: 0 0 6px; }
+
+  .account-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; margin-top: 12px; }
+  .account-card { background: #0f1115; border: 1px solid #1f232c; border-radius: 6px; padding: 14px 16px; cursor: pointer; }
+  .account-card:hover { border-color: #4a7fd9; }
+  .account-card.archived { opacity: 0.55; }
+  .account-card .name { font-size: 15px; font-weight: 700; color: #e6e6e6; }
+  .account-card .desc { font-size: 12px; color: #8b93a7; margin-top: 4px; }
+  .account-card .meta { display: flex; gap: 14px; font-size: 11px; color: #b3b9c8; margin-top: 8px; flex-wrap: wrap; }
+  .account-card .meta b { color: #e6e6e6; }
+
+  .empty { color: #5a6070; font-size: 13px; padding: 30px; text-align: center; background: #171a21; border-radius: 8px; border: 1px dashed #262a33; }
+  .loading, .err { color: #8b93a7; font-size: 13px; padding: 20px; text-align: center; }
+  .err { color: #d97a7a; }
+
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+  input, select, button { font: inherit; }
+  input[type=text], input[type=email], select { background: #0f1115; color: #e6e6e6; border: 1px solid #2a2f3a; border-radius: 4px; padding: 6px 10px; font-size: 13px; }
+  .btn { background: #1f232c; color: #b3b9c8; border: 1px solid #2a2f3a; border-radius: 4px; padding: 6px 12px; cursor: pointer; font-size: 12px; }
+  .btn:hover { background: #2a2f3a; color: #e6e6e6; }
+  .btn.primary { background: #4a7fd9; color: #fff; border-color: #4a7fd9; }
+  .btn.primary:hover { background: #5a8fe9; }
+  .btn.danger { color: #d97a7a; border-color: #2a1010; }
+  .btn.danger:hover { background: #2a1010; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 8px; }
+  th { text-align: left; color: #8b93a7; font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; padding: 6px 4px; border-bottom: 1px solid #262a33; }
+  td { padding: 8px 4px; border-bottom: 1px solid #1f232c; vertical-align: top; color: #b3b9c8; }
+  td b { color: #e6e6e6; }
+
+  .pill { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 10px; font-family: monospace; background: #1f232c; color: #cdd3df; text-transform: uppercase; letter-spacing: .4px; }
+  .pill.design { background: #1f232c; color: #8b93a7; }
+  .pill.draft { background: #1a2332; color: #7aa7d9; }
+  .pill.deployed { background: #102a15; color: #6bcf7f; }
+  .pill.locked { background: #2a2010; color: #d9a84a; }
+  .pill.archived { background: #2a1010; color: #d97a7a; }
+  .pill.active { background: #102a15; color: #6bcf7f; }
+  .pill.inactive { background: #2a1010; color: #d97a7a; }
+  .pill.owner { background: #102a15; color: #6bcf7f; }
+  .pill.admin { background: #1a2332; color: #7aa7d9; }
+  .pill.member { background: #1f232c; color: #cdd3df; }
+  .pill.observer { background: #2a2010; color: #d9a84a; }
+
+  .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; gap: 12px; flex-wrap: wrap; }
+
+  .breadcrumb { font-size: 12px; color: #8b93a7; margin-bottom: 6px; }
+  .breadcrumb a { color: #7aa7d9; text-decoration: none; cursor: pointer; }
+  .breadcrumb a:hover { text-decoration: underline; }
+
+  .status { font-size: 11px; padding: 4px 8px; border-radius: 4px; margin-top: 6px; display: none; }
+  .status.ok { display: block; background: #102a15; color: #6bcf7f; }
+  .status.err { display: block; background: #2a1010; color: #d97a7a; }
+
+  .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.55); display: none; align-items: center; justify-content: center; z-index: 50; }
+  .modal.open { display: flex; }
+  .modal .card { background: #171a21; border: 1px solid #262a33; border-radius: 8px; padding: 22px; min-width: 360px; max-width: 540px; }
+</style>
+</head>
+<body>
+  <div class="header"><h1>Accounts</h1><a href="/">← Back to assistant</a></div>
+  <div class="container">
+    <p class="lead">
+      An <b>account</b> is a research program or portfolio that owns multiple concurrent clinical trials, plus the sites and members shared across them. Pick an account to see its trials with their lifecycle status (design / draft / deployed / locked / archived).
+    </p>
+
+    <div id="content" class="loading">Loading accounts…</div>
+  </div>
+
+  <!-- New-account modal -->
+  <div id="new-account-modal" class="modal">
+    <div class="card">
+      <h2>New account</h2>
+      <div class="row" style="flex-direction:column;align-items:stretch">
+        <input id="new-account-name" type="text" placeholder="Account name (e.g. Cardio research program)" />
+        <input id="new-account-desc" type="text" placeholder="Description (optional)" />
+      </div>
+      <div class="row" style="justify-content:flex-end">
+        <button class="btn" onclick="closeModal('new-account-modal')">Cancel</button>
+        <button class="btn primary" onclick="submitNewAccount()">Create</button>
+      </div>
+      <div id="new-account-status" class="status"></div>
+    </div>
+  </div>
+
+<script>
+"use strict";
+
+function $(id){ return document.getElementById(id); }
+function esc(s){ return (s==null?"":String(s)).replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function fmtDate(s){ if (!s) return "—"; try { return new Date(s).toLocaleDateString(); } catch(e){ return esc(s); } }
+
+let viewState = { kind: "list", accountId: null, trialId: null };
+
+async function api(p, opt){
+  const r = await fetch(p, opt);
+  if (r.status === 401) { window.location.href = "/auth/login"; throw new Error("unauth"); }
+  return r;
+}
+
+function openModal(id) { $(id).classList.add("open"); }
+function closeModal(id) { $(id).classList.remove("open"); const s = $(id).querySelector(".status"); if (s) s.className = "status"; }
+
+async function loadAccounts() {
+  viewState = { kind: "list", accountId: null, trialId: null };
+  const root = $("content");
+  root.className = "loading";
+  root.textContent = "Loading accounts…";
+  try {
+    const r = await api("/api/accounts");
+    if (!r.ok) throw new Error(await r.text() || r.statusText);
+    const accounts = await r.json();
+    renderList(accounts);
+  } catch (e) {
+    root.className = "err";
+    root.textContent = "Failed to load accounts: " + (e.message || e);
+  }
+}
+
+function renderList(accounts) {
+  const root = $("content");
+  root.className = "";
+  const toolbar = `
+    <div class="toolbar">
+      <h2 style="margin:0">My accounts <span style="color:#5a6070;font-size:11px;text-transform:none;letter-spacing:0">— programs you own or belong to</span></h2>
+      <button class="btn primary" onclick="openModal('new-account-modal')">+ New account</button>
+    </div>
+  `;
+  if (!accounts.length) {
+    root.innerHTML = toolbar + `<div class="empty">No accounts yet. Create one to start tracking concurrent clinical trials.</div>`;
+    return;
+  }
+  const cards = accounts.map(a => `
+    <div class="account-card ${a.status}" onclick="loadAccountDetail('${a.id}')">
+      <div class="name">${esc(a.name)} <span class="pill ${a.status}">${a.status}</span></div>
+      ${a.description ? `<div class="desc">${esc(a.description)}</div>` : ""}
+      <div class="meta">
+        <span><b>${a.n_trials}</b> trial(s)</span>
+        <span><b>${a.n_active_trials}</b> active</span>
+        <span><b>${a.n_locked_trials}</b> locked</span>
+        <span><b>${a.n_sites}</b> site(s)</span>
+        <span><b>${a.n_members}</b> member(s)</span>
+      </div>
+    </div>
+  `).join("");
+  root.innerHTML = toolbar + `<div class="account-grid">${cards}</div>`;
+}
+
+async function loadAccountDetail(accountId) {
+  viewState = { kind: "account", accountId, trialId: null };
+  const root = $("content");
+  root.className = "loading";
+  root.textContent = "Loading account…";
+  try {
+    const [aR, tR] = await Promise.all([
+      api(`/api/accounts/${accountId}`),
+      api(`/api/accounts/${accountId}/trials`),
+    ]);
+    if (!aR.ok) throw new Error(await aR.text() || aR.statusText);
+    const account = await aR.json();
+    const trials = tR.ok ? await tR.json() : [];
+    renderAccountDetail(account, trials);
+  } catch (e) {
+    root.className = "err";
+    root.textContent = "Failed to load account: " + (e.message || e);
+  }
+}
+
+function renderAccountDetail(account, trials) {
+  const root = $("content");
+  root.className = "";
+  const trialRows = trials.length ? trials.map(t => `
+    <tr onclick="loadTrialDetail('${t.id}')" style="cursor:pointer">
+      <td><b>${esc(t.title)}</b></td>
+      <td><span class="pill ${t.status}">${t.status}</span></td>
+      <td>${t.phase ? esc(t.phase.replace("_", " ")) : "—"}</td>
+      <td>${esc(t.sponsor || "—")}</td>
+      <td>${esc(t.indication || "—")}</td>
+      <td style="color:#5a6070">${fmtDate(t.created_at)}</td>
+    </tr>
+  `).join("") : `<tr><td colspan="6" style="color:#5a6070;text-align:center;padding:20px">No trials yet.</td></tr>`;
+
+  const siteRows = (account.sites || []).length ? account.sites.map(s => `
+    <tr>
+      <td><b>${esc(s.name)}</b>${s.code ? ` <span style="color:#5a6070">${esc(s.code)}</span>` : ""}</td>
+      <td>${esc(s.pi_name || "—")}</td>
+      <td>${esc(s.contact_email || "—")}</td>
+      <td><span class="pill ${s.status}">${s.status}</span></td>
+    </tr>
+  `).join("") : `<tr><td colspan="4" style="color:#5a6070;text-align:center;padding:14px">No sites yet.</td></tr>`;
+
+  const memberRows = (account.members || []).map(m => `
+    <tr>
+      <td><b>${esc(m.email || m.user_id)}</b>${m.name ? ` <span style="color:#5a6070">${esc(m.name)}</span>` : ""}</td>
+      <td><span class="pill ${m.role}">${m.role}</span></td>
+      <td>${fmtDate(m.joined_at)}</td>
+      <td>${m.role === "owner" ? "" : `<button class="btn danger" onclick="event.stopPropagation();removeMember('${account.id}','${m.user_id}')">Remove</button>`}</td>
+    </tr>
+  `).join("");
+
+  root.innerHTML = `
+    <div class="breadcrumb"><a onclick="loadAccounts()">← All accounts</a></div>
+    <div class="toolbar">
+      <h2 style="margin:0">${esc(account.name)} <span class="pill ${account.status}">${account.status}</span></h2>
+      <button class="btn primary" onclick="newTrial('${account.id}')">+ New trial</button>
+    </div>
+    ${account.description ? `<p class="lead">${esc(account.description)}</p>` : ""}
+
+    <div class="section">
+      <h2>Trials</h2>
+      <table>
+        <thead><tr><th>Title</th><th>Status</th><th>Phase</th><th>Sponsor</th><th>Indication</th><th>Created</th></tr></thead>
+        <tbody>${trialRows}</tbody>
+      </table>
+    </div>
+
+    <div class="section">
+      <h2>Sites</h2>
+      <table>
+        <thead><tr><th>Site</th><th>PI</th><th>Contact</th><th>Status</th></tr></thead>
+        <tbody>${siteRows}</tbody>
+      </table>
+      <div class="row" style="margin-top:10px">
+        <input id="new-site-name" type="text" placeholder="Site name" style="flex:1;min-width:160px" />
+        <input id="new-site-code" type="text" placeholder="Code" style="width:100px" />
+        <input id="new-site-pi" type="text" placeholder="PI name" style="width:160px" />
+        <input id="new-site-email" type="email" placeholder="contact@example.com" style="width:200px" />
+        <button class="btn primary" onclick="addSite('${account.id}')">Add site</button>
+      </div>
+      <div id="site-status" class="status"></div>
+    </div>
+
+    <div class="section">
+      <h2>Members</h2>
+      <table>
+        <thead><tr><th>User</th><th>Role</th><th>Joined</th><th></th></tr></thead>
+        <tbody>${memberRows}</tbody>
+      </table>
+      <div class="row" style="margin-top:10px">
+        <input id="invite-email" type="email" placeholder="Invite by email" style="flex:1;min-width:200px" />
+        <select id="invite-role">
+          <option value="member">member</option>
+          <option value="admin">admin</option>
+          <option value="observer">observer</option>
+        </select>
+        <button class="btn primary" onclick="inviteMember('${account.id}')">Invite</button>
+      </div>
+      <div id="member-status" class="status"></div>
+    </div>
+  `;
+}
+
+async function loadTrialDetail(trialId) {
+  viewState = { kind: "trial", accountId: null, trialId };
+  const root = $("content");
+  root.className = "loading";
+  root.textContent = "Loading trial…";
+  try {
+    const r = await api(`/api/trials/${trialId}`);
+    if (!r.ok) throw new Error(await r.text() || r.statusText);
+    const trial = await r.json();
+    const aR = await api(`/api/accounts/${trial.account_id}`);
+    const account = aR.ok ? await aR.json() : { id: trial.account_id, name: "(unknown)", sites: [] };
+    renderTrialDetail(trial, account);
+  } catch (e) {
+    root.className = "err";
+    root.textContent = "Failed to load trial: " + (e.message || e);
+  }
+}
+
+function renderTrialDetail(trial, account) {
+  const root = $("content");
+  root.className = "";
+  const allSites = account.sites || [];
+  const assignedIds = new Set((trial.sites || []).map(s => s.id));
+  const unassignedSites = allSites.filter(s => !assignedIds.has(s.id) && s.status === "active");
+
+  const assignedRows = (trial.sites || []).length ? trial.sites.map(s => `
+    <tr>
+      <td><b>${esc(s.name)}</b>${s.code ? ` <span style="color:#5a6070">${esc(s.code)}</span>` : ""}</td>
+      <td>${esc(s.pi_name || "—")}</td>
+      <td><button class="btn danger" onclick="unassignSite('${trial.id}','${s.id}')">Unassign</button></td>
+    </tr>
+  `).join("") : `<tr><td colspan="3" style="color:#5a6070;text-align:center;padding:14px">No sites assigned to this trial.</td></tr>`;
+
+  const siteOptions = unassignedSites.map(s =>
+    `<option value="${s.id}">${esc(s.name)}${s.code ? " (" + esc(s.code) + ")" : ""}</option>`
+  ).join("");
+
+  const statusOptions = ["design","draft","deployed","locked","archived"].map(s =>
+    `<option value="${s}" ${s === trial.status ? "selected" : ""}>${s}</option>`
+  ).join("");
+  const phaseOptions = ["","phase_1","phase_2","phase_3","phase_4","observational","feasibility"].map(p =>
+    `<option value="${p}" ${p === (trial.phase || "") ? "selected" : ""}>${p || "—"}</option>`
+  ).join("");
+
+  root.innerHTML = `
+    <div class="breadcrumb"><a onclick="loadAccounts()">← All accounts</a> · <a onclick="loadAccountDetail('${account.id}')">${esc(account.name)}</a></div>
+    <div class="toolbar">
+      <h2 style="margin:0">${esc(trial.title)} <span class="pill ${trial.status}">${trial.status}</span></h2>
+    </div>
+
+    <div class="section">
+      <h2>Trial properties</h2>
+      <div class="row" style="flex-direction:column;align-items:stretch;gap:8px">
+        <label style="font-size:11px;color:#8b93a7">Title <input id="tr-title" type="text" value="${esc(trial.title)}" style="width:100%;margin-top:4px" /></label>
+        <div class="row">
+          <label style="flex:1;font-size:11px;color:#8b93a7">Status<br/><select id="tr-status">${statusOptions}</select></label>
+          <label style="flex:1;font-size:11px;color:#8b93a7">Phase<br/><select id="tr-phase">${phaseOptions}</select></label>
+          <label style="flex:2;font-size:11px;color:#8b93a7">Protocol id<br/><input id="tr-protocol" type="text" value="${esc(trial.protocol_id || "")}" style="width:100%" /></label>
+        </div>
+        <div class="row">
+          <label style="flex:1;font-size:11px;color:#8b93a7">Sponsor<br/><input id="tr-sponsor" type="text" value="${esc(trial.sponsor)}" style="width:100%" /></label>
+          <label style="flex:2;font-size:11px;color:#8b93a7">Indication<br/><input id="tr-indication" type="text" value="${esc(trial.indication)}" style="width:100%" /></label>
+        </div>
+        <div class="row">
+          <button class="btn primary" onclick="saveTrial('${trial.id}')">Save changes</button>
+        </div>
+      </div>
+      <div id="tr-status-msg" class="status"></div>
+    </div>
+
+    <div class="section">
+      <h2>Assigned sites <span style="color:#5a6070;font-size:11px;text-transform:none">— sites participating in this trial</span></h2>
+      <table>
+        <thead><tr><th>Site</th><th>PI</th><th></th></tr></thead>
+        <tbody>${assignedRows}</tbody>
+      </table>
+      <div class="row" style="margin-top:10px">
+        <select id="assign-site" style="flex:1">
+          <option value="">— pick an account site —</option>
+          ${siteOptions}
+        </select>
+        <button class="btn primary" onclick="assignSite('${trial.id}')" ${unassignedSites.length === 0 ? "disabled" : ""}>Assign site</button>
+      </div>
+      <div id="assign-status" class="status"></div>
+    </div>
+
+    <div class="section">
+      <h2>Linked artefact threads <span style="color:#5a6070;font-size:11px;text-transform:none">— cross-phase deep-links</span></h2>
+      <table>
+        <tr><td><b>Registration draft</b></td><td>${trial.registration_thread_id ? `<a href="/?thread=${trial.registration_thread_id}" style="color:#7aa7d9">Open thread</a>` : `<span style="color:#5a6070">Not linked yet</span>`}</td></tr>
+        <tr><td><b>IRB / ICF packet</b></td><td>${trial.irb_thread_id ? `<a href="/?thread=${trial.irb_thread_id}" style="color:#7aa7d9">Open thread</a>` : `<span style="color:#5a6070">Not linked yet</span>`}</td></tr>
+        <tr><td><b>Statistical Analysis Plan</b></td><td>${trial.sap_thread_id ? `<a href="/?thread=${trial.sap_thread_id}" style="color:#7aa7d9">Open thread</a>` : `<span style="color:#5a6070">Not linked yet</span>`}</td></tr>
+        <tr><td><b>Clinical Study Report</b></td><td>${trial.csr_thread_id ? `<a href="/?thread=${trial.csr_thread_id}" style="color:#7aa7d9">Open thread</a>` : `<span style="color:#5a6070">Not linked yet</span>`}</td></tr>
+        <tr><td><b>Manuscript</b></td><td>${trial.manuscript_thread_id ? `<a href="/?thread=${trial.manuscript_thread_id}" style="color:#7aa7d9">Open thread</a>` : `<span style="color:#5a6070">Not linked yet</span>`}</td></tr>
+      </table>
+      <div class="row" style="margin-top:8px">
+        <span style="color:#5a6070;font-size:11px">${trial.n_deployments || 0} eCRF deployment(s) for this trial.</span>
+      </div>
+    </div>
+  `;
+}
+
+async function submitNewAccount() {
+  const name = $("new-account-name").value.trim();
+  const description = $("new-account-desc").value.trim();
+  const status = $("new-account-status");
+  if (!name) { status.className = "status err"; status.textContent = "Name required."; return; }
+  try {
+    const r = await api("/api/accounts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, description }),
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({ detail: r.statusText }));
+      status.className = "status err";
+      status.textContent = err.detail || r.statusText;
+      return;
+    }
+    closeModal("new-account-modal");
+    $("new-account-name").value = "";
+    $("new-account-desc").value = "";
+    await loadAccounts();
+  } catch (e) {
+    status.className = "status err";
+    status.textContent = "Failed: " + (e.message || e);
+  }
+}
+
+async function newTrial(accountId) {
+  const title = prompt("Trial title:");
+  if (!title) return;
+  try {
+    const r = await api(`/api/accounts/${accountId}/trials`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title }),
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({ detail: r.statusText }));
+      alert("Failed: " + (err.detail || r.statusText));
+      return;
+    }
+    await loadAccountDetail(accountId);
+  } catch (e) {
+    alert("Failed: " + (e.message || e));
+  }
+}
+
+async function addSite(accountId) {
+  const name = $("new-site-name").value.trim();
+  const code = $("new-site-code").value.trim();
+  const pi_name = $("new-site-pi").value.trim();
+  const contact_email = $("new-site-email").value.trim();
+  if (!name) return;
+  const status = $("site-status");
+  try {
+    const r = await api(`/api/accounts/${accountId}/sites`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, code: code || null, pi_name: pi_name || null, contact_email: contact_email || null }),
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({ detail: r.statusText }));
+      status.className = "status err";
+      status.textContent = err.detail || r.statusText;
+      return;
+    }
+    await loadAccountDetail(accountId);
+  } catch (e) {
+    status.className = "status err";
+    status.textContent = "Failed: " + (e.message || e);
+  }
+}
+
+async function inviteMember(accountId) {
+  const email = $("invite-email").value.trim();
+  const role = $("invite-role").value;
+  if (!email) return;
+  const status = $("member-status");
+  try {
+    const r = await api(`/api/accounts/${accountId}/members`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, role }),
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({ detail: r.statusText }));
+      status.className = "status err";
+      status.textContent = err.detail || r.statusText;
+      return;
+    }
+    await loadAccountDetail(accountId);
+  } catch (e) {
+    status.className = "status err";
+    status.textContent = "Failed: " + (e.message || e);
+  }
+}
+
+async function removeMember(accountId, userId) {
+  if (!confirm("Remove this member?")) return;
+  try {
+    const r = await api(`/api/accounts/${accountId}/members/${userId}`, { method: "DELETE" });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({ detail: r.statusText }));
+      alert("Failed: " + (err.detail || r.statusText));
+      return;
+    }
+    await loadAccountDetail(accountId);
+  } catch (e) {
+    alert("Failed: " + (e.message || e));
+  }
+}
+
+async function assignSite(trialId) {
+  const accountSiteId = $("assign-site").value;
+  if (!accountSiteId) return;
+  const status = $("assign-status");
+  try {
+    const r = await api(`/api/trials/${trialId}/sites`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ account_site_id: accountSiteId }),
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({ detail: r.statusText }));
+      status.className = "status err";
+      status.textContent = err.detail || r.statusText;
+      return;
+    }
+    await loadTrialDetail(trialId);
+  } catch (e) {
+    status.className = "status err";
+    status.textContent = "Failed: " + (e.message || e);
+  }
+}
+
+async function unassignSite(trialId, siteId) {
+  if (!confirm("Unassign this site from the trial?")) return;
+  try {
+    const r = await api(`/api/trials/${trialId}/sites/${siteId}`, { method: "DELETE" });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({ detail: r.statusText }));
+      alert("Failed: " + (err.detail || r.statusText));
+      return;
+    }
+    await loadTrialDetail(trialId);
+  } catch (e) {
+    alert("Failed: " + (e.message || e));
+  }
+}
+
+async function saveTrial(trialId) {
+  const phaseRaw = $("tr-phase").value;
+  const body = {
+    title: $("tr-title").value.trim(),
+    status: $("tr-status").value,
+    phase: phaseRaw || null,
+    protocol_id: $("tr-protocol").value.trim() || null,
+    sponsor: $("tr-sponsor").value,
+    indication: $("tr-indication").value,
+  };
+  const status = $("tr-status-msg");
+  try {
+    const r = await api(`/api/trials/${trialId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({ detail: r.statusText }));
+      status.className = "status err";
+      status.textContent = err.detail || r.statusText;
+      return;
+    }
+    status.className = "status ok";
+    status.textContent = "Saved.";
+  } catch (e) {
+    status.className = "status err";
+    status.textContent = "Failed: " + (e.message || e);
+  }
+}
+
+loadAccounts();
+</script>
+</body>
+</html>

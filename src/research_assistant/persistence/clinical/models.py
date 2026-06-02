@@ -69,6 +69,18 @@ class Site(ClinicalBase):
     )
     name: Mapped[str] = mapped_column(Text)
     code: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    # Account-layer linkage (Sprint A1). By-value because AccountSite lives
+    # in the research DB. Nullable for backwards-compat.
+    account_site_id: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        default=None,
+        index=True,
+        doc=(
+            "By-value FK to research-DB AccountSite.id. NULL = pre-account "
+            "legacy site OR a site without an institutional counterpart yet."
+        ),
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
     deployment: Mapped[StudyDeployment] = relationship(back_populates="sites")

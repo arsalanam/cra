@@ -1365,6 +1365,7 @@ function App() {
           {(hasPerm("data.enter") || hasPerm("data.read")) && (
             <a className="sidebar-link" href="/collector.html">✚ Data Capture</a>
           )}
+          {hasPerm("account.read") && <a className="sidebar-link" href="/accounts.html">⛁ Accounts</a>}
           {hasPerm("watch.read") && <a className="sidebar-link" href="/watches.html">▤ Watches</a>}
           {hasPerm("sr.read") && <a className="sidebar-link" href="/sr.html">⊟ SR Reviews</a>}
           {hasPerm("study.read") && <a className="sidebar-link" href="/multisite.html">▥ Multi-site</a>}

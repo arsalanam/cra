@@ -700,6 +700,15 @@ class EcrfStudy(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     schedule_json: Mapped[str] = mapped_column(Text, default='{"events": [], "form_event_map": []}')
     status: Mapped[str] = mapped_column(Text, default="draft", doc="draft | active | closed")
+    # Account-layer FK (Sprint A1). Nullable for backwards-compat:
+    # legacy studies land in the Default Account on init_db.
+    trial_id: Mapped[str | None] = mapped_column(
+        ForeignKey("clinical_trials.id", ondelete="SET NULL"),
+        nullable=True,
+        default=None,
+        index=True,
+        doc="Owning ClinicalTrial (Sprint A1). NULL = pre-account-layer legacy.",
+    )
     created_by: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(
@@ -973,3 +982,240 @@ class AiSuggestion(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
     candidate: Mapped[SrCandidate] = relationship(back_populates="ai_suggestions")
+
+
+# ── Account layer (Sprint A1) ────────────────────────────────────────────
+
+
+DEFAULT_ACCOUNT_NAME = "Default research program"
+
+
+class Account(Base):
+    """Top-level research-program / portfolio container.
+
+    Holds N concurrent ClinicalTrials plus the shared resources (sites,
+    members) used across them. Many Accounts can co-exist in one CRA
+    install — sponsor / institution / department all model cleanly as
+    separate Accounts.
+
+    Lives in the research DB (no PHI). The clinical store stays
+    untouched in schema; cross-store relations walk by-value via
+    `StudyDeployment.research_study_id → EcrfStudy.id → ClinicalTrial.id
+    → Account.id`.
+    """
+
+    __tablename__ = "accounts"
+    __table_args__ = (UniqueConstraint("name", name="uq_account_name"),)
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    name: Mapped[str] = mapped_column(Text)
+    description: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(
+        Text,
+        default="active",
+        doc="active | archived. Archived accounts are read-only.",
+    )
+    owner_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        default=None,
+        doc="Account owner. Implicit member with role='owner'.",
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
+
+    members: Mapped[list[AccountMember]] = relationship(
+        back_populates="account", cascade="all, delete-orphan"
+    )
+    sites: Mapped[list[AccountSite]] = relationship(
+        back_populates="account", cascade="all, delete-orphan"
+    )
+    trials: Mapped[list[ClinicalTrial]] = relationship(
+        back_populates="account", cascade="all, delete-orphan"
+    )
+
+
+class AccountMember(Base):
+    """User × Account membership row.
+
+    Mirrors the SR-screening membership pattern. Role grants default
+    permission sets at `ScopeType.ACCOUNT` scope; explicit per-Trial
+    or per-Deployment grants flow down via the existing RoleAssignment
+    surface.
+    """
+
+    __tablename__ = "account_members"
+    __table_args__ = (UniqueConstraint("account_id", "user_id", name="uq_account_member_user"),)
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    account_id: Mapped[str] = mapped_column(
+        ForeignKey("accounts.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    role: Mapped[str] = mapped_column(
+        Text,
+        default="member",
+        doc="owner | admin | member | observer.",
+    )
+    invited_by_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        default=None,
+    )
+    joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    account: Mapped[Account] = relationship(back_populates="members", foreign_keys=[account_id])
+
+
+class AccountSite(Base):
+    """A real-world research site at the Account level. Reusable across
+    Trials within the Account.
+
+    Carries institutional metadata (address, PI contact) that doesn't
+    fit on the clinical-DB `Site` row. The clinical-DB `Site` row gains
+    an optional `account_site_id` by-value FK so monitor + multi-site
+    views can look up the AccountSite for richer context.
+    """
+
+    __tablename__ = "account_sites"
+    __table_args__ = (UniqueConstraint("account_id", "code", name="uq_account_site_code"),)
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    account_id: Mapped[str] = mapped_column(
+        ForeignKey("accounts.id", ondelete="CASCADE"), index=True
+    )
+    name: Mapped[str] = mapped_column(Text)
+    code: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        default=None,
+        doc="Short code unique within the account (e.g. 'CHOP-CARDIO').",
+    )
+    address: Mapped[str] = mapped_column(Text, default="")
+    contact_email: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    pi_name: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    status: Mapped[str] = mapped_column(
+        Text,
+        default="active",
+        doc="active | inactive. Inactive sites can't be assigned to new trials.",
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
+
+    account: Mapped[Account] = relationship(back_populates="sites")
+    trial_assignments: Mapped[list[TrialSite]] = relationship(
+        back_populates="account_site", cascade="all, delete-orphan"
+    )
+
+
+class ClinicalTrial(Base):
+    """A single clinical trial under an Account.
+
+    Captures the trial as a long-lived object across all six lifecycle
+    phases. `status` pins the current phase-04 state:
+      design   — eCRF authoring in progress; no StudyDeployment yet
+      draft    — eCRF published; deployment not yet created
+      deployed — at least one active StudyDeployment exists
+      locked   — every deployment is E7-locked (database lock)
+      archived — operator closed the trial; read-only
+
+    Artefact thread links capture the cross-handoff state — e.g. the
+    registration_thread_id is set when the Trial's registration draft
+    lives in a specific chat thread, so the dashboard can deep-link
+    back into the conversation that produced it. All are optional.
+
+    Deployments aren't held as a FK here — the relation is recovered
+    via EcrfStudy.id == StudyDeployment.research_study_id (cross-store
+    by-value), the same posture as today.
+    """
+
+    __tablename__ = "clinical_trials"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    account_id: Mapped[str] = mapped_column(
+        ForeignKey("accounts.id", ondelete="CASCADE"), index=True
+    )
+
+    title: Mapped[str] = mapped_column(Text)
+    sponsor: Mapped[str] = mapped_column(Text, default="")
+    indication: Mapped[str] = mapped_column(Text, default="")
+    phase: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        default=None,
+        doc="phase_1 | phase_2 | phase_3 | phase_4 | observational | feasibility.",
+    )
+    protocol_id: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+
+    status: Mapped[str] = mapped_column(
+        Text,
+        default="design",
+        doc="design | draft | deployed | locked | archived.",
+    )
+
+    # Artefact thread links — each nullable; populated when the operator
+    # hands off into one of the cross-phase drafters.
+    registration_thread_id: Mapped[str | None] = mapped_column(
+        ForeignKey("threads.id", ondelete="SET NULL"), nullable=True, default=None
+    )
+    irb_thread_id: Mapped[str | None] = mapped_column(
+        ForeignKey("threads.id", ondelete="SET NULL"), nullable=True, default=None
+    )
+    sap_thread_id: Mapped[str | None] = mapped_column(
+        ForeignKey("threads.id", ondelete="SET NULL"), nullable=True, default=None
+    )
+    csr_thread_id: Mapped[str | None] = mapped_column(
+        ForeignKey("threads.id", ondelete="SET NULL"), nullable=True, default=None
+    )
+    manuscript_thread_id: Mapped[str | None] = mapped_column(
+        ForeignKey("threads.id", ondelete="SET NULL"), nullable=True, default=None
+    )
+
+    created_by_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, default=None
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
+
+    account: Mapped[Account] = relationship(back_populates="trials")
+    site_assignments: Mapped[list[TrialSite]] = relationship(
+        back_populates="trial", cascade="all, delete-orphan"
+    )
+
+
+class TrialSite(Base):
+    """Join row between ClinicalTrial and AccountSite.
+
+    Lets the same AccountSite participate in multiple trials within an
+    Account. `status` lets a site be paused for a single trial without
+    affecting its other trial participations.
+    """
+
+    __tablename__ = "trial_sites"
+    __table_args__ = (
+        UniqueConstraint("trial_id", "account_site_id", name="uq_trial_site_assignment"),
+    )
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    trial_id: Mapped[str] = mapped_column(
+        ForeignKey("clinical_trials.id", ondelete="CASCADE"), index=True
+    )
+    account_site_id: Mapped[str] = mapped_column(
+        ForeignKey("account_sites.id", ondelete="CASCADE"), index=True
+    )
+    status: Mapped[str] = mapped_column(
+        Text,
+        default="active",
+        doc="active | inactive. Inactive assignments are read-only.",
+    )
+    activated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    notes: Mapped[str] = mapped_column(Text, default="")
+
+    trial: Mapped[ClinicalTrial] = relationship(back_populates="site_assignments")
+    account_site: Mapped[AccountSite] = relationship(back_populates="trial_assignments")

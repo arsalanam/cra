@@ -25,6 +25,7 @@ from ..persistence.clinical.database import init_clinical_db
 from ..persistence.database import init_db
 from ..rag import register_embedding_drain
 from ..services.scheduler import start_scheduler, stop_scheduler
+from .accounts import create_accounts_router
 from .admin import create_admin_router
 from .auth import create_auth_router, current_user
 from .citations import create_citations_router
@@ -93,6 +94,7 @@ def create_app() -> FastAPI:
     app.include_router(create_watches_router(), prefix="/api", dependencies=auth_dep)
     app.include_router(create_subscriptions_router(), prefix="/api", dependencies=auth_dep)
     app.include_router(create_notifications_router(), prefix="/api", dependencies=auth_dep)
+    app.include_router(create_accounts_router(), prefix="/api", dependencies=auth_dep)
     app.include_router(create_library_router(), prefix="/api", dependencies=auth_dep)
     app.include_router(create_ecrf_router(), prefix="/api", dependencies=auth_dep)
     app.include_router(create_edc_router(), prefix="/api", dependencies=auth_dep)

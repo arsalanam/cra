@@ -161,6 +161,17 @@ class Permission(StrEnum):
     # researcher sees their own data via the per-user portfolio routes.
     PORTFOLIO_READ_ORG = "portfolio.read_org"
 
+    # ── Account layer (Sprint A1) ────────────────────────────────────────
+    # account.read: see an Account + its trials + sites + members.
+    # account.manage: create / archive accounts; manage membership + sites.
+    # trial.read: see a ClinicalTrial + its linked artefacts + deployments.
+    # trial.manage: create / update / archive a ClinicalTrial; bind
+    #   artefact threads; assign account sites.
+    ACCOUNT_READ = "account.read"
+    ACCOUNT_MANAGE = "account.manage"
+    TRIAL_READ = "trial.read"
+    TRIAL_MANAGE = "trial.manage"
+
 
 class Role(StrEnum):
     """Canonical role names. Free-text role strings stored historically (e.g.
@@ -199,6 +210,13 @@ class ScopeType(StrEnum):
     STUDY = "study"
     SITE = "site"
     SR_REVIEW = "sr_review"
+    # Sprint A1 — account layer. ACCOUNT ⊃ TRIAL ⊃ STUDY (where the
+    # Trial wraps an EcrfStudy that becomes one or more StudyDeployments).
+    # `account` and `trial` grants don't satisfy a bare `study` grant
+    # today — RBAC-2 widening across hierarchies is a follow-up. The
+    # resource-resolver convention is documented in web/authz.py.
+    ACCOUNT = "account"
+    TRIAL = "trial"
 
 
 # ── Permission groupings used to compose the matrix ──────────────────────
@@ -280,6 +298,12 @@ ROLE_PERMISSIONS: Final[dict[Role, frozenset[Permission]]] = {
             Permission.WATCH_READ,
             Permission.WATCH_MANAGE,
             Permission.WATCH_SUBSCRIPTION_VOTE,
+            # Sprint A1 account layer — researchers can create + manage
+            # their own research-program accounts + trials.
+            Permission.ACCOUNT_READ,
+            Permission.ACCOUNT_MANAGE,
+            Permission.TRIAL_READ,
+            Permission.TRIAL_MANAGE,
             # Researchers can spin up SR projects and assign reviewers, and
             # see project-level state; the per-project screening permissions
             # come from project membership (reviewer_1/2/adjudicator), not
@@ -321,6 +345,10 @@ ROLE_PERMISSIONS: Final[dict[Role, frozenset[Permission]]] = {
             # Lab-data feeds: auditor reads parsed lab results as
             # source-data verification.
             Permission.LAB_READ,
+            # Sprint A1: auditor reads the account hierarchy + trial
+            # statuses; no mutation.
+            Permission.ACCOUNT_READ,
+            Permission.TRIAL_READ,
         }
     ),
     Role.STUDY_DESIGNER: frozenset(

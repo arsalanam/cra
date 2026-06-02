@@ -11,6 +11,11 @@ from sqlalchemy.orm import selectinload
 
 from .models import (
     DEFAULT_USER_ID,
+    Account,
+    AccountMember,
+    AccountSite,
+    ClinicalTrial,
+    EcrfStudy,
     LiteratureWatch,
     LiteratureWatchSubscription,
     Message,
@@ -19,6 +24,7 @@ from .models import (
     StreamEvent,
     SubscriptionMember,
     Thread,
+    TrialSite,
     WatchRun,
 )
 
@@ -706,3 +712,392 @@ class SubscriptionRepository:
             created.append(notif)
         await self._s.flush()
         return created
+
+
+# ── Account layer (Sprint A1) ────────────────────────────────────────────
+
+
+class AccountError(Exception):
+    """Raised on invalid account-layer state changes — invalid status
+    transition, duplicate site code, missing parent account, etc.
+    Translated to 4xx by the endpoint layer."""
+
+
+class AccountRepository:
+    """CRUD for the Account / ClinicalTrial / AccountSite + their joins.
+
+    Membership semantics:
+      • owner_user_id is the implicit primary owner (one per Account).
+      • AccountMember rows give explicit per-user role grants. The
+        owner_user_id row is also represented as an AccountMember with
+        role='owner' for consistency.
+    """
+
+    _ALLOWED_ACCOUNT_STATUS = ("active", "archived")
+    _ALLOWED_MEMBER_ROLES = ("owner", "admin", "member", "observer")
+    _ALLOWED_SITE_STATUS = ("active", "inactive")
+    _ALLOWED_TRIAL_STATUS = ("design", "draft", "deployed", "locked", "archived")
+    _ALLOWED_TRIAL_PHASES = (
+        "phase_1",
+        "phase_2",
+        "phase_3",
+        "phase_4",
+        "observational",
+        "feasibility",
+    )
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._s = session
+
+    # ── Accounts ──────────────────────────────────────────────────────
+
+    async def create_account(
+        self,
+        *,
+        name: str,
+        owner_user_id: str | None = None,
+        description: str = "",
+    ) -> Account:
+        if not name.strip():
+            raise AccountError("Account name must be non-empty.")
+        existing = await self._s.scalar(select(Account).where(Account.name == name))
+        if existing is not None:
+            raise AccountError(f"Account named {name!r} already exists.")
+        account = Account(
+            name=name.strip(),
+            description=description,
+            owner_user_id=owner_user_id,
+            status="active",
+        )
+        self._s.add(account)
+        await self._s.flush()
+        if owner_user_id is not None:
+            self._s.add(
+                AccountMember(
+                    account_id=account.id,
+                    user_id=owner_user_id,
+                    role="owner",
+                    invited_by_user_id=owner_user_id,
+                )
+            )
+            await self._s.flush()
+        return account
+
+    async def get_account(self, account_id: str) -> Account | None:
+        return await self._s.get(Account, account_id)
+
+    async def list_accounts_for_user(self, user_id: str) -> list[Account]:
+        """Return every account where the user owns OR is a member."""
+        member_ids = select(AccountMember.account_id).where(AccountMember.user_id == user_id)
+        stmt = (
+            select(Account)
+            .where((Account.owner_user_id == user_id) | (Account.id.in_(member_ids)))
+            .order_by(Account.created_at.desc())
+        )
+        return list((await self._s.scalars(stmt)).all())
+
+    async def update_account(self, account_id: str, **kwargs: object) -> Account | None:
+        account = await self._s.get(Account, account_id)
+        if account is None:
+            return None
+        if "status" in kwargs:
+            status = kwargs["status"]
+            if status not in self._ALLOWED_ACCOUNT_STATUS:
+                raise AccountError(
+                    f"Invalid status {status!r}; choose {', '.join(self._ALLOWED_ACCOUNT_STATUS)}."
+                )
+        for k, v in kwargs.items():
+            if hasattr(account, k):
+                setattr(account, k, v)
+        await self._s.flush()
+        return account
+
+    async def archive_account(self, account_id: str) -> bool:
+        account = await self._s.get(Account, account_id)
+        if account is None:
+            return False
+        account.status = "archived"
+        await self._s.flush()
+        return True
+
+    # ── Members ───────────────────────────────────────────────────────
+
+    async def add_member(
+        self,
+        *,
+        account_id: str,
+        user_id: str,
+        role: str = "member",
+        invited_by_user_id: str | None = None,
+    ) -> AccountMember:
+        if role not in self._ALLOWED_MEMBER_ROLES:
+            raise AccountError(
+                f"Invalid member role {role!r}; choose {', '.join(self._ALLOWED_MEMBER_ROLES)}."
+            )
+        account = await self._s.get(Account, account_id)
+        if account is None:
+            raise AccountError(f"Account {account_id!r} not found.")
+        # Idempotent upsert keyed on (account, user).
+        existing = await self._s.scalar(
+            select(AccountMember).where(
+                AccountMember.account_id == account_id,
+                AccountMember.user_id == user_id,
+            )
+        )
+        if existing is not None:
+            existing.role = role
+            existing.invited_by_user_id = invited_by_user_id
+            await self._s.flush()
+            return existing
+        member = AccountMember(
+            account_id=account_id,
+            user_id=user_id,
+            role=role,
+            invited_by_user_id=invited_by_user_id,
+        )
+        self._s.add(member)
+        await self._s.flush()
+        return member
+
+    async def remove_member(self, *, account_id: str, user_id: str) -> bool:
+        member = await self._s.scalar(
+            select(AccountMember).where(
+                AccountMember.account_id == account_id,
+                AccountMember.user_id == user_id,
+            )
+        )
+        if member is None:
+            return False
+        # Refuse to remove the owner-member if they're still the
+        # owner_user_id; force the operator to transfer ownership first.
+        account = await self._s.get(Account, account_id)
+        if account is not None and account.owner_user_id == user_id:
+            raise AccountError("Cannot remove the account owner; transfer ownership first.")
+        await self._s.delete(member)
+        await self._s.flush()
+        return True
+
+    async def list_members(self, account_id: str) -> list[AccountMember]:
+        stmt = (
+            select(AccountMember)
+            .where(AccountMember.account_id == account_id)
+            .order_by(AccountMember.joined_at)
+        )
+        return list((await self._s.scalars(stmt)).all())
+
+    async def is_member(self, *, account_id: str, user_id: str) -> AccountMember | None:
+        result: AccountMember | None = await self._s.scalar(
+            select(AccountMember).where(
+                AccountMember.account_id == account_id,
+                AccountMember.user_id == user_id,
+            )
+        )
+        return result
+
+    # ── Account sites ─────────────────────────────────────────────────
+
+    async def create_site(
+        self,
+        account_id: str,
+        *,
+        name: str,
+        code: str | None = None,
+        address: str = "",
+        contact_email: str | None = None,
+        pi_name: str | None = None,
+    ) -> AccountSite:
+        account = await self._s.get(Account, account_id)
+        if account is None:
+            raise AccountError(f"Account {account_id!r} not found.")
+        if code is not None:
+            existing = await self._s.scalar(
+                select(AccountSite).where(
+                    AccountSite.account_id == account_id,
+                    AccountSite.code == code,
+                )
+            )
+            if existing is not None:
+                raise AccountError(f"Site code {code!r} already used in this account.")
+        site = AccountSite(
+            account_id=account_id,
+            name=name,
+            code=code,
+            address=address,
+            contact_email=contact_email,
+            pi_name=pi_name,
+            status="active",
+        )
+        self._s.add(site)
+        await self._s.flush()
+        return site
+
+    async def list_sites(self, account_id: str) -> list[AccountSite]:
+        stmt = (
+            select(AccountSite)
+            .where(AccountSite.account_id == account_id)
+            .order_by(AccountSite.created_at)
+        )
+        return list((await self._s.scalars(stmt)).all())
+
+    async def get_site(self, site_id: str) -> AccountSite | None:
+        return await self._s.get(AccountSite, site_id)
+
+    async def update_site(self, site_id: str, **kwargs: object) -> AccountSite | None:
+        site = await self._s.get(AccountSite, site_id)
+        if site is None:
+            return None
+        if "status" in kwargs:
+            status = kwargs["status"]
+            if status not in self._ALLOWED_SITE_STATUS:
+                raise AccountError(
+                    f"Invalid status {status!r}; choose {', '.join(self._ALLOWED_SITE_STATUS)}."
+                )
+        for k, v in kwargs.items():
+            if hasattr(site, k):
+                setattr(site, k, v)
+        await self._s.flush()
+        return site
+
+    # ── Trials ────────────────────────────────────────────────────────
+
+    async def create_trial(
+        self,
+        account_id: str,
+        *,
+        title: str,
+        sponsor: str = "",
+        indication: str = "",
+        phase: str | None = None,
+        protocol_id: str | None = None,
+        created_by_user_id: str | None = None,
+    ) -> ClinicalTrial:
+        account = await self._s.get(Account, account_id)
+        if account is None:
+            raise AccountError(f"Account {account_id!r} not found.")
+        if phase is not None and phase not in self._ALLOWED_TRIAL_PHASES:
+            raise AccountError(
+                f"Invalid phase {phase!r}; choose {', '.join(self._ALLOWED_TRIAL_PHASES)}."
+            )
+        trial = ClinicalTrial(
+            account_id=account_id,
+            title=title,
+            sponsor=sponsor,
+            indication=indication,
+            phase=phase,
+            protocol_id=protocol_id,
+            status="design",
+            created_by_user_id=created_by_user_id,
+        )
+        self._s.add(trial)
+        await self._s.flush()
+        return trial
+
+    async def get_trial(self, trial_id: str) -> ClinicalTrial | None:
+        return await self._s.get(ClinicalTrial, trial_id)
+
+    async def list_trials_for_account(
+        self,
+        account_id: str,
+        *,
+        status: str | None = None,
+    ) -> list[ClinicalTrial]:
+        stmt = (
+            select(ClinicalTrial)
+            .where(ClinicalTrial.account_id == account_id)
+            .order_by(ClinicalTrial.created_at.desc())
+        )
+        if status is not None:
+            stmt = stmt.where(ClinicalTrial.status == status)
+        return list((await self._s.scalars(stmt)).all())
+
+    async def update_trial(self, trial_id: str, **kwargs: object) -> ClinicalTrial | None:
+        trial = await self._s.get(ClinicalTrial, trial_id)
+        if trial is None:
+            return None
+        if "status" in kwargs:
+            status = kwargs["status"]
+            if status not in self._ALLOWED_TRIAL_STATUS:
+                raise AccountError(
+                    f"Invalid status {status!r}; choose {', '.join(self._ALLOWED_TRIAL_STATUS)}."
+                )
+        if "phase" in kwargs:
+            phase = kwargs["phase"]
+            if phase is not None and phase not in self._ALLOWED_TRIAL_PHASES:
+                raise AccountError(
+                    f"Invalid phase {phase!r}; choose {', '.join(self._ALLOWED_TRIAL_PHASES)}."
+                )
+        for k, v in kwargs.items():
+            if hasattr(trial, k):
+                setattr(trial, k, v)
+        await self._s.flush()
+        return trial
+
+    # ── Trial ↔ Site assignment ──────────────────────────────────────
+
+    async def assign_site_to_trial(
+        self,
+        *,
+        trial_id: str,
+        account_site_id: str,
+        notes: str = "",
+    ) -> TrialSite:
+        trial = await self._s.get(ClinicalTrial, trial_id)
+        if trial is None:
+            raise AccountError(f"Trial {trial_id!r} not found.")
+        site = await self._s.get(AccountSite, account_site_id)
+        if site is None:
+            raise AccountError(f"Account site {account_site_id!r} not found.")
+        if site.account_id != trial.account_id:
+            raise AccountError("Site and trial must belong to the same account.")
+        if site.status != "active":
+            raise AccountError(f"Cannot assign inactive site {site.name!r} to a trial.")
+        # Idempotent upsert.
+        existing = await self._s.scalar(
+            select(TrialSite).where(
+                TrialSite.trial_id == trial_id,
+                TrialSite.account_site_id == account_site_id,
+            )
+        )
+        if existing is not None:
+            existing.status = "active"
+            existing.notes = notes
+            await self._s.flush()
+            return existing
+        ts = TrialSite(
+            trial_id=trial_id,
+            account_site_id=account_site_id,
+            notes=notes,
+            status="active",
+        )
+        self._s.add(ts)
+        await self._s.flush()
+        return ts
+
+    async def unassign_site_from_trial(self, *, trial_id: str, account_site_id: str) -> bool:
+        row = await self._s.scalar(
+            select(TrialSite).where(
+                TrialSite.trial_id == trial_id,
+                TrialSite.account_site_id == account_site_id,
+            )
+        )
+        if row is None:
+            return False
+        await self._s.delete(row)
+        await self._s.flush()
+        return True
+
+    async def list_trial_sites(self, trial_id: str) -> list[TrialSite]:
+        stmt = (
+            select(TrialSite).where(TrialSite.trial_id == trial_id).order_by(TrialSite.activated_at)
+        )
+        return list((await self._s.scalars(stmt)).all())
+
+    # ── Cross-store resolution ───────────────────────────────────────
+
+    async def resolve_trial_for_ecrf_study(self, ecrf_study_id: str) -> ClinicalTrial | None:
+        """Walk EcrfStudy.trial_id → ClinicalTrial. Returns None for
+        legacy studies that pre-date the account layer."""
+        study = await self._s.get(EcrfStudy, ecrf_study_id)
+        if study is None or study.trial_id is None:
+            return None
+        return await self._s.get(ClinicalTrial, study.trial_id)
