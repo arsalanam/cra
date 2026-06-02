@@ -186,9 +186,33 @@ class TrialView(BaseModel):
     updated_at: datetime
 
 
+class DeploymentRefView(BaseModel):
+    """Sprint A3: cross-store deployment summary for the trial dashboard
+    so the operator can resume Phase-04 work without re-picking from a
+    bare list. Lock state pulled from clinical DB; auto-promotion to
+    `locked` happens via the A2 trial-status hook."""
+
+    model_config = ConfigDict(extra="forbid")
+    deployment_id: str
+    name: str
+    is_locked: bool
+
+
+class StudyRefView(BaseModel):
+    """Sprint A3: per-study rollup under a Trial — deep-link targets for
+    eCRF design (X1) + collector (X2-X12) + multisite (X11)."""
+
+    model_config = ConfigDict(extra="forbid")
+    study_id: str
+    name: str
+    status: str
+    deployments: list[DeploymentRefView] = Field(default_factory=list)
+
+
 class TrialDetailView(TrialView):
     sites: list[AccountSiteView] = Field(default_factory=list)
     n_deployments: int = 0
+    studies: list[StudyRefView] = Field(default_factory=list)
 
 
 class TrialSiteAssign(BaseModel):
@@ -619,39 +643,64 @@ def create_accounts_router() -> APIRouter:
                 site_obj = await repo.get_site(a.account_site_id)
                 if site_obj is not None:
                     site_views.append(AccountSiteView.model_validate(site_obj))
-            # Count deployments via the EcrfStudy lookup chain.
-            studies = await session.scalars(select(EcrfStudy).where(EcrfStudy.trial_id == trial_id))
-            study_ids = [s.id for s in studies]
+            # Sprint A3: surface every Study + its Deployments + lock state
+            # so /accounts.html trial-detail can deep-link the operator
+            # straight into the Phase-04 surface they were working in.
+            # Lock state lives in the clinical store; we read both stores in
+            # a single GET to avoid an N+1 over per-deployment fetches.
+            studies_res = await session.scalars(
+                select(EcrfStudy).where(EcrfStudy.trial_id == trial_id)
+            )
+            studies_list = list(studies_res)
+            study_ids = [s.id for s in studies_list]
+            study_refs: list[StudyRefView] = []
             n_deployments = 0
             if study_ids:
-                # Deployments live in the clinical DB.
                 from ..persistence.clinical.database import get_clinical_session
-                from ..persistence.clinical.models import StudyDeployment
+                from ..persistence.clinical.models import StudyDeployment, StudyLock
 
                 async with get_clinical_session() as cs:
-                    n_deployments = int(
-                        await cs.scalar(
-                            select(StudyDeployment).where(
-                                StudyDeployment.research_study_id.in_(study_ids)
-                            )
+                    deps_res = await cs.scalars(
+                        select(StudyDeployment).where(
+                            StudyDeployment.research_study_id.in_(study_ids)
                         )
-                        is not None
                     )
-                    from sqlalchemy import func
-
-                    n_deployments = (
-                        await cs.scalar(
-                            select(func.count(StudyDeployment.id)).where(
-                                StudyDeployment.research_study_id.in_(study_ids)
+                    deps_list = list(deps_res)
+                    n_deployments = len(deps_list)
+                    locked_ids: set[str] = set()
+                    if deps_list:
+                        locks_res = await cs.scalars(
+                            select(StudyLock).where(
+                                StudyLock.deployment_id.in_([d.id for d in deps_list]),
+                                StudyLock.locked_at.isnot(None),
+                                StudyLock.unlocked_at.is_(None),
                             )
                         )
-                        or 0
+                        locked_ids = {ln.deployment_id for ln in locks_res}
+                    deps_by_study: dict[str, list[DeploymentRefView]] = {}
+                    for d in deps_list:
+                        deps_by_study.setdefault(d.research_study_id, []).append(
+                            DeploymentRefView(
+                                deployment_id=d.id,
+                                name=d.name,
+                                is_locked=d.id in locked_ids,
+                            )
+                        )
+                for s in studies_list:
+                    study_refs.append(
+                        StudyRefView(
+                            study_id=s.id,
+                            name=s.name,
+                            status=s.status,
+                            deployments=deps_by_study.get(s.id, []),
+                        )
                     )
             base = TrialView.model_validate(trial)
             return TrialDetailView(
                 **base.model_dump(),
                 sites=site_views,
                 n_deployments=int(n_deployments),
+                studies=study_refs,
             )
 
     @router.patch("/trials/{trial_id}", response_model=TrialView)

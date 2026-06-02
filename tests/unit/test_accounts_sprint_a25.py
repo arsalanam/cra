@@ -92,9 +92,7 @@ async def test_autobind_writes_to_correct_slot(
     db_session.add(thread)
     await db_session.flush()
 
-    await _maybe_autobind_artefact(
-        db_session, thread_id=thread.id, trial_id=t.id, output_kind=kind
-    )
+    await _maybe_autobind_artefact(db_session, thread_id=thread.id, trial_id=t.id, output_kind=kind)
 
     refreshed = await repo.get_trial(t.id)
     assert refreshed is not None
@@ -168,9 +166,7 @@ async def test_autobind_idempotent_when_slot_populated(
     await db_session.flush()
 
     # Pre-bind first thread.
-    await repo.bind_trial_artefact(
-        trial_id=t.id, kind="manuscript", thread_id=first.id
-    )
+    await repo.bind_trial_artefact(trial_id=t.id, kind="manuscript", thread_id=first.id)
     # Second thread reaches the same terminal kind.
     await _maybe_autobind_artefact(
         db_session,

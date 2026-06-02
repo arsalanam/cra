@@ -260,8 +260,19 @@ function reloadCurrent() {
   loadOrg();
 }
 
-loadDeployments();
-loadOrg();
+/* Sprint A3: honour ?deployment=<id> for resume-from-/accounts.html. */
+(async () => {
+  await loadDeployments();
+  loadOrg();
+  const params = new URLSearchParams(location.search);
+  const dep = params.get("deployment");
+  if (!dep) return;
+  const sel = document.getElementById("deployment");
+  if ([...sel.options].some(o => o.value === dep)) {
+    sel.value = dep;
+    loadDeployment(dep);
+  }
+})();
 </script>
 </body>
 </html>

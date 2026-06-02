@@ -149,9 +149,7 @@ def create_thread_router() -> APIRouter:
                     acct = await acct_repo.get_account(trial.account_id)
                     if acct is None or (
                         acct.owner_user_id != owner
-                        and await acct_repo.is_member(
-                            account_id=trial.account_id, user_id=owner
-                        )
+                        and await acct_repo.is_member(account_id=trial.account_id, user_id=owner)
                         is None
                     ):
                         raise HTTPException(404, "Trial not found")

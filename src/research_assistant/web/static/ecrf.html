@@ -196,7 +196,18 @@
     setStatus("Loaded AI draft into the editor. Review, then Save to create it under the selected study.", "muted");
     clearErr();
   }
-  loadStudies();
+  /* Sprint A3: honour ?study=<id> for resume-from-/accounts.html. Loads
+     study list first, then selects the requested study so its forms +
+     label populate without an extra click. */
+  (async () => {
+    await loadStudies();
+    const params = new URLSearchParams(location.search);
+    const sid = params.get("study");
+    if (!sid) return;
+    const studies = await (await api("/api/ecrf/studies")).json();
+    const match = studies.find(s => s.id === sid);
+    if (match) selectStudy(match.id, match.name);
+  })();
 </script>
 </body>
 </html>

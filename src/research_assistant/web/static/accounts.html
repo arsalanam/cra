@@ -354,6 +354,8 @@ function renderTrialDetail(trial, account) {
       <div id="assign-status" class="status"></div>
     </div>
 
+    ${renderResumeSection(trial)}
+
     <div class="section">
       <h2>Linked artefact threads <span style="color:#5a6070;font-size:11px;text-transform:none">— cross-phase deep-links</span></h2>
       <table>
@@ -365,6 +367,59 @@ function renderTrialDetail(trial, account) {
       </table>
       <div class="row" style="margin-top:8px">
         <span style="color:#5a6070;font-size:11px">${trial.n_deployments || 0} eCRF deployment(s) for this trial. Drafting a thread auto-binds it to the slot when the workflow reaches its terminal card.</span>
+      </div>
+    </div>
+  `;
+}
+
+/* Sprint A3: "Resume work" section — surfaces every Study + its
+   Deployments under this Trial, with deep-links that pre-select the
+   target in ecrf.html / collector.html / multisite.html. Closes the
+   audit-finding that operators couldn't get from /accounts.html into
+   the Phase-04 surface they were last working in. */
+function renderResumeSection(trial) {
+  const studies = trial.studies || [];
+  if (studies.length === 0) {
+    return `
+      <div class="section">
+        <h2>Resume work <span style="color:#5a6070;font-size:11px;text-transform:none">— Phase-04 surfaces</span></h2>
+        <div style="color:#5a6070;text-align:center;padding:14px">
+          No eCRF study attached yet. Author a study at
+          <a href="/ecrf.html" style="color:#7aa7d9">ecrf.html</a> and link it via Trial id.
+        </div>
+      </div>
+    `;
+  }
+  const studyBlocks = studies.map(s => {
+    const depRows = (s.deployments || []).length
+      ? s.deployments.map(d => `
+          <tr>
+            <td style="padding-left:18px"><b>${esc(d.name)}</b>
+              ${d.is_locked ? `<span class="pill locked" style="margin-left:6px">locked</span>` : ""}
+            </td>
+            <td style="text-align:right">
+              <a class="btn" href="/collector.html?deployment=${encodeURIComponent(d.deployment_id)}" style="margin-right:6px">Open collector</a>
+              <a class="btn" href="/multisite.html?deployment=${encodeURIComponent(d.deployment_id)}">Multi-site rollup</a>
+            </td>
+          </tr>
+        `).join("")
+      : `<tr><td style="padding-left:18px;color:#5a6070" colspan="2">No deployment yet — publish the study and create one from /collector.html.</td></tr>`;
+    return `
+      <tr>
+        <td><b>${esc(s.name)}</b> <span class="pill ${s.status}">${s.status}</span></td>
+        <td style="text-align:right">
+          <a class="btn primary" href="/ecrf.html">Open in eCRF designer</a>
+        </td>
+      </tr>
+      ${depRows}
+    `;
+  }).join("");
+  return `
+    <div class="section">
+      <h2>Resume work <span style="color:#5a6070;font-size:11px;text-transform:none">— Phase-04 surfaces (X1-X13)</span></h2>
+      <table>${studyBlocks}</table>
+      <div style="color:#5a6070;font-size:11px;margin-top:8px">
+        Deep-links pre-select the deployment / study on the destination page so you land in the right context.
       </div>
     </div>
   `;

@@ -1117,7 +1117,20 @@
     await loadLabFeeds();
   };
 
-  loadDeployments();
+  /* Sprint A3: honour ?deployment=<id> for resume-from-/accounts.html.
+     Pre-selects the deployment in the picker after the deployment list
+     loads so the operator lands on their working surface in one click. */
+  (async () => {
+    await loadDeployments();
+    const params = new URLSearchParams(location.search);
+    const dep = params.get("deployment");
+    if (!dep) return;
+    const sel = document.getElementById("deployments");
+    if ([...sel.options].some(o => o.value === dep)) {
+      sel.value = dep;
+      selectDeployment(dep);
+    }
+  })();
 </script>
 </body>
 </html>
