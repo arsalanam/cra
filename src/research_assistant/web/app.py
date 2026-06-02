@@ -34,6 +34,7 @@ from .ecrf import create_ecrf_router
 from .edc import create_edc_router
 from .epro import create_epro_router
 from .library import create_library_router
+from .onboarding import create_onboarding_router
 from .portfolio import create_portfolio_router
 from .sr import create_sr_router
 from .threads import create_thread_router
@@ -93,6 +94,7 @@ def create_app() -> FastAPI:
     app.include_router(create_dispatch_router(), prefix="/api", dependencies=auth_dep)
     app.include_router(create_admin_router(), prefix="/api")
     app.include_router(create_user_admin_router(), prefix="/api", dependencies=auth_dep)
+    app.include_router(create_onboarding_router(), prefix="/api", dependencies=auth_dep)
     app.include_router(create_watches_router(), prefix="/api", dependencies=auth_dep)
     app.include_router(create_subscriptions_router(), prefix="/api", dependencies=auth_dep)
     app.include_router(create_notifications_router(), prefix="/api", dependencies=auth_dep)

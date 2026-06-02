@@ -333,6 +333,9 @@ def require_permission_scoped(
         )
 
     async def _dep(request: Request, user: CurrentUser) -> SessionPayload:
+        from ..persistence.user_admin_repository import UserAdminRepository
+        from ..services.user_admin import CLINICAL_WRITE_PERMS, is_onboarded
+
         settings = get_settings()
         if not settings.auth_enabled:
             return user
@@ -352,12 +355,32 @@ def require_permission_scoped(
             study_id, site_id, sr_review_id = await resolver(str(raw))
 
         async with get_db_session() as db:
-            perms = await UserRepository(db).effective_permissions_for_sub(
+            user_repo = UserRepository(db)
+            perms = await user_repo.effective_permissions_for_sub(
                 user.sub,
                 study_id=study_id,
                 site_id=site_id,
                 sr_review_id=sr_review_id,
             )
+            # Sprint U3 — onboarding gate. When the caller is going for a
+            # clinical-write permission, also verify they've completed
+            # onboarding (profile filled + Complete clicked). Read-only
+            # perms are unaffected; admin / research-tier work continues
+            # for anyone who has the role.
+            if perm in CLINICAL_WRITE_PERMS:
+                local = await user_repo.get_by_sub(user.sub)
+                if local is not None:
+                    admin_repo = UserAdminRepository(db)
+                    profile = await admin_repo.get_profile(local.id)
+                    if not is_onboarded(profile):
+                        raise HTTPException(
+                            status_code=403,
+                            detail=(
+                                "Onboarding required — complete your profile at "
+                                "/onboarding.html before performing clinical-data "
+                                "actions. (ICH E6 §4.2.4; 21 CFR Part 11 §11.10(d))"
+                            ),
+                        )
         if perm not in perms:
             scope_bits = []
             if study_id:

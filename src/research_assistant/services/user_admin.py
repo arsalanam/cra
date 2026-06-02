@@ -25,7 +25,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import StrEnum
 
-from ..auth.rbac import Role
+from ..auth.rbac import Permission, Role
 
 # ── Profile fields ──────────────────────────────────────────────────────
 
@@ -378,3 +378,91 @@ def missing_required_fields(
 def list_known_roles() -> tuple[str, ...]:
     """Convenience for input validation in DTOs / endpoints."""
     return tuple(r.value for r in Role)
+
+
+def compute_missing_by_role(
+    *,
+    assignment_roles: Iterable[str],
+    profile: object | None,
+) -> dict[str, list[str]]:
+    """Sprint U3 — given the roles a user holds, return a {role: [missing
+    field names]} map. Used by /auth/me onboarding flags + /api/onboarding
+    self-service endpoints + the U2 admin detail panel.
+
+    Roles are deduped: a user with PI on two different studies still only
+    needs the PI required fields once.
+    """
+    out: dict[str, list[str]] = {}
+    for role_str in sorted(set(assignment_roles)):
+        missing = missing_required_fields(role=role_str, profile=profile)
+        if missing:
+            out[role_str] = [f.value for f in missing]
+    return out
+
+
+# ── Sprint U3 — clinical-write permission set + onboarding gate ─────────
+
+# Permissions that mutate clinical / patient data. When the caller goes
+# through `require_permission_scoped` for one of these, the dependency
+# additionally enforces the onboarding gate (profile completed + all
+# REQUIRED_FIELDS filled for their held roles). Read-only permissions are
+# deliberately NOT included — they don't change the audit story.
+CLINICAL_WRITE_PERMS: frozenset[Permission] = frozenset(
+    {
+        # eCRF data capture
+        Permission.DATA_ENTER,
+        # Queries
+        Permission.QUERY_RAISE,
+        Permission.QUERY_RESPOND,
+        Permission.QUERY_CLOSE,
+        # Monitoring + signing
+        Permission.SDV_VERIFY,
+        Permission.FORM_SIGN,
+        Permission.FORM_UNLOCK,
+        Permission.CASEBOOK_SIGNOFF,
+        Permission.SUBJECT_UNLOCK,
+        # Study-level lock
+        Permission.STUDY_LOCK,
+        # Randomisation / IRT writes
+        Permission.RANDOMIZATION_GENERATE,
+        Permission.RANDOMIZATION_ALLOCATE,
+        Permission.RANDOMIZATION_CODEBREAK,
+        # Safety
+        Permission.AE_RECORD,
+        Permission.AE_CLASSIFY,
+        Permission.SAE_REPORT,
+        Permission.DEVIATION_RECORD,
+        Permission.DEVIATION_CLASSIFY,
+        Permission.CAPA_AUTHOR,
+        Permission.CAPA_CLOSE,
+        # Recruitment
+        Permission.SCREENING_RECORD,
+        Permission.SCREENING_UPDATE,
+        # Visits
+        Permission.VISIT_UPDATE,
+        Permission.PARTICIPANT_CONTACT_MANAGE,
+        Permission.VISIT_SCHEDULE_AUTHOR,
+        # Source-doc extraction
+        Permission.SOURCE_DOCUMENT_UPLOAD,
+        Permission.EXTRACTION_MAPPING_AUTHOR,
+        Permission.EXTRACTION_MAPPING_APPLY,
+        # Drug accountability
+        Permission.IP_CATALOGUE,
+        Permission.IP_RECEIVE,
+        Permission.IP_DISPENSE,
+        Permission.IP_RETURN,
+        # Lab feeds
+        Permission.LAB_UPLOAD,
+        # CDISC derivation (writes ADaM)
+        Permission.CDISC_DERIVE,
+    }
+)
+
+
+def is_onboarded(profile: object | None) -> bool:
+    """A user is onboarded when their UserProfile.onboarding_completed_at
+    is set. Missing profile → not onboarded."""
+    if profile is None:
+        return False
+    completed = getattr(profile, "onboarding_completed_at", None)
+    return completed is not None

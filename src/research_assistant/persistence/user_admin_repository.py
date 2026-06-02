@@ -291,6 +291,16 @@ class UserAdminRepository:
         )
         return list((await self._s.scalars(stmt)).all())
 
+    async def onboarding_snapshot_for_user(
+        self, user_id: str
+    ) -> tuple[UserProfile | None, list[RoleAssignment]]:
+        """Sprint U3 — one-shot fetch of (profile, assignments) for the
+        onboarding gate check. Used by /auth/me + the require_onboarded
+        dependency to avoid two round-trips on every request."""
+        profile = await self.get_profile(user_id)
+        assignments = await self.list_assignments_for_user(user_id)
+        return profile, assignments
+
     async def list_assignments_for_users(
         self, user_ids: Iterable[str]
     ) -> dict[str, list[RoleAssignment]]:

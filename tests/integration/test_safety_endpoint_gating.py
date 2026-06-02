@@ -63,8 +63,10 @@ def _cookie(sub: str, email: str) -> str:
 
 
 async def _seed(sub: str, email: str, role: str) -> None:
+    from datetime import UTC, datetime
+
     from research_assistant.persistence.database import get_db_session
-    from research_assistant.persistence.models import User
+    from research_assistant.persistence.models import User, UserProfile
     from research_assistant.persistence.user_repository import UserRepository
 
     async with get_db_session() as session:
@@ -72,6 +74,10 @@ async def _seed(sub: str, email: str, role: str) -> None:
         session.add(u)
         await session.flush()
         await UserRepository(session).grant_role(u.id, role)
+        # Sprint U3: mark the test user as already onboarded so the new
+        # clinical-write onboarding gate doesn't 403 these integration tests.
+        session.add(UserProfile(user_id=u.id, onboarding_completed_at=datetime.now(UTC)))
+        await session.flush()
 
 
 def _login(c: AsyncClient, sub: str, email: str) -> None:

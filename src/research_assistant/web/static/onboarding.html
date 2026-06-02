@@ -1,0 +1,558 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Onboarding · Clinical Research Assistant</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, Segoe UI, Roboto, sans-serif; background: #0f1115; color: #e6e6e6; }
+  .header { padding: 14px 24px; border-bottom: 1px solid #262a33; background: #171a21; display: flex; justify-content: space-between; align-items: center; }
+  .header h1 { margin: 0; font-size: 16px; }
+  .header a { color: #8b93a7; text-decoration: none; font-size: 13px; }
+
+  .container { max-width: 820px; margin: 22px auto; padding: 0 24px; }
+  .lead { color: #8b93a7; font-size: 13px; margin: 0 0 18px; line-height: 1.5; }
+
+  .stepper { display: flex; gap: 4px; margin-bottom: 18px; flex-wrap: wrap; }
+  .step { flex: 1; min-width: 0; padding: 8px 10px; background: #1f232c; border-radius: 4px; font-size: 11px; color: #8b93a7; text-align: center; }
+  .step.active { background: #4a7fd9; color: #fff; }
+  .step.done { background: #102a15; color: #6bcf7f; }
+
+  .panel { background: #171a21; border: 1px solid #262a33; border-radius: 8px; padding: 22px; margin-bottom: 18px; }
+  h2 { font-size: 14px; text-transform: uppercase; color: #8b93a7; letter-spacing: .6px; margin: 0 0 12px; }
+  h3 { font-size: 13px; color: #e6e6e6; margin: 18px 0 8px; }
+
+  input, select, button, textarea { font: inherit; }
+  input[type=text], input[type=email], input[type=date], select, textarea {
+    background: #0f1115; color: #e6e6e6; border: 1px solid #2a2f3a; border-radius: 4px; padding: 6px 10px; font-size: 13px; width: 100%;
+  }
+  textarea { resize: vertical; min-height: 70px; }
+  label { display: block; font-size: 11px; color: #8b93a7; margin-bottom: 10px; }
+  label > div { margin-bottom: 4px; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+
+  .btn { background: #1f232c; color: #b3b9c8; border: 1px solid #2a2f3a; border-radius: 4px; padding: 7px 14px; cursor: pointer; font-size: 13px; }
+  .btn:hover { background: #2a2f3a; color: #e6e6e6; }
+  .btn.primary { background: #4a7fd9; color: #fff; border-color: #4a7fd9; }
+  .btn.primary:hover { background: #5a8fe9; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+  .nav { display: flex; justify-content: space-between; margin-top: 16px; }
+
+  .role-block { background: #0f1115; border: 1px solid #1f232c; border-left: 3px solid #4a7fd9; border-radius: 4px; padding: 12px 16px; margin-bottom: 12px; }
+  .role-block .label { font-weight: 700; color: #e6e6e6; font-size: 13px; }
+  .role-block .basis { font-family: monospace; font-size: 11px; color: #7aa7d9; margin-top: 4px; }
+  .role-block .desc { font-size: 12px; color: #b3b9c8; margin-top: 6px; line-height: 1.5; }
+
+  .missing { background: #2a2010; border-left: 3px solid #d9a84a; padding: 8px 10px; margin-top: 6px; border-radius: 4px; font-size: 11px; color: #d9a84a; }
+  .complete-banner { background: #102a15; border-left: 3px solid #6bcf7f; padding: 8px 10px; margin-top: 6px; border-radius: 4px; font-size: 11px; color: #6bcf7f; }
+
+  .status { font-size: 11px; padding: 6px 10px; border-radius: 4px; margin-top: 10px; display: none; }
+  .status.ok { display: block; background: #102a15; color: #6bcf7f; }
+  .status.err { display: block; background: #2a1010; color: #d97a7a; }
+  .status.warn { display: block; background: #2a2010; color: #d9a84a; }
+
+  .pill { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 10px; font-family: monospace; background: #1f232c; color: #cdd3df; margin-left: 4px; }
+
+  .trial-row { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 8px; align-items: end; margin-top: 6px; }
+</style>
+</head>
+<body>
+  <div class="header">
+    <h1>Onboarding</h1>
+    <a href="/auth/logout">Sign out</a>
+  </div>
+
+  <div class="container">
+    <p class="lead">
+      Welcome. Before you can access clinical-data surfaces, we need to capture
+      the regulatory record that ICH E6 §4.2.4 + 21 CFR Part 11 §11.10(d)
+      require for trial staff. This wizard walks you through the fields your
+      role(s) require — most of it is one-time.
+    </p>
+
+    <div id="stepper" class="stepper"></div>
+
+    <div id="panel" class="loading">Loading…</div>
+
+    <div class="nav">
+      <button id="btn-back" class="btn" onclick="navStep(-1)">← Back</button>
+      <button id="btn-next" class="btn primary" onclick="navStep(1)">Next →</button>
+    </div>
+  </div>
+
+<script>
+"use strict";
+
+function $(id){ return document.getElementById(id); }
+function esc(s){ return (s==null?"":String(s)).replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function fmtDate(s){ if (!s) return "—"; try { return new Date(s).toLocaleDateString(); } catch(e){ return esc(s); } }
+function toDateInput(s){ if (!s) return ""; try { return new Date(s).toISOString().slice(0,10); } catch(e){ return ""; } }
+
+let me = null;
+let rolesCatalogue = [];
+let trialsByStudy = {};  // study_id -> { trial_id, title }
+let stepIndex = 0;
+
+async function api(p, opt){
+  const r = await fetch(p, opt);
+  if (r.status === 401) { window.location.href = "/auth/login"; throw new Error("unauth"); }
+  return r;
+}
+
+const STEP_DEFS = [
+  { id: "welcome",     label: "Welcome",     render: renderWelcome },
+  { id: "identity",    label: "Identity",    render: renderIdentity },
+  { id: "license",     label: "Licensure",   render: renderLicense,   conditional: needsLicense },
+  { id: "gcp",         label: "Training",    render: renderGcp,       conditional: needsGcp },
+  { id: "disclosure",  label: "Disclosure",  render: renderDisclosure, conditional: needsDisclosure },
+  { id: "delegation",  label: "Delegation",  render: renderDelegation, conditional: needsDelegation },
+  { id: "complete",    label: "Complete",    render: renderComplete },
+];
+
+function activeSteps() { return STEP_DEFS.filter(s => !s.conditional || s.conditional()); }
+function currentStep() { return activeSteps()[stepIndex]; }
+
+function needsLicense() {
+  return Object.values(me.missing_fields_by_role || {}).some(fields =>
+    fields.includes("medical_license_number") || fields.includes("medical_license_country")
+  );
+}
+function needsGcp() {
+  return Object.values(me.missing_fields_by_role || {}).some(fields =>
+    fields.includes("gcp_training_completed_date")
+  );
+}
+function needsDisclosure() {
+  return Object.values(me.missing_fields_by_role || {}).some(fields =>
+    fields.includes("financial_disclosure_signed_date") || fields.includes("cv_url")
+  );
+}
+function needsDelegation() {
+  // Show if any assignment is study/site scoped on a clinical-tier role.
+  const clinicalRoles = new Set([
+    "principal_investigator", "coordinator", "data_manager", "monitor", "auditor", "study_designer"
+  ]);
+  return (me.assignments || []).some(a =>
+    clinicalRoles.has(a.role) && (a.scope_type === "study" || a.scope_type === "site")
+  );
+}
+
+// ── Bootstrap ──────────────────────────────────────────────────────────
+
+async function bootstrap() {
+  try {
+    const [meRes, rc] = await Promise.all([
+      api("/api/onboarding/me"),
+      api("/api/user-admin/roles-catalogue"),
+    ]);
+    if (!meRes.ok) {
+      // Non-admin users get 404 from /user-admin endpoints; that's fine.
+      // /onboarding/me must work for any logged-in user.
+      const errText = await meRes.text();
+      throw new Error("Failed to load profile: " + errText);
+    }
+    me = await meRes.json();
+    if (rc.ok) {
+      rolesCatalogue = await rc.json();
+    }
+    if (!me.onboarding_required && me.profile && me.profile.onboarding_completed_at) {
+      // Already onboarded — go home.
+      $("panel").innerHTML = `
+        <div class="panel">
+          <div class="complete-banner">✓ Onboarding already completed ${fmtDate(me.profile.onboarding_completed_at)}.</div>
+          <p style="margin-top:14px"><a href="/" style="color:#7aa7d9">← Return to the assistant</a></p>
+        </div>
+      `;
+      $("stepper").style.display = "none";
+      $("btn-back").style.display = "none";
+      $("btn-next").style.display = "none";
+      return;
+    }
+    renderStepper();
+    renderStep();
+  } catch (e) {
+    $("panel").className = "err";
+    $("panel").textContent = "Failed to bootstrap: " + (e.message || e);
+  }
+}
+
+function renderStepper() {
+  const steps = activeSteps();
+  $("stepper").innerHTML = steps.map((s, i) => {
+    const klass = i === stepIndex ? "step active" : (i < stepIndex ? "step done" : "step");
+    return `<div class="${klass}">${i + 1}. ${esc(s.label)}</div>`;
+  }).join("");
+}
+
+function renderStep() {
+  const step = currentStep();
+  step.render();
+  $("btn-back").disabled = stepIndex === 0;
+  const last = stepIndex === activeSteps().length - 1;
+  $("btn-next").textContent = last ? "Complete onboarding" : "Next →";
+  $("btn-next").onclick = last ? submitComplete : () => navStep(1);
+  renderStepper();
+}
+
+function navStep(delta) {
+  const steps = activeSteps();
+  const target = stepIndex + delta;
+  if (target < 0 || target >= steps.length) return;
+  // Save the current step's data before advancing.
+  saveCurrentStep().then(ok => {
+    if (!ok) return;
+    stepIndex = target;
+    renderStep();
+  }).catch(e => {
+    setPanelStatus("Save failed: " + (e.message || e), "err");
+  });
+}
+
+async function saveCurrentStep() {
+  const step = currentStep();
+  if (step.id === "identity") return await saveIdentity();
+  if (step.id === "license") return await saveLicense();
+  if (step.id === "gcp") return await saveGcp();
+  if (step.id === "disclosure") return await saveDisclosure();
+  if (step.id === "delegation") return true; // saved row-by-row inline
+  return true;
+}
+
+// ── Step renderers ─────────────────────────────────────────────────────
+
+function renderWelcome() {
+  const myRoles = [...new Set((me.assignments || []).map(a => a.role))];
+  const descriptors = rolesCatalogue.filter(r => myRoles.includes(r.role));
+  const roleBlocks = descriptors.length ? descriptors.map(r => `
+    <div class="role-block">
+      <div class="label">${esc(r.label)} <span class="pill">${esc(r.role)}</span></div>
+      <div class="basis">${esc(r.regulatory_basis)}</div>
+      <div class="desc">${esc(r.description)}</div>
+    </div>
+  `).join("") : `<p style="color:#5a6070">No role assignments yet — you may not need to onboard.</p>`;
+
+  $("panel").className = "";
+  $("panel").innerHTML = `
+    <div class="panel">
+      <h2>Welcome, ${esc(me.email || "")}</h2>
+      <p style="font-size:13px;color:#b3b9c8;line-height:1.6">
+        You hold the following role${myRoles.length === 1 ? "" : "s"}:
+      </p>
+      ${roleBlocks}
+      <p style="font-size:12px;color:#8b93a7;margin-top:14px">
+        The next steps collect what each role requires. Most fields are
+        one-time and you can leave +come back.
+      </p>
+    </div>
+  `;
+}
+
+function renderIdentity() {
+  const p = me.profile || {};
+  $("panel").className = "";
+  $("panel").innerHTML = `
+    <div class="panel">
+      <h2>Identity</h2>
+      <div class="grid-3">
+        <label><div>Title</div><input id="f-title" type="text" value="${esc(p.title || "")}" placeholder="Dr / Prof / Mr / Ms" /></label>
+        <label><div>First name</div><input id="f-first" type="text" value="${esc(p.first_name || "")}" /></label>
+        <label><div>Last name</div><input id="f-last" type="text" value="${esc(p.last_name || "")}" /></label>
+      </div>
+      <label><div>Credentials (free text)</div><input id="f-creds" type="text" value="${esc(p.credentials || "")}" placeholder="MD / MBBS / PhD / RN / RPh" /></label>
+      <div id="step-status" class="status"></div>
+    </div>
+  `;
+}
+
+async function saveIdentity() {
+  const body = {
+    title: $("f-title").value.trim() || null,
+    first_name: $("f-first").value.trim() || null,
+    last_name: $("f-last").value.trim() || null,
+    credentials: $("f-creds").value.trim() || null,
+  };
+  return await patchProfile(body);
+}
+
+function renderLicense() {
+  const p = me.profile || {};
+  $("panel").className = "";
+  $("panel").innerHTML = `
+    <div class="panel">
+      <h2>Medical licensure</h2>
+      <p style="font-size:12px;color:#8b93a7;margin:0 0 12px">
+        Required for Principal-Investigator + Sub-Investigator per ICH E6 §4.1.1 + 21 CFR §312.60.
+      </p>
+      <div class="grid-2">
+        <label><div>License number</div><input id="f-lic" type="text" value="${esc(p.medical_license_number || "")}" /></label>
+        <label><div>Country / jurisdiction</div><input id="f-lic-country" type="text" value="${esc(p.medical_license_country || "")}" placeholder="e.g. United States" /></label>
+      </div>
+      <div id="step-status" class="status"></div>
+    </div>
+  `;
+}
+
+async function saveLicense() {
+  const body = {
+    medical_license_number: $("f-lic").value.trim() || null,
+    medical_license_country: $("f-lic-country").value.trim() || null,
+  };
+  return await patchProfile(body);
+}
+
+function renderGcp() {
+  const p = me.profile || {};
+  $("panel").className = "";
+  $("panel").innerHTML = `
+    <div class="panel">
+      <h2>ICH GCP training</h2>
+      <p style="font-size:12px;color:#8b93a7;margin:0 0 12px">
+        ICH E6 §4.2.4 — every staff member with access to clinical data
+        needs current GCP training. Paste the certificate URL (Drive,
+        SharePoint, or institutional repository).
+      </p>
+      <div class="grid-3">
+        <label><div>Completed date</div><input id="f-gcp-date" type="date" value="${toDateInput(p.gcp_training_completed_date)}" /></label>
+        <label><div>Provider</div><input id="f-gcp-provider" type="text" value="${esc(p.gcp_training_provider || "")}" placeholder="CITI / TransCelerate / NIH" /></label>
+        <label><div>Certificate URL</div><input id="f-gcp-cert" type="text" value="${esc(p.gcp_certificate_url || "")}" placeholder="https://..." /></label>
+      </div>
+      <p style="font-size:11px;color:#5a6070;margin-top:10px">
+        We record both a UserProfile snapshot AND a TrainingRecord row so
+        the audit log + future expiry alerts work.
+      </p>
+      <div id="step-status" class="status"></div>
+    </div>
+  `;
+}
+
+async function saveGcp() {
+  const date = $("f-gcp-date").value;
+  const provider = $("f-gcp-provider").value.trim() || null;
+  const cert = $("f-gcp-cert").value.trim() || null;
+  if (!date) {
+    setPanelStatus("Date is required.", "err");
+    return false;
+  }
+  // Use POST /me/training-records (which also mirrors into the profile
+  // for ich_gcp records). Avoids a separate PATCH.
+  try {
+    const r = await api("/api/onboarding/me/training-records", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        training_type: "ich_gcp",
+        topic: "ICH E6 GCP",
+        provider,
+        completed_date: new Date(date).toISOString(),
+        certificate_url: cert,
+      }),
+    });
+    if (!r.ok) throw new Error((await r.json().catch(()=>({detail:r.statusText}))).detail);
+    await refreshMe();
+    return true;
+  } catch (e) {
+    setPanelStatus("Failed: " + (e.message || e), "err");
+    return false;
+  }
+}
+
+function renderDisclosure() {
+  const p = me.profile || {};
+  $("panel").className = "";
+  $("panel").innerHTML = `
+    <div class="panel">
+      <h2>CV + financial disclosure</h2>
+      <p style="font-size:12px;color:#8b93a7;margin:0 0 12px">
+        Required for Principal-Investigator + Sub-Investigator on FDA-regulated
+        studies per 21 CFR §54 + Form 1572 §6. Paste hosted URLs (your CV PDF +
+        signed disclosure form).
+      </p>
+      <label><div>CV URL</div><input id="f-cv" type="text" value="${esc(p.cv_url || "")}" placeholder="https://..." /></label>
+      <label><div>Financial disclosure signed date</div><input id="f-fd" type="date" value="${toDateInput(p.financial_disclosure_signed_date)}" /></label>
+      <div id="step-status" class="status"></div>
+    </div>
+  `;
+}
+
+async function saveDisclosure() {
+  const body = {
+    cv_url: $("f-cv").value.trim() || null,
+    financial_disclosure_signed_date: $("f-fd").value ? new Date($("f-fd").value).toISOString() : null,
+  };
+  return await patchProfile(body);
+}
+
+function renderDelegation() {
+  const clinicalRoles = new Set([
+    "principal_investigator", "coordinator", "data_manager", "monitor", "auditor", "study_designer"
+  ]);
+  const trialScopedAssignments = (me.assignments || []).filter(a =>
+    clinicalRoles.has(a.role) && (a.scope_type === "study" || a.scope_type === "trial")
+  );
+  $("panel").className = "";
+  $("panel").innerHTML = `
+    <div class="panel">
+      <h2>Delegation log</h2>
+      <p style="font-size:12px;color:#8b93a7;margin:0 0 12px">
+        ICH E6 §4.1.5 + 21 CFR §312.62 — the Principal Investigator delegates
+        specific tasks to each team member, with start/end dates. Capture
+        your delegated tasks here. The PI countersigns from the admin
+        surface; the platform records both events.
+      </p>
+
+      <div id="delegation-list"></div>
+
+      <h3>Add a delegation entry</h3>
+      <div class="grid-2">
+        <label><div>Trial id (study or trial scope)</div>
+          <input id="f-del-trial" type="text" placeholder="trial id" />
+        </label>
+        <label><div>Study role title (free text)</div>
+          <input id="f-del-role" type="text" placeholder="e.g. Sub-Investigator / Study Coordinator" />
+        </label>
+      </div>
+      <label><div>Delegated tasks (comma-separated)</div>
+        <input id="f-del-tasks" type="text" placeholder="e.g. informed consent, AE assessment, data entry" />
+      </label>
+      <div class="grid-2">
+        <label><div>Start date</div><input id="f-del-start" type="date" /></label>
+        <label><div>End date (optional)</div><input id="f-del-end" type="date" /></label>
+      </div>
+      <button class="btn primary" onclick="addDelegation()">Add entry</button>
+
+      <p style="font-size:11px;color:#5a6070;margin-top:14px">
+        Your study / trial-scoped assignments:
+        ${trialScopedAssignments.length
+          ? trialScopedAssignments.map(a => `<span class="pill">${esc(a.role)} @ ${esc(a.scope_type)}:${esc((a.scope_id||"").slice(0,8))}</span>`).join("")
+          : `<i>(none — skip this step)</i>`
+        }
+      </p>
+      <div id="step-status" class="status"></div>
+    </div>
+  `;
+}
+
+async function addDelegation() {
+  const trialId = $("f-del-trial").value.trim();
+  const role = $("f-del-role").value.trim();
+  const tasksRaw = $("f-del-tasks").value.trim();
+  const start = $("f-del-start").value;
+  const end = $("f-del-end").value;
+  if (!trialId || !role || !tasksRaw || !start) {
+    setPanelStatus("Trial id, role, tasks, and start date are required.", "err");
+    return;
+  }
+  const tasks = tasksRaw.split(",").map(s => s.trim()).filter(Boolean);
+  try {
+    const r = await api("/api/onboarding/me/delegation-entries", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        trial_id: trialId,
+        study_role: role,
+        delegated_tasks: tasks,
+        start_date: new Date(start).toISOString(),
+        end_date: end ? new Date(end).toISOString() : null,
+      }),
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(()=>({detail:r.statusText}));
+      throw new Error(typeof err.detail === "string" ? err.detail : JSON.stringify(err.detail));
+    }
+    setPanelStatus("Entry added — PI signature pending.", "ok");
+    // Clear form.
+    ["f-del-trial","f-del-role","f-del-tasks","f-del-start","f-del-end"].forEach(id => $(id).value = "");
+  } catch (e) {
+    setPanelStatus("Failed: " + (e.message || e), "err");
+  }
+}
+
+function renderComplete() {
+  const stillMissing = me.missing_fields_by_role || {};
+  const has = Object.keys(stillMissing).length > 0;
+  $("panel").className = "";
+  $("panel").innerHTML = `
+    <div class="panel">
+      <h2>Review + complete</h2>
+      ${has ? `
+        <div class="missing">
+          <b>Cannot complete yet — still missing:</b>
+          ${Object.entries(stillMissing).map(([role, fields]) =>
+            `<div style="margin-top:4px"><b>${esc(roleLabel(role))}:</b> ${fields.map(f => `<code>${esc(f)}</code>`).join(", ")}</div>`
+          ).join("")}
+        </div>
+      ` : `
+        <div class="complete-banner">✓ All required fields filled. Click below to finalise your onboarding.</div>
+      `}
+      <p style="font-size:12px;color:#8b93a7;margin-top:14px">
+        After completion, the platform unlocks clinical-data write surfaces
+        gated by your roles. The audit trail records the completion timestamp.
+      </p>
+      <div id="step-status" class="status"></div>
+    </div>
+  `;
+}
+
+async function submitComplete() {
+  $("btn-next").disabled = true;
+  try {
+    const r = await api("/api/onboarding/me/complete", { method: "POST" });
+    if (!r.ok) {
+      const err = await r.json().catch(()=>({detail:r.statusText}));
+      const detail = err.detail;
+      const msg = typeof detail === "string" ? detail : (detail && detail.message) || r.statusText;
+      throw new Error(msg);
+    }
+    setPanelStatus("Onboarding complete — redirecting…", "ok");
+    setTimeout(() => { location.href = "/"; }, 800);
+  } catch (e) {
+    setPanelStatus("Failed: " + (e.message || e), "err");
+    $("btn-next").disabled = false;
+  }
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────
+
+async function patchProfile(body) {
+  try {
+    const r = await api("/api/onboarding/me/profile", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(()=>({detail:r.statusText}));
+      throw new Error(typeof err.detail === "string" ? err.detail : JSON.stringify(err.detail));
+    }
+    await refreshMe();
+    return true;
+  } catch (e) {
+    setPanelStatus("Save failed: " + (e.message || e), "err");
+    return false;
+  }
+}
+
+async function refreshMe() {
+  const r = await api("/api/onboarding/me");
+  if (r.ok) me = await r.json();
+}
+
+function setPanelStatus(text, klass) {
+  const el = $("step-status");
+  if (!el) return;
+  el.className = "status " + (klass || "ok");
+  el.textContent = text;
+}
+
+function roleLabel(role) {
+  const r = rolesCatalogue.find(x => x.role === role);
+  return r ? r.label : role;
+}
+
+bootstrap();
+</script>
+</body>
+</html>

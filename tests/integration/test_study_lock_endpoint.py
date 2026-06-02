@@ -59,10 +59,12 @@ async def client() -> AsyncIterator[AsyncClient]:
 
 async def _seed_user(sub: str, email: str, *, role: str) -> None:
     """Idempotent on cognito_sub — re-seeding the same sub is a no-op."""
+    from datetime import UTC, datetime
+
     from sqlalchemy import select
 
     from research_assistant.persistence.database import get_db_session
-    from research_assistant.persistence.models import User
+    from research_assistant.persistence.models import User, UserProfile
     from research_assistant.persistence.user_repository import UserRepository
 
     async with get_db_session() as session:
@@ -73,6 +75,11 @@ async def _seed_user(sub: str, email: str, *, role: str) -> None:
         session.add(user)
         await session.flush()
         await UserRepository(session).grant_role(user.id, role, scope_type="global", scope_id=None)
+        # Sprint U3: mark the test user as already onboarded so the new
+        # clinical-write onboarding gate doesn't 403 these integration
+        # tests. The gate is exercised separately in test_user_admin_u3.py.
+        session.add(UserProfile(user_id=user.id, onboarding_completed_at=datetime.now(UTC)))
+        await session.flush()
 
 
 def _session_cookie(sub: str, email: str) -> str:

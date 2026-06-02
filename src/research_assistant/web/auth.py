@@ -336,22 +336,49 @@ def create_auth_router() -> APIRouter:
         run (e.g. hide RoB / SR-protocol cards for a Student account that
         only has `skill.meta_analysis` + `skill.general_qa`). Server-side
         gating in `web/dispatch.py` is authoritative; this is UX polish.
+
+        Sprint U3: also returns the onboarding gate signal so the frontend
+        can redirect to /onboarding.html when required.
         """
+        from ..persistence.user_admin_repository import UserAdminRepository
+        from ..services.user_admin import compute_missing_by_role, is_onboarded
+
         settings = get_settings()
         roles: list[str] = []
         permissions: list[str] = []
+        onboarding_required = False
+        onboarding_completed_at = None
+        missing_fields_by_role: dict[str, list[str]] = {}
         if settings.auth_enabled:
             async with get_db_session() as db:
                 repo = UserRepository(db)
                 roles = await repo.roles_for_sub(user.sub)
                 perms = await repo.effective_permissions_for_sub(user.sub)
                 permissions = sorted(p.value for p in perms)
+
+                local = await repo.get_by_sub(user.sub)
+                if local is not None:
+                    admin_repo = UserAdminRepository(db)
+                    profile, assignments = await admin_repo.onboarding_snapshot_for_user(local.id)
+                    missing_fields_by_role = compute_missing_by_role(
+                        assignment_roles=[a.role for a in assignments],
+                        profile=profile,
+                    )
+                    if profile is not None and profile.onboarding_completed_at is not None:
+                        onboarding_completed_at = profile.onboarding_completed_at.isoformat()
+                    # Gate fires when: not onboarded yet AND user has at least
+                    # one role (any missing fields). A user with zero
+                    # assignments isn't gated — they can't reach anything.
+                    onboarding_required = not is_onboarded(profile) and len(assignments) > 0
         return {
             "sub": user.sub,
             "email": user.email,
             "expires_at": user.expires_at,
             "roles": roles,
             "permissions": permissions,
+            "onboarding_required": onboarding_required,
+            "onboarding_completed_at": onboarding_completed_at,
+            "missing_fields_by_role": missing_fields_by_role,
         }
 
     return router

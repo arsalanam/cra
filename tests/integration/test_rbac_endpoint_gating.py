@@ -91,8 +91,10 @@ async def _seed_user_with_role(
     scope_id: str | None = None,
 ) -> None:
     """Seed a User + a single RoleAssignment in the research DB."""
+    from datetime import UTC, datetime
+
     from research_assistant.persistence.database import get_db_session
-    from research_assistant.persistence.models import User
+    from research_assistant.persistence.models import User, UserProfile
     from research_assistant.persistence.user_repository import UserRepository
 
     async with get_db_session() as session:
@@ -102,6 +104,10 @@ async def _seed_user_with_role(
         await UserRepository(session).grant_role(
             user.id, role, scope_type=scope_type, scope_id=scope_id
         )
+        # Sprint U3: mark the test user as already onboarded so the new
+        # clinical-write onboarding gate doesn't 403 these integration tests.
+        session.add(UserProfile(user_id=user.id, onboarding_completed_at=datetime.now(UTC)))
+        await session.flush()
 
 
 def _login(c: AsyncClient, sub: str, email: str) -> None:

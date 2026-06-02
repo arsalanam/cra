@@ -120,6 +120,19 @@
   </div>
 
 <script>
+  // Sprint U3 — onboarding gate. Hard redirect from clinical-data surfaces
+  // until the user has completed their profile per ICH E6 §4.2.4.
+  (async () => {
+    try {
+      const r = await fetch("/auth/me");
+      if (!r.ok) return;
+      const me = await r.json();
+      if (me.onboarding_required) {
+        location.href = "/onboarding.html";
+      }
+    } catch {}
+  })();
+
   let depId=null, subjectId=null, fiId=null, fiStatus=null, definition=null;
 
   async function api(p, o){ const r=await fetch(p,o); if(r.status===401){window.location.href="/auth/login";throw new Error("unauth");} return r; }

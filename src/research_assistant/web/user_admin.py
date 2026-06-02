@@ -439,9 +439,7 @@ def create_user_admin_router() -> APIRouter:
         return {"email": email, "cognito_status": status}
 
     @router.post("/invitations/by-email/resend")
-    async def resend_invitation_by_email(
-        body: dict[str, str], admin: AdminUser
-    ) -> dict[str, str]:
+    async def resend_invitation_by_email(body: dict[str, str], admin: AdminUser) -> dict[str, str]:
         """Sprint U2 — convenience for the admin UI which doesn't carry
         the invitation_id in the user list. Looks up the pending
         invitation by email then delegates to the Cognito resend.

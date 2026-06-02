@@ -1469,6 +1469,12 @@ function App() {
           <div className="health">{health ? `${health.model} · ${health.region}` : "..."}</div>
         </div>
 
+        {me && me.onboarding_required && (
+          <div style={{ background: "#2a2010", borderLeft: "3px solid #d9a84a", padding: "10px 16px", margin: "12px 16px", borderRadius: "4px", color: "#d9a84a", fontSize: "13px" }}>
+            <b>Onboarding incomplete.</b> Clinical-data surfaces are locked until your profile is complete (ICH E6 §4.2.4). <a href="/onboarding.html" style={{ color: "#fff", textDecoration: "underline" }}>Complete onboarding →</a>
+          </div>
+        )}
+
         {view === "usage" ? (
           <UsagePage data={usageData} />
         ) : !activeThreadId ? (
