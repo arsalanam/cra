@@ -12,7 +12,7 @@ Every paste target lives in a fenced code block — click the copy icon, drop it
 - [Phase 01 — Evidence synthesis](#phase-01--evidence-synthesis) (8 demos)
 - [Phase 02 — Trial design](#phase-02--trial-design) (1 demo)
 - [Phase 03 — Start-up](#phase-03--start-up) (3 demos)
-- [Phase 04 — Execution](#phase-04--execution) (13 demos)
+- [Phase 04 — Execution](#phase-04--execution) (14 demos, X0–X13)
 - [Phase 05 — Analysis & reporting](#phase-05--analysis--reporting) (7 demos)
 - [Phase 06 — Cross-cutting infrastructure](#phase-06--cross-cutting-infrastructure) (5 demos)
 - [Appendix — All paste blocks (cheat sheet)](#appendix--all-paste-blocks-cheat-sheet)
@@ -628,6 +628,215 @@ POST /api/edc/deployments/{deployment_id}/cdisc/derive
 ## Phase 04 — Execution
 
 > **Phase context.** Once the trial is approved and registered, real subjects enrol and real data accumulates. This is the largest, longest, and most operationally complex phase. The platform's regulatory-grade infrastructure (Part 11 / ALCOA+ / GCP / ICH E6) does the most work here.
+
+### X0 — Trial-staff setup: invite, scope, onboard, countersign (≈ 15 min)
+
+**Demos.** The regulatory-grade user-administration loop you walk before X1. Admin invites the trial team with scope-aware role grants; the SoD matrix blocks ICH E6 §5.18–5.19 + Part 11 §11.10(d) violations at invite time; each invitee completes an `/onboarding.html` wizard that captures the fields their role requires; clinical-data surfaces stay locked until onboarding is complete (server-side gate); the PI countersigns delegation entries with Part 11 §11.200 password reauth; every action lands in an append-only audit log.
+
+> Skip this demo for the smoke-deployment quick run — the legacy `default-user` placeholder is admin + everything in single-user dev mode. Run X0 when you want to walk through the actual multi-user posture an audit / inspection would see.
+
+**Pre-req.** An admin Cognito user already onboarded (run cognito_setup.py + complete the wizard once; default-user account works in auth-disabled mode).
+
+**Open at:** `http://localhost:8000/users-admin.html`
+
+#### X0a. Roles catalogue + SoD reference
+
+**1. Open the roles catalogue.** Top-right: `📖 Roles catalogue` button.
+
+The side drawer surfaces every canonical role with its regulatory basis (ICH E6 §4.1, 21 CFR §312.60–62, Part 11 §11.10, EU CTR Art. 49). Skim:
+
+- **Principal Investigator** — license + GCP + CV + financial disclosure required.
+- **Clinical Research Coordinator** — GCP required.
+- **Data Manager** — GCP required.
+- **Monitor** — sponsor-side; independent from site staff per §5.18.
+- **Auditor** — independent from the team being audited per §5.19.
+
+Close the drawer.
+
+#### X0b. Invite the trial team with scoped role grants
+
+The SMOKE-T2DM-001 trial needs a 5-person team. We'll invite each with the right scope, watching the SoD matrix block the obvious conflicts.
+
+**1. Open the Invite modal.** Top-right: `+ Invite user`.
+
+**2. Invite the PI.**
+
+- Email: `pi@smoke.example`
+- Role row 1: `Principal Investigator (PI)` · scope `study` · scope id `SMOKE-T2DM-001`
+- Click **Send invitation**.
+
+The status pill reads `Invited pi@smoke.example (cognito=FORCE_CHANGE_PASSWORD).` The Cognito invitation email lands in the sponsor's mailbox; the PendingInvitation row carries the scoped grant so first login auto-assigns `principal_investigator @ study:SMOKE-T2DM-001`.
+
+**3. Invite the coordinator.**
+
+- Email: `coord@smoke.example`
+- Role row 1: `Clinical Research Coordinator (CRC)` · scope `site` · scope id `SITE-01`
+- Click **Send invitation**.
+
+**4. Demonstrate an SoD block: try to invite a person as both DM AND PI on the same study.**
+
+- Email: `dm@smoke.example`
+- Role row 1: `Data Manager (DM)` · scope `study` · scope id `SMOKE-T2DM-001`
+- Click **+ Add another role**
+- Role row 2: `Principal Investigator (PI)` · scope `study` · scope id `SMOKE-T2DM-001`
+- Notice the **conflict block** appears inline:
+
+  > **Data Manager (DM) ↔ Principal Investigator (PI)** on study `SMOKE-T2DM-001`
+  > 21 CFR Part 11 §11.10(d) + ICH E6 §1.27 — the Data Manager locks the database and the Principal Investigator signs the casebook; they must be distinct individuals to preserve the audit + accountability separation.
+
+- Click **Send invitation** → 422 with the conflict surfaced. The matrix is enforced server-side; the client-side block is a UX nudge.
+
+**5. Fix it — invite just the DM.**
+
+- Delete the PI row (`×` button) so only `Data Manager @ study:SMOKE-T2DM-001` remains.
+- Click **Send invitation** → succeeds.
+
+**6. Invite the monitor.**
+
+- Email: `monitor@smoke.example`
+- Role row 1: `Clinical Research Associate (Monitor)` · scope `study` · scope id `SMOKE-T2DM-001`
+- Click **Send invitation**.
+
+**7. Invite the auditor (demonstrates the global-scope path).**
+
+- Email: `auditor@smoke.example`
+- Role row 1: `Auditor (independent QA)` · scope `global` · scope id (omit)
+- Click **Send invitation**.
+
+**8. (Optional) Legitimate SoD override.** Single-site academic studies sometimes need the same person to wear two regulatory hats. The platform allows an explicit override with rationale, NEVER silently:
+
+- Open Invite modal → email `dual@smoke.example`
+- Role row 1: `Coordinator @ site:SITE-01`
+- Role row 2: `Monitor @ study:SMOKE-T2DM-001`
+- Conflict block appears (ICH E6 §5.18 — sponsor monitor cannot also be site staff)
+- Fill the **Override rationale** textarea: `Investigator-initiated single-site academic study; institutional approval CAS-2026-014 on file. Reviewed by IRB minutes 2026-05-15.`
+- Click **Send invitation** → succeeds. The rationale is stored on the RoleAssignment row + replicated to the audit log as `role.grant_overridden`.
+
+#### X0c. Invitee onboarding — PI walks the wizard
+
+Switch to an incognito browser window (or a separate browser profile).
+
+**1. Open the Cognito invite link from `pi@smoke.example`'s mailbox** → set a permanent password → land on `/`.
+
+**2. Try to reach `/collector.html`** → IIFE redirects to `/onboarding.html` because `/auth/me.onboarding_required: true`.
+
+**3. Walk the stepper.** The wizard reads the PI's role assignments + REQUIRED_FIELDS and renders only the conditional steps the role needs.
+
+For the PI, the visible steps are:
+
+- **Welcome** — shows the regulatory basis for the PI role (ICH E6 §4.1; 21 CFR §312.60+§312.62; EU CTR Art. 49). Click **Next**.
+- **Identity** — title `Dr`, first `Ada`, last `Lovelace`, credentials `MD MRCP`. Save → Next.
+- **Licensure** — license number `GMC-12345678`, country `United Kingdom`. Save → Next.
+- **Training** — completed date `2026-01-15`, provider `CITI`, certificate URL `https://drive.example/cita-cert.pdf`. Save → Next.
+
+  *Behind the scenes:* the wizard POSTs `/api/onboarding/me/training-records` with `training_type=ich_gcp`; the server creates the TrainingRecord row AND mirrors `gcp_training_completed_date` + `gcp_training_provider` + `gcp_certificate_url` into UserProfile so the gate sees the GCP field as filled.
+
+- **Disclosure** — CV URL `https://drive.example/cv-pi.pdf`, financial-disclosure signed date `2026-02-01`. Save → Next.
+- **Delegation** — for each trial-scoped grant, capture delegation entries:
+  - Trial id: (paste the trial id from `/accounts.html` trial detail page)
+  - Study role: `Principal Investigator`
+  - Delegated tasks: `final medical review, AE classification, casebook signature, SAE causality assessment`
+  - Start date: `2026-06-01`
+  - Click **Add entry**
+
+  The entry is captured *unsigned* — `signed_by_pi_user_id` stays null. The PI countersigns later (X0e).
+
+- **Complete** — review screen. If any field is still missing, the wizard shows AMBER "still missing" chips with the role + field name; the Complete button stays enabled but a 422 from the server kicks the user back. Click **Complete onboarding**.
+
+The server re-validates EVERY required field (anti-tamper), sets `onboarding_completed_at = now()`, records the `onboarding.completed` audit event, and redirects to `/`.
+
+**4. Verify the gate dropped.** Click the sidebar `+ Data Capture` (or visit `/collector.html`) → loads. The IIFE no longer redirects because `onboarding_required` is now false.
+
+#### X0d. Coordinator walks a shorter wizard
+
+The wizard's `activeSteps()` filters conditional steps per role. A coordinator's REQUIRED_FIELDS = `first_name + last_name + gcp_training_completed_date`, so:
+
+**1. Log in as `coord@smoke.example`** (different incognito window).
+
+**2. Steps shown:** Welcome → Identity → Training → Delegation → Complete. (Licensure + Disclosure hidden — not required for coord per ICH E6 §4.1.5.)
+
+**3. Fill Identity + Training** with mock values. Skip Disclosure entirely. Capture a delegation entry on the trial: study_role `Clinical Research Coordinator`, tasks `informed consent, enrolment, data entry, query response`.
+
+**4. Click Complete** → server-side check passes → gate drops.
+
+#### X0e. PI countersigns the team's delegation entries
+
+Switch back to the admin window. The PI account (`pi@smoke.example`) now needs to sign the coordinator's + DM's + monitor's delegation entries — ICH E6 §4.1.5 requires the PI signature on the delegation log.
+
+**1. Open `/users-admin.html`** as the PI (PI also holds admin if you grant `user.manage`; otherwise, the PI sign queue is just for visibility). Click the **PI sign queue** tab.
+
+**2. The queue lists every unsigned delegation entry on trials the caller is PI on.** Each row carries the member email + study role + delegated tasks + period + a **Sign** button.
+
+**3. Click Sign** on the coordinator's entry → password modal opens.
+
+**4. Enter the PI's Cognito password** → Submit → 21 CFR Part 11 §11.200 reauth fires against Cognito (the same path eCRF E7 form-signing uses) → on success, the entry is countersigned with `signed_by_pi_user_id` + `signed_at` + the audit event `delegation.signed`.
+
+**5. Repeat for each unsigned entry.**
+
+#### X0f. Audit log inspection
+
+Still on `/users-admin.html`, click the **Audit log** tab.
+
+**1. Click Apply** (no filters). The 6-column table renders the last N events newest-first:
+
+```
+2026-06-01 14:22  pi@smoke      delegation.signed     coord@smoke   trial:SMOKE-...  entry_id=del-..., study_role=Clinical Research Coordinator
+2026-06-01 14:15  coord@smoke   onboarding.completed  coord@smoke   —                roles=["coordinator"]
+2026-06-01 14:14  coord@smoke   training.recorded     coord@smoke   —                training_type=ich_gcp, topic=ICH E6 GCP
+2026-06-01 14:01  admin@smoke   invite.created        —             —                email=coord@smoke.example, assignments=[{role: coordinator, scope_type: site, scope_id: SITE-01}]
+2026-06-01 13:58  admin@smoke   role.grant_overridden dual@smoke    study:SMOKE-...  override_rationale=Investigator-initiated...
+```
+
+**2. Filter for `role.grant_overridden`** (Action dropdown). Every legitimate SoD override surfaces here — auditors filter on this to inspect every exception.
+
+**3. Click Download PDF** → `user-admin-audit.pdf` lands per Part 11 §11.10(e). Compact-encoded payloads in monospace; truncated at 200 chars per cell so a single long rationale doesn't blow up the layout.
+
+#### X0g. Regulatory PDF reports
+
+Click the **Reports** tab.
+
+**1. Per-trial delegation log.** Paste the trial id → Download. ICH E6 §4.1.5 format: signed vs unsigned counts at the top, table of (member, role, tasks, period, PI signature). UNSIGNED rows highlight AMBER with a footer reminder.
+
+**2. Per-site training matrix.** Paste a site id (`/accounts.html` site picker has the id) → Download. ICH E6 §4.2.4 format: members + expired + expiring-soon counts, table with `EXPIRED` / `DUE SOON` AMBER pills on the status cell.
+
+**3. Audit log.** Click Download full audit (no filters) → same PDF as X0f step 3.
+
+#### X0h. Suspension demonstration
+
+A user fired / on leave / under investigation needs to be fully blocked from every gated endpoint. The U4 suspension gate (in `web/authz.py.require_permission_scoped`) handles this.
+
+**1. Switch to the Users tab** on `/users-admin.html`. Locate `coord@smoke.example` → View.
+
+**2. Click Suspend.** Reason: `Departure from institution; access pending review.` → Submit.
+
+**3. Switch to the coordinator's window.** Try to load `/collector.html` → 403 with `Your account is suspended. Contact a platform administrator to reactivate access.`
+
+Try to POST data via API: `POST /api/edc/subjects/{id}/forms` → 403 same message.
+
+**4. Back in admin → Click Reactivate** on the coordinator's detail panel → access restored on next request.
+
+#### X0i. Training expiry surface
+
+Click the **Training expiring** tab.
+
+**1. Default within_days = 30.** Records with `expires_date` in the past or ≤ 30 days out surface here. The auditor / regulatory-affairs lead uses this to head off lapses before they happen.
+
+**2. Click Apply** → table renders per-user training records with `EXPIRED` (red) vs `DUE SOON` (amber) pills + the topic + provider + completed/expires dates.
+
+#### Sanity checks
+
+- **SoD enforcement is server-side.** The client-side warning is a UX nudge; the actual 422 fires from `web/user_admin.py.invite` and `grant` even if the operator hits the API directly.
+- **Override rationale is REQUIRED to bypass a conflict** and is stored on the RoleAssignment row + replicated to the audit log. NEVER silently accepted.
+- **Onboarding gate fires for `Permission` in `services/user_admin.CLINICAL_WRITE_PERMS`** (37 perms: data.enter, query.*, sdv.verify, form.sign, casebook.signoff, study.lock, ae.record/classify, screening.*, visit.update, ip.dispense, lab.upload, source_document.upload, cdisc.derive, randomization.*, etc.). Read perms + research-tier skills + admin perms remain open.
+- **Suspension gate fires for EVERY perm**, not just clinical-write. It runs BEFORE the onboarding check so the 403 message ("suspended") wins over "onboarding required".
+- **PI countersign authority** walks `global` → `trial:<entry.trial_id>` → `study:<id>` (via EcrfStudy.trial_id) on the caller's RoleAssignments. A global PI grant sees every unsigned entry; trial/study-scoped PIs see only their scope.
+- **Password reauth is Part 11 §11.200.** Hits the same Cognito path the eCRF E7 form-sign endpoint uses. Falls open in auth-disabled tests; runs the real Cognito call in production.
+- **The audit log is append-only by convention.** No `update_audit` / `delete_audit` methods on the repo; static-file test pins this.
+- **`onboarding.completed` is recorded for every user including admins** — the audit log shows when each member joined the platform's regulatory-grade posture.
+- **GCP cert + CV are URL strings**, not file blobs. S3 multipart upload deferred to a polish slice.
+- **The wizard re-validates server-side on `POST /me/complete`.** A misbehaving client can't lie about field completeness via DOM manipulation.
+
+---
 
 ### X1 — eCRF design (AI-draft CRFs from a protocol) (≈ 5 min)
 
