@@ -1437,6 +1437,9 @@ function App() {
             ~ Usage
           </button>
           {hasPerm("user.manage") && (
+            <a className="sidebar-link" href="/users-admin.html">⛏ User Admin</a>
+          )}
+          {hasPerm("user.manage") && (
             <a className="sidebar-link" href="/admin.html">⚙ Settings</a>
           )}
           <div className="sidebar-divider" />

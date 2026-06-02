@@ -438,6 +438,39 @@ def create_user_admin_router() -> APIRouter:
         logger.info("Admin %s resent invite for %s (cognito=%s)", admin.sub, email, status)
         return {"email": email, "cognito_status": status}
 
+    @router.post("/invitations/by-email/resend")
+    async def resend_invitation_by_email(
+        body: dict[str, str], admin: AdminUser
+    ) -> dict[str, str]:
+        """Sprint U2 — convenience for the admin UI which doesn't carry
+        the invitation_id in the user list. Looks up the pending
+        invitation by email then delegates to the Cognito resend.
+        """
+        email = (body.get("email") or "").strip().lower()
+        if not email or "@" not in email:
+            raise HTTPException(422, "Valid email required.")
+        settings = get_settings()
+        if not settings.auth_enabled:
+            raise HTTPException(503, "Authentication is not configured.")
+        async with get_db_session() as session:
+            admin_repo = UserAdminRepository(session)
+            inv = await admin_repo.get_invitation_by_email(email)
+            if inv is None:
+                raise HTTPException(404, "No invitation on file for that email.")
+            if inv.consumed_at is not None:
+                raise HTTPException(422, "Invitation already consumed.")
+        try:
+            status = await run_in_threadpool(
+                resend_cognito_invitation,
+                email,
+                region=settings.cognito_region,
+                user_pool_id=settings.cognito_user_pool_id,
+            )
+        except CognitoAdminError as e:
+            raise HTTPException(502, str(e)) from e
+        logger.info("Admin %s resent invite by email %s (cognito=%s)", admin.sub, email, status)
+        return {"email": email, "cognito_status": status}
+
     @router.delete("/invitations/{invitation_id}", status_code=204)
     async def revoke_invitation(invitation_id: str, admin: AdminUser) -> None:
         async with get_db_session() as session:
