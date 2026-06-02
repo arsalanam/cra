@@ -156,6 +156,13 @@ class PendingInvitation(Base):
     On first successful login, the Phase C matcher binds the invitee's
     Cognito `sub` to a `User` row, grants the roles listed in
     `roles_json`, and sets `consumed_at`.
+
+    Sprint U1: `assignments_json` extends the original flat `roles_json`
+    with scope-aware grants `[{role, scope_type, scope_id}, …]` so the
+    user-admin module can invite a Coordinator @ site:abc in one step
+    rather than inviting-as-researcher then granting separately. Matcher
+    consumes both — assignments_json takes precedence when present;
+    falls back to roles_json for pre-U1 rows.
     """
 
     __tablename__ = "pending_invitations"
@@ -165,7 +172,17 @@ class PendingInvitation(Base):
     roles_json: Mapped[str] = mapped_column(
         Text,
         default='["researcher"]',
-        doc="JSON list of roles to grant on first login.",
+        doc="JSON list of roles to grant on first login (legacy global-scope path).",
+    )
+    assignments_json: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        default=None,
+        doc=(
+            "Sprint U1 — scope-aware assignment plan. JSON list of "
+            "{role, scope_type, scope_id, override_rationale?}. Takes "
+            "precedence over roles_json when present."
+        ),
     )
     invited_by: Mapped[str | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"),
@@ -173,6 +190,169 @@ class PendingInvitation(Base):
         default=None,
     )
     consumed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+# ── Sprint U1 — User administration module ────────────────────────────────
+
+
+class UserProfile(Base):
+    """Extended profile for a User — captures the regulatory-grade fields
+    required by ICH E6 / 21 CFR Part 11 / §312.62 / EU CTR.
+
+    One-row-per-User. Created lazily on first profile write. Required-
+    fields-per-role gating happens in `services/user_admin.py` against
+    this row; missing fields don't block invite or grant but DO block
+    onboarding completion (enforced in U3 via /onboarding.html).
+
+    PHI separation: this row is NOT PHI — it's investigator-staff data,
+    not subject data. Stays in the research DB alongside Users.
+    """
+
+    __tablename__ = "user_profiles"
+
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+
+    # Identification.
+    title: Mapped[str | None] = mapped_column(
+        Text, nullable=True, default=None, doc="Dr / Prof / Mr / Ms / etc."
+    )
+    first_name: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    last_name: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    credentials: Mapped[str | None] = mapped_column(
+        Text, nullable=True, default=None, doc="MD / MBBS / PhD / RN / RPh — free text."
+    )
+
+    # Medical licensure (required for PI / sub-investigator per ICH E6 §4.1.1).
+    medical_license_number: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    medical_license_country: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+
+    # ICH E6 §4.2.4 — GCP training evidence (required for any data-touching role).
+    gcp_training_completed_date: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
+    gcp_training_provider: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    gcp_certificate_url: Mapped[str | None] = mapped_column(
+        Text, nullable=True, default=None, doc="S3 URL or similar — populated in U3."
+    )
+
+    # ICH E6 §4.1.3 / FDA Form 1572 §6 — investigator CV.
+    cv_url: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+
+    # 21 CFR §54 — financial disclosure (required for PI in FDA-regulated studies).
+    financial_disclosure_signed_date: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
+
+    # Onboarding gate (U3 will enforce; U1 just records the boolean).
+    onboarding_completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
+
+    # Suspension lifecycle. Suspended users keep their RoleAssignments but
+    # are 403'd at every endpoint (enforced via auth dependency in U2/U3
+    # follow-up; U1 just records).
+    suspended_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
+    suspended_by_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, default=None
+    )
+    suspended_reason: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
+
+
+class DelegationLogEntry(Base):
+    """Per-Trial delegation log entry — ICH E6 §4.1.5 + 21 CFR §312.62.
+
+    The PI delegates specific tasks to each member of the study team. The
+    log must capture: who, what tasks, when active, signed by PI.
+
+    Trial-scoped (not study-scoped) because delegation is investigator-
+    level per ICH E6; the same person can be delegated different tasks
+    on different Trials within the same Account.
+
+    `study_role` is FREE TEXT and distinct from the RBAC `role` — the
+    sponsor's delegation log uses titles like "Sub-Investigator",
+    "Study Coordinator", "Pharmacist" which don't 1:1 map onto our RBAC
+    role enum. The RBAC grant (RoleAssignment) is separate.
+    """
+
+    __tablename__ = "delegation_log_entries"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    trial_id: Mapped[str] = mapped_column(
+        ForeignKey("clinical_trials.id", ondelete="CASCADE"),
+        index=True,
+    )
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        index=True,
+    )
+    study_role: Mapped[str] = mapped_column(
+        Text, doc="Free-text role title as it appears on the sponsor's delegation log."
+    )
+    delegated_tasks_json: Mapped[str] = mapped_column(
+        Text,
+        default="[]",
+        doc='JSON list of free-text task descriptors (e.g. ["informed consent", "AE assessment"]).',
+    )
+    start_date: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    end_date: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
+    signed_by_pi_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, default=None
+    )
+    signed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class TrainingRecord(Base):
+    """A training credential captured against a User — ICH E6 §4.2.4.
+
+    Free-form (training_type / topic / provider) so the platform doesn't
+    constrain what counts as training. GCP completion is the most common
+    instance but protocol-specific + platform training also land here.
+    `expires_date` lets U4 surface upcoming expiries (GCP certificates
+    typically 2-3 year validity).
+    """
+
+    __tablename__ = "training_records"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        index=True,
+    )
+    training_type: Mapped[str] = mapped_column(
+        Text,
+        doc="ich_gcp | protocol_specific | platform | other.",
+    )
+    topic: Mapped[str] = mapped_column(Text, doc="Free-text title.")
+    provider: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    completed_date: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    expires_date: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
+    certificate_url: Mapped[str | None] = mapped_column(
+        Text, nullable=True, default=None, doc="S3 URL or similar — populated in U3."
+    )
+    verified_by_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, default=None
+    )
+    verified_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True, default=None
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)

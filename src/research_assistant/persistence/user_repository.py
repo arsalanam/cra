@@ -48,6 +48,22 @@ def _parse_roles(roles_json: str) -> list[str]:
     return [str(r) for r in roles if isinstance(r, str)]
 
 
+def _parse_scoped_assignments(assignments_json: str | None) -> list[dict[str, object]]:
+    """Sprint U1 — parse the scope-aware grant list from
+    `PendingInvitation.assignments_json`. Returns an empty list when the
+    column is NULL (legacy invitation) or the JSON is malformed.
+    """
+    if not assignments_json:
+        return []
+    try:
+        parsed = json.loads(assignments_json)
+    except (json.JSONDecodeError, TypeError):
+        return []
+    if not isinstance(parsed, list):
+        return []
+    return [a for a in parsed if isinstance(a, dict)]
+
+
 class UserRepository:
     """Data access for users, roles, and pending invitations."""
 
@@ -245,31 +261,61 @@ class UserRepository:
             user = User(cognito_sub=cognito_sub, email=email)
             self._s.add(user)
             await self._s.flush()  # assign user.id before granting roles
-            for role in _parse_roles(invitation.roles_json):
-                try:
-                    await self.grant_role(
-                        user.id,
-                        role,
-                        granted_by=invitation.invited_by,
-                    )
-                except ValueError:
-                    # Unknown role on the invitation — skip rather than fail
-                    # the login. Logged so an operator can clean up the
-                    # invitation row; the user still gets bound to their
-                    # other valid roles. Better UX than refusing to log them
-                    # in over a typo on the invite side.
-                    logger.warning(
-                        "Skipping unknown role %r on invitation for %s",
-                        role,
-                        email,
-                    )
+            # Sprint U1: scope-aware assignments_json takes precedence
+            # when present (admin used the user-admin module). Falls back
+            # to flat roles_json for legacy / global-only invitations.
+            scoped_grants = _parse_scoped_assignments(invitation.assignments_json)
+            if scoped_grants:
+                for grant in scoped_grants:
+                    role = grant.get("role")
+                    scope_type_raw = grant.get("scope_type", "global")
+                    scope_id_raw = grant.get("scope_id")
+                    if not isinstance(role, str):
+                        continue
+                    if not isinstance(scope_type_raw, str):
+                        scope_type_raw = "global"
+                    scope_id = scope_id_raw if isinstance(scope_id_raw, str) else None
+                    try:
+                        await self.grant_role(
+                            user.id,
+                            role,
+                            scope_type=scope_type_raw,
+                            scope_id=scope_id,
+                            granted_by=invitation.invited_by,
+                        )
+                    except ValueError:
+                        logger.warning(
+                            "Skipping unknown scoped grant %r on invitation for %s",
+                            grant,
+                            email,
+                        )
+            else:
+                for role in _parse_roles(invitation.roles_json):
+                    try:
+                        await self.grant_role(
+                            user.id,
+                            role,
+                            granted_by=invitation.invited_by,
+                        )
+                    except ValueError:
+                        # Unknown role on the invitation — skip rather than fail
+                        # the login. Logged so an operator can clean up the
+                        # invitation row; the user still gets bound to their
+                        # other valid roles. Better UX than refusing to log them
+                        # in over a typo on the invite side.
+                        logger.warning(
+                            "Skipping unknown role %r on invitation for %s",
+                            role,
+                            email,
+                        )
             invitation.consumed_at = datetime.now(UTC)
             await self._s.flush()
             logger.info(
-                "Provisioned user %s (%s) with roles %s",
+                "Provisioned user %s (%s) with roles %s (scoped=%s)",
                 user.id,
                 email,
                 invitation.roles_json,
+                bool(scoped_grants),
             )
             return user
 

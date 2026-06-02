@@ -55,6 +55,41 @@ def create_cognito_user(email: str, *, region: str, user_pool_id: str) -> str:
         raise CognitoAdminError(f"AdminCreateUser failed ({code}): {e}") from e
 
 
+def resend_cognito_invitation(email: str, *, region: str, user_pool_id: str) -> str:
+    """Sprint U1 — re-send the Cognito invitation email for an
+    already-provisioned user. Uses `AdminCreateUser` with
+    `MessageAction=RESEND` (the documented way to re-deliver an invite
+    for an unconfirmed user). Returns the Cognito user status.
+
+    Raises `CognitoAdminError` if the user is already confirmed (no
+    invite to resend) or boto3 surfaces another failure.
+    """
+    client = boto3.client("cognito-idp", region_name=region)
+    try:
+        resp = client.admin_create_user(
+            UserPoolId=user_pool_id,
+            Username=email,
+            UserAttributes=[
+                {"Name": "email", "Value": email},
+                {"Name": "email_verified", "Value": "true"},
+            ],
+            DesiredDeliveryMediums=["EMAIL"],
+            MessageAction="RESEND",
+        )
+        return str(resp["User"]["UserStatus"])
+    except ClientError as e:
+        code = e.response.get("Error", {}).get("Code", "")
+        if code == "UserNotFoundException":
+            raise CognitoAdminError(
+                f"Cognito user {email!r} not found; cannot resend invite."
+            ) from e
+        if code == "InvalidParameterException":
+            raise CognitoAdminError(
+                f"Cannot resend invite for {email!r} — user may already be confirmed."
+            ) from e
+        raise CognitoAdminError(f"AdminCreateUser RESEND failed ({code}): {e}") from e
+
+
 def _secret_hash(username: str, client_id: str, client_secret: str) -> str:
     """Per Cognito docs: BASE64(HMAC-SHA256(client_secret, username + client_id))."""
     msg = (username + client_id).encode("utf-8")

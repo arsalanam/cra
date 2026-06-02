@@ -89,6 +89,12 @@ _COLUMN_MIGRATIONS: dict[str, dict[str, str]] = {
         # auto-generated ClinicalTrial wrapper.
         "trial_id": "TEXT REFERENCES clinical_trials(id) ON DELETE SET NULL",
     },
+    "pending_invitations": {
+        # Sprint U1 — user-admin module. Scope-aware grants alongside the
+        # legacy flat roles_json. Matcher consumes whichever is set;
+        # assignments_json takes precedence.
+        "assignments_json": "TEXT",
+    },
 }
 
 # Index DDL applied after column migrations. Each must be idempotent
