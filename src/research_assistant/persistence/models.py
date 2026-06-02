@@ -193,6 +193,16 @@ class Thread(Base):
         default=None,
         doc="Which specialist this thread is pinned to (set by the dispatcher).",
     )
+    trial_id: Mapped[str | None] = mapped_column(
+        ForeignKey("clinical_trials.id", ondelete="SET NULL"),
+        nullable=True,
+        default=None,
+        doc=(
+            "Sprint A2.5: owning ClinicalTrial when the thread was spawned "
+            "from a trial-bound source (handoff CTA or /accounts.html). NULL "
+            "for analysis / Q&A threads that have no parent trial."
+        ),
+    )
     title: Mapped[str] = mapped_column(Text, default="New conversation")
     summary: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)

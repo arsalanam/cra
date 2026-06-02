@@ -55,6 +55,11 @@ _COLUMN_MIGRATIONS: dict[str, dict[str, str]] = {
     "threads": {
         "user_id": "TEXT REFERENCES users(id) ON DELETE SET NULL",
         "workflow": "TEXT",
+        # Sprint A2.5: chat-handoff seeds carry trial context. NULL = thread
+        # is not associated with a Trial (legacy / general Q&A / analysis
+        # work without a parent trial). Set when the thread is spawned from
+        # the /accounts.html "Draft <kind>" CTA or inherited via _runHandoff.
+        "trial_id": "TEXT REFERENCES clinical_trials(id) ON DELETE SET NULL",
     },
     "users": {
         # Phase B: Cognito identity binding. SQLite can't ADD COLUMN with a

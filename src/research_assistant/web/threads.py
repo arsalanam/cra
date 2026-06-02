@@ -19,8 +19,8 @@ from pydantic import BaseModel, ConfigDict
 from ..auth import SessionPayload
 from ..config import get_settings
 from ..persistence.database import get_db_session
-from ..persistence.models import DEFAULT_USER_ID, Thread
-from ..persistence.repository import ThreadRepository
+from ..persistence.models import DEFAULT_USER_ID, ClinicalTrial, Thread
+from ..persistence.repository import AccountRepository, ThreadRepository
 from ..persistence.user_repository import UserRepository
 from ..reports import csr as _csr_report
 from ..reports import grade as _grade_report
@@ -46,6 +46,7 @@ logger = logging.getLogger(__name__)
 
 class ThreadCreate(BaseModel):
     title: str = "New conversation"
+    trial_id: str | None = None
 
 
 class ThreadOut(BaseModel):
@@ -55,6 +56,7 @@ class ThreadOut(BaseModel):
     title: str
     summary: str | None
     workflow: str | None = None
+    trial_id: str | None = None
     created_at: datetime
     updated_at: datetime
     message_count: int = 0
@@ -130,10 +132,31 @@ def create_thread_router() -> APIRouter:
         body: ThreadCreate | None = None,
     ) -> ThreadOut:
         title = body.title if body else "New conversation"
+        trial_id = body.trial_id if body else None
         owner = await resolve_local_user_id(user)
         async with get_db_session() as session:
+            # Sprint A2.5: when trial_id is supplied, validate it exists
+            # and the caller is a member of the owning Account. A 404
+            # (not 403) hides existence — same posture as other account
+            # endpoints. DEFAULT_USER_ID always passes for single-user
+            # dev installs.
+            if trial_id is not None:
+                trial = await session.get(ClinicalTrial, trial_id)
+                if trial is None:
+                    raise HTTPException(404, "Trial not found")
+                if owner != DEFAULT_USER_ID:
+                    acct_repo = AccountRepository(session)
+                    acct = await acct_repo.get_account(trial.account_id)
+                    if acct is None or (
+                        acct.owner_user_id != owner
+                        and await acct_repo.is_member(
+                            account_id=trial.account_id, user_id=owner
+                        )
+                        is None
+                    ):
+                        raise HTTPException(404, "Trial not found")
             repo = ThreadRepository(session)
-            thread = await repo.create_thread(title=title, user_id=owner)
+            thread = await repo.create_thread(title=title, user_id=owner, trial_id=trial_id)
             return _thread_out(thread, message_count=0)
 
     @router.get("", response_model=list[ThreadOut])

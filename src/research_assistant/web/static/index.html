@@ -970,6 +970,51 @@ function App() {
     loadThreads();
   }, []);
 
+  /* Sprint A2.5: URL-param handler. /?thread=<id> jumps to that thread;
+     /?seed=<msg> additionally sends the seed message as the first user
+     turn. Used by /accounts.html "Draft X for this trial" CTAs which
+     create a trial-bound Thread on the server then redirect here. Strips
+     the params on success so a back-button replay doesn't double-send.
+
+     Send is done with a thread-explicit /api/turn POST to avoid React's
+     stale-closure trap (activeThreadId set inside sendMessage is read
+     from this effect's closure, which would still be null). */
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const threadId = params.get("thread");
+    const seed = params.get("seed");
+    if (!threadId) return;
+    (async () => {
+      const clean = new URL(location.href);
+      clean.searchParams.delete("thread");
+      clean.searchParams.delete("seed");
+      history.replaceState({}, "", clean.toString());
+      setActiveThreadId(threadId);
+      setView("chat");
+      await loadMessages(threadId);
+      if (!seed) return;
+      setRunning(true);
+      setMessages(prev => [...prev, {
+        id: `tmp-${Date.now()}`, role: "user",
+        input_text: seed, final_answer: null, created_at: new Date().toISOString(),
+      }]);
+      try {
+        const res = await fetch("/api/turn", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ thread_id: threadId, user_message: seed }),
+        });
+        if (!res.ok) throw new Error(extractErrorMessage(await res.text()));
+        await loadMessages(threadId);
+        await loadThreads();
+      } catch (e) {
+        setError(`Agent error: ${e.message || e}`);
+        await loadMessages(threadId);
+      } finally {
+        setRunning(false);
+      }
+    })();
+  }, []);
+
   useEffect(() => {
     if (conversationRef.current) conversationRef.current.scrollTop = conversationRef.current.scrollHeight;
   }, [messages, running]);
@@ -1086,16 +1131,34 @@ function App() {
     }
   }
 
+  /* Sprint A2.5: read the parent thread's trial_id so handoff threads
+     inherit trial context. Best-effort — silently returns null if the
+     parent thread is gone or the fetch fails. */
+  async function _fetchParentTrialId() {
+    if (!activeThreadId) return null;
+    try {
+      const res = await fetch(`/api/threads/${activeThreadId}`);
+      if (!res.ok) return null;
+      const t = await res.json();
+      return t.trial_id || null;
+    } catch { return null; }
+  }
+
   /* Generic hand-off helper: create a thread, switch to it, auto-send the seed.
-     Used by both search_strategy → meta_analysis and sr_protocol → {search_strategy, meta_analysis}. */
+     Used by both search_strategy → meta_analysis and sr_protocol → {search_strategy, meta_analysis}.
+     Sprint A2.5: parent thread's trial_id is forwarded so the child thread
+     stays under the same Trial. */
   async function _runHandoff(threadTitle, seed) {
     if (running) return;
     setError(null);
+    const inheritedTrialId = await _fetchParentTrialId();
     let newThreadId = null;
     try {
+      const body = { title: threadTitle.slice(0, 120) };
+      if (inheritedTrialId) body.trial_id = inheritedTrialId;
       const t = await (await fetch("/api/threads", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: threadTitle.slice(0, 120) }),
+        body: JSON.stringify(body),
       })).json();
       newThreadId = t.id;
       setActiveThreadId(newThreadId);

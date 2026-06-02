@@ -40,6 +40,7 @@ class ThreadRepository:
         title: str = "New conversation",
         user_id: str | None = None,
         workflow: str | None = None,
+        trial_id: str | None = None,
     ) -> Thread:
         from .models import DEFAULT_USER_ID
 
@@ -47,6 +48,7 @@ class ThreadRepository:
             title=title[:120],
             user_id=user_id or DEFAULT_USER_ID,
             workflow=workflow,
+            trial_id=trial_id,
         )
         self._s.add(thread)
         await self._s.flush()

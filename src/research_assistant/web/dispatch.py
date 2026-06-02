@@ -27,8 +27,8 @@ from ..agent.dispatcher import SkillNotAuthorizedError, dispatch
 from ..config import get_settings
 from ..persistence.context import messages_to_history
 from ..persistence.database import get_db_session
-from ..persistence.models import DEFAULT_USER_ID, Message
-from ..persistence.repository import ThreadRepository
+from ..persistence.models import DEFAULT_USER_ID, ClinicalTrial, Message
+from ..persistence.repository import AccountError, AccountRepository, ThreadRepository
 from ..persistence.summarizer import StubThreadSummarizer
 from ..persistence.user_repository import UserRepository
 from ..services.quota import (
@@ -121,6 +121,66 @@ def _classify_agent_error(exc: Exception) -> tuple[int, str]:
     # Fallback — surface the raw error so the user can debug. No "Agent error:"
     # prefix here; the frontend adds its own framing.
     return (500, str(exc))
+
+
+# Sprint A2.5: terminal-card `kind` → ClinicalTrial artefact slot. Only
+# triggers auto-bind when the kind hits the final document (not an
+# intermediate intake / draft step). Lay summaries deliberately aren't
+# here — Trial currently has no lay_summary_thread_id column (deferred).
+_KIND_TO_ARTEFACT_SLOT: dict[str, str] = {
+    "registration_document": "registration",
+    "irb_document": "irb",
+    "sap_document": "sap",
+    "csr_document": "csr",
+    "manuscript_draft": "manuscript",
+}
+
+
+async def _maybe_autobind_artefact(
+    session: Any,
+    *,
+    thread_id: str,
+    trial_id: str | None,
+    output_kind: str | None,
+) -> None:
+    """Bind Thread → Trial.artefact_slot when the turn produced a terminal
+    artefact AND the Thread is trial-bound AND the slot is still empty.
+
+    Idempotent — never overwrites a populated slot, so a Trial whose
+    manuscript was already drafted in another thread stays untouched. Any
+    failure (bad mapping, deleted Trial, FK issue) is logged and dropped
+    so the dispatcher's happy path is never blocked by a binding hiccup.
+    """
+    if trial_id is None or output_kind is None:
+        return
+    slot = _KIND_TO_ARTEFACT_SLOT.get(output_kind)
+    if slot is None:
+        return
+    trial = await session.get(ClinicalTrial, trial_id)
+    if trial is None:
+        return
+    slot_column = f"{slot}_thread_id"
+    if getattr(trial, slot_column, None):
+        # Slot already taken — preserve operator's earlier binding.
+        return
+    try:
+        await AccountRepository(session).bind_trial_artefact(
+            trial_id=trial_id, kind=slot, thread_id=thread_id
+        )
+        logger.info(
+            "Auto-bound thread=%s to trial=%s slot=%s on kind=%s",
+            thread_id,
+            trial_id,
+            slot,
+            output_kind,
+        )
+    except AccountError:
+        logger.exception(
+            "Auto-bind failed for thread=%s trial=%s slot=%s",
+            thread_id,
+            trial_id,
+            slot,
+        )
 
 
 def _last_assistant_kind(messages: list[Message]) -> str | None:
@@ -349,6 +409,18 @@ def create_dispatch_router() -> APIRouter:
             )
             if thread.workflow != chosen_workflow:
                 await repo.update_thread(body.thread_id, workflow=chosen_workflow)
+
+            # Sprint A2.5: when the turn produced a terminal artefact and
+            # the Thread is trial-bound, auto-bind into the Trial's slot.
+            # Idempotent + best-effort — runs in the same session as the
+            # message write so a roll-back undoes both, but a binding
+            # failure never blocks the response.
+            await _maybe_autobind_artefact(
+                session,
+                thread_id=body.thread_id,
+                trial_id=thread.trial_id,
+                output_kind=getattr(output, "kind", None),
+            )
 
             # Compute the post-turn quota snapshot in the same session so
             # this turn's just-written `done` event is included in the totals

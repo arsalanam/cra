@@ -357,17 +357,118 @@ function renderTrialDetail(trial, account) {
     <div class="section">
       <h2>Linked artefact threads <span style="color:#5a6070;font-size:11px;text-transform:none">— cross-phase deep-links</span></h2>
       <table>
-        <tr><td><b>Registration draft</b></td><td>${trial.registration_thread_id ? `<a href="/?thread=${trial.registration_thread_id}" style="color:#7aa7d9">Open thread</a>` : `<span style="color:#5a6070">Not linked yet</span>`}</td></tr>
-        <tr><td><b>IRB / ICF packet</b></td><td>${trial.irb_thread_id ? `<a href="/?thread=${trial.irb_thread_id}" style="color:#7aa7d9">Open thread</a>` : `<span style="color:#5a6070">Not linked yet</span>`}</td></tr>
-        <tr><td><b>Statistical Analysis Plan</b></td><td>${trial.sap_thread_id ? `<a href="/?thread=${trial.sap_thread_id}" style="color:#7aa7d9">Open thread</a>` : `<span style="color:#5a6070">Not linked yet</span>`}</td></tr>
-        <tr><td><b>Clinical Study Report</b></td><td>${trial.csr_thread_id ? `<a href="/?thread=${trial.csr_thread_id}" style="color:#7aa7d9">Open thread</a>` : `<span style="color:#5a6070">Not linked yet</span>`}</td></tr>
-        <tr><td><b>Manuscript</b></td><td>${trial.manuscript_thread_id ? `<a href="/?thread=${trial.manuscript_thread_id}" style="color:#7aa7d9">Open thread</a>` : `<span style="color:#5a6070">Not linked yet</span>`}</td></tr>
+        ${artefactRow("Registration draft", "registration", trial.registration_thread_id, trial.id)}
+        ${artefactRow("IRB / ICF packet", "irb", trial.irb_thread_id, trial.id)}
+        ${artefactRow("Statistical Analysis Plan", "sap", trial.sap_thread_id, trial.id)}
+        ${artefactRow("Clinical Study Report", "csr", trial.csr_thread_id, trial.id)}
+        ${artefactRow("Manuscript", "manuscript", trial.manuscript_thread_id, trial.id)}
       </table>
       <div class="row" style="margin-top:8px">
-        <span style="color:#5a6070;font-size:11px">${trial.n_deployments || 0} eCRF deployment(s) for this trial.</span>
+        <span style="color:#5a6070;font-size:11px">${trial.n_deployments || 0} eCRF deployment(s) for this trial. Drafting a thread auto-binds it to the slot when the workflow reaches its terminal card.</span>
       </div>
     </div>
   `;
+}
+
+/* Sprint A2.5: per-artefact row with right-aligned action. Either a deep
+   link into the linked thread, or a "Draft" button that spawns a fresh
+   trial-bound chat thread + redirects to it with the seed message
+   pre-loaded. */
+function artefactRow(label, kind, threadId, trialId) {
+  const action = threadId
+    ? `<a href="/?thread=${threadId}" style="color:#7aa7d9">Open thread</a>`
+    : `<button class="btn primary" onclick="draftArtefact('${trialId}','${kind}')">Draft</button>`;
+  const state = threadId
+    ? `<span style="color:#5a9c5a">Linked</span>`
+    : `<span style="color:#5a6070">Not linked yet</span>`;
+  return `<tr><td><b>${label}</b></td><td>${state}</td><td style="text-align:right">${action}</td></tr>`;
+}
+
+/* Specialist slash-command + natural-language seed per artefact kind.
+   Slash command pins the workflow; the body grounds the model in the
+   actual trial properties so the first turn isn't a generic intake. */
+const _ARTEFACT_SEED_TEMPLATES = {
+  registration: {
+    slash: "/registration",
+    title: (t) => `Registration: ${(t.title || "trial").slice(0, 80)}`,
+    body: (t) => [
+      `Draft a trial registration record for "${t.title}"`,
+      t.sponsor ? `Sponsor: ${t.sponsor}` : "",
+      t.indication ? `Indication: ${t.indication}` : "",
+      t.phase ? `Phase: ${t.phase}` : "",
+      t.protocol_id ? `Protocol id: ${t.protocol_id}` : "",
+    ].filter(Boolean).join("\n"),
+  },
+  irb: {
+    slash: "/irb",
+    title: (t) => `IRB packet: ${(t.title || "trial").slice(0, 80)}`,
+    body: (t) => [
+      `Draft an IRB submission packet (protocol synopsis + ICF) for "${t.title}"`,
+      t.sponsor ? `Sponsor: ${t.sponsor}` : "",
+      t.indication ? `Indication: ${t.indication}` : "",
+      t.phase ? `Phase: ${t.phase}` : "",
+    ].filter(Boolean).join("\n"),
+  },
+  sap: {
+    slash: "/sap",
+    title: (t) => `SAP: ${(t.title || "trial").slice(0, 80)}`,
+    body: (t) => [
+      `Draft a Statistical Analysis Plan for "${t.title}"`,
+      t.indication ? `Indication: ${t.indication}` : "",
+      t.phase ? `Phase: ${t.phase}` : "",
+    ].filter(Boolean).join("\n"),
+  },
+  csr: {
+    slash: "/csr",
+    title: (t) => `CSR: ${(t.title || "trial").slice(0, 80)}`,
+    body: (t) => [
+      `Draft an ICH E3 Clinical Study Report for "${t.title}"`,
+      t.sponsor ? `Sponsor: ${t.sponsor}` : "",
+      t.protocol_id ? `Protocol id: ${t.protocol_id}` : "",
+    ].filter(Boolean).join("\n"),
+  },
+  manuscript: {
+    slash: "/manuscript",
+    title: (t) => `Manuscript: ${(t.title || "trial").slice(0, 80)}`,
+    body: (t) => [
+      `Draft an IMRaD manuscript for "${t.title}"`,
+      t.indication ? `Indication: ${t.indication}` : "",
+    ].filter(Boolean).join("\n"),
+  },
+};
+
+/* Spawn a fresh chat thread bound to this trial, then navigate to the
+   chat page with a URL-encoded seed so the chat-side useEffect auto-fires
+   the first turn. Errors fall back to an alert with no navigation. */
+async function draftArtefact(trialId, kind) {
+  const tmpl = _ARTEFACT_SEED_TEMPLATES[kind];
+  if (!tmpl) return;
+  let trial;
+  try {
+    const r = await api(`/api/trials/${trialId}`);
+    if (!r.ok) throw new Error(await r.text() || r.statusText);
+    trial = await r.json();
+  } catch (e) {
+    alert("Failed to load trial: " + (e.message || e));
+    return;
+  }
+  const title = tmpl.title(trial);
+  const seed = `${tmpl.slash}\n\n${tmpl.body(trial)}`;
+  try {
+    const r = await api("/api/threads", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title, trial_id: trialId }),
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({ detail: r.statusText }));
+      throw new Error(err.detail || r.statusText);
+    }
+    const t = await r.json();
+    location.href = `/?thread=${encodeURIComponent(t.id)}&seed=${encodeURIComponent(seed)}`;
+  } catch (e) {
+    alert("Failed to spawn thread: " + (e.message || e));
+  }
 }
 
 async function submitNewAccount() {
