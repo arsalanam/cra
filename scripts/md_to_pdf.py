@@ -42,6 +42,9 @@ CSS = """
   a { color: #1f7a8c; text-decoration: none; }
   hr { border: 0; border-top: 1px solid #dde4ee; margin: 14px 0; }
 
+  img { max-width: 100%; max-height: 200mm; object-fit: contain;
+        border: 1px solid #d4dae6; border-radius: 6px; margin: 8px 0; display: block; }
+
   .meta-strip { background: #f0f4fa; border: 1px solid #d7e0ee; border-radius: 6px;
                 padding: 7px 12px; font-size: 10.5px; color: #2a435f; margin: 10px 0; }
 
