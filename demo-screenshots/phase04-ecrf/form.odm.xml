@@ -1,0 +1,41 @@
+<?xml version='1.0' encoding='utf-8'?>
+<ODM xmlns="http://www.cdisc.org/ns/odm/v1.3" FileType="Snapshot" FileOID="S.27a8aedd-5be4-4338-965d-b8b5f866553d.vital_signs.v1" CreationDateTime="2026-06-19T07:55:24.597147+00:00" ODMVersion="1.3.2">
+  <Study OID="S.27a8aedd-5be4-4338-965d-b8b5f866553d">
+    <GlobalVariables>
+      <StudyName>SMOKE-T2DM-001 — Phase 2 SGLT2i in adults with T2DM (smoke study)</StudyName>
+      <StudyDescription>SMOKE-T2DM-001 — Phase 2 SGLT2i in adults with T2DM (smoke study)</StudyDescription>
+      <ProtocolName>SMOKE-T2DM-001 — Phase 2 SGLT2i in adults with T2DM (smoke study)</ProtocolName>
+    </GlobalVariables>
+    <MetaDataVersion OID="MDV.vital_signs.v1" Name="Vital Signs v1">
+      <FormDef OID="F.vital_signs" Name="Vital Signs" Repeating="No">
+        <ItemGroupRef ItemGroupOID="IG.vital_signs.vitals_section" Mandatory="Yes" />
+      </FormDef>
+      <ItemGroupDef OID="IG.vital_signs.vitals_section" Name="Vital Signs" Repeating="No">
+        <ItemRef ItemOID="IT.vital_signs.sys_bp" Mandatory="Yes" />
+        <ItemRef ItemOID="IT.vital_signs.dia_bp" Mandatory="Yes" />
+        <ItemRef ItemOID="IT.vital_signs.heart_rate" Mandatory="Yes" />
+        <ItemRef ItemOID="IT.vital_signs.temperature" Mandatory="No" />
+      </ItemGroupDef>
+      <ItemDef OID="IT.vital_signs.sys_bp" Name="SYSBP" DataType="integer" Unit="mmHg">
+        <Question>
+          <TranslatedText xml:lang="en">Systolic Blood Pressure</TranslatedText>
+        </Question>
+      </ItemDef>
+      <ItemDef OID="IT.vital_signs.dia_bp" Name="DIABP" DataType="integer" Unit="mmHg">
+        <Question>
+          <TranslatedText xml:lang="en">Diastolic Blood Pressure</TranslatedText>
+        </Question>
+      </ItemDef>
+      <ItemDef OID="IT.vital_signs.heart_rate" Name="PULSRATE" DataType="integer" Unit="bpm">
+        <Question>
+          <TranslatedText xml:lang="en">Heart Rate</TranslatedText>
+        </Question>
+      </ItemDef>
+      <ItemDef OID="IT.vital_signs.temperature" Name="TEMP" DataType="float" Unit="°C">
+        <Question>
+          <TranslatedText xml:lang="en">Body Temperature</TranslatedText>
+        </Question>
+      </ItemDef>
+    </MetaDataVersion>
+  </Study>
+</ODM>
