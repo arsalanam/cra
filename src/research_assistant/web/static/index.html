@@ -6,7 +6,11 @@
 <title>Clinical Research Assistant</title>
 <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<!-- Pin Babel 7: @babel/standalone "latest" now resolves to v8, whose preset-react
+     emits an ES `import` for the JSX runtime, breaking the in-browser
+     <script type="text/babel"> ("Cannot use import statement outside a module")
+     and preventing the app from mounting on a fresh/uncached browser. -->
+<script src="https://unpkg.com/@babel/standalone@7/babel.min.js"></script>
 <style>
   * { box-sizing: border-box; }
   body { margin: 0; font-family: -apple-system, Segoe UI, Roboto, sans-serif; background: #0f1115; color: #e6e6e6; height: 100vh; }
