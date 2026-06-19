@@ -6,7 +6,9 @@
 <title>SR Reviews · Clinical Research Assistant</title>
 <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<!-- Pin Babel 7: "latest" now resolves to v8 (automatic JSX runtime emits an
+     ES import) which breaks the in-browser <script type="text/babel">. -->
+<script src="https://unpkg.com/@babel/standalone@7/babel.min.js"></script>
 <style>
   * { box-sizing: border-box; }
   body { margin: 0; font-family: -apple-system, Segoe UI, Roboto, sans-serif; background: #0f1115; color: #e6e6e6; min-height: 100vh; }
