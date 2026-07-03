@@ -14,7 +14,7 @@ import markdown
 from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parent.parent / "demo-screenshots"
-GUIDES = ["PHASE02-SAP-walkthrough.md", "PHASE04-ECRF-walkthrough.md"]
+GUIDES = ["PHASE02-SAP-walkthrough.md"]
 
 CSS = """
 <style>

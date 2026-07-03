@@ -178,13 +178,4 @@ query-lifecycle.
 
 ---
 
-## Reproduce
 
-```bash
-uv run python scripts/demo_capture_x1_ecrf.py   # X1 -> phase04-ecrf/00..08 + form.odm.xml
-uv run python scripts/demo_capture_x2_edc.py    # X2 -> phase04-ecrf/10..16
-```
-
-> The AI assigns slightly different item ids each run (`sbp` / `sys_bp` / `systolic_bp`). The X1
-> script hardens the systolic check by **label match** ("Systolic"), and X2 discovers field ids
-> from the deployed form at runtime — so both scripts are robust to that non-determinism.

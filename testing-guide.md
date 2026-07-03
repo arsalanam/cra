@@ -22,8 +22,7 @@ Open **http://localhost:8000**. If auth is configured, log in via Cognito.
 
 **First admin / data-entry access** (needed for admin + eCRF authoring):
 ```bash
-docker compose -f deploy/compose/docker-compose.yml exec agent \
-    cra create-admin you@example.com --skip-cognito
+docker compose -f deploy/compose/docker-compose.yml exec agent cra create-admin you@example.com --skip-cognito
 ```
 Log out/in so the invitation is consumed. (`admin` also satisfies the
 `data_entry` role used by EDC capture.)

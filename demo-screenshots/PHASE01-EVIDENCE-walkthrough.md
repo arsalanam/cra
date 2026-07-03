@@ -11,12 +11,7 @@ Captured against a **live instance** (`http://localhost:8000`, AWS Bedrock `clau
 (they reuse the same card/page patterns and, for NMA/IPD/GRADE, deliver their value as downloadable
 PDF reports).
 
-## Setup notes
-- Run the stack auth-disabled (blank Cognito) for clean single-user capture — see the Phase 02 guide.
-- **E1 (and E4/E5) render their forest/network plots in the Docker sandbox** — build it once:
-  `docker build -t research-assistant-sandbox:latest ./sandbox`.
-- The chat UI requires the Babel 7 pin in `index.html` / `sr.html` (see Phase 02 guide's CDN note).
-- E2b (search) and E3 (ingest) hit **live PubMed**.
+
 
 ---
 

@@ -14,27 +14,7 @@ other card is produced by the `sap_drafter` specialist on Bedrock.
 
 ---
 
-## How this instance was run (one-time setup)
 
-```bash
-# 1. Real AWS Bedrock creds in deploy/compose/.env (AWS_ACCESS_KEY_ID / _SECRET / _DEFAULT_REGION)
-# 2. Auth disabled for a clean single-user demo (blank the two Cognito vars so auth_enabled=False)
-#    -> you land as the seeded default-user (admin) with no login wall.
-# 3. Bring the stack up:
-docker compose -f deploy/compose/docker-compose.yml up -d
-#    (host postgres port remapped 5432->5433 in the compose file to avoid a local conflict;
-#     the agent talks to postgres over the internal network, so this is cosmetic.)
-```
-
-> ⚠ **Known CDN gotcha (affects the chat UI only).** The main app (`/`) bootstraps React via
-> `@babel/standalone` from unpkg. unpkg's "latest" now serves **Babel 8**, whose `preset-react`
-> emits an ES `import` for the JSX runtime and the in-browser `<script type="text/babel">` then
-> throws *"Cannot use import statement outside a module"* — the chat UI never mounts on a fresh
-> (uncached) browser. **Fix:** pin Babel 7 in `index.html`
-> (`https://unpkg.com/@babel/standalone@7/babel.min.js`). The screenshots below were captured
-> with Babel 7 pinned. *(The eCRF pages in Phase 04 are plain JS and are unaffected.)*
-
----
 
 ## Step 1 — New conversation, trigger the SAP workflow
 
