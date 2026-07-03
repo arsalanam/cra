@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# CRA EC2 bootstrap. Runs once at first boot (cloud-init). Logs to
+# /var/log/cloud-init-output.log. Re-runs on user-data change (instance
+# replacement) because ec2.tf sets user_data_replace_on_change = true.
+set -euxo pipefail
+
+CLONE_DIR=/opt/cra
+ENV_FILE="$CLONE_DIR/deploy/ec2/.env"
+COMPOSE_FILE="$CLONE_DIR/deploy/ec2/docker-compose.ec2.yml"
+
+echo "=== [cra] installing docker + git + jq ==="
+dnf update -y
+dnf install -y docker git jq
+
+systemctl enable --now docker
+
+echo "=== [cra] installing docker compose v2 plugin ==="
+mkdir -p /usr/local/lib/docker/cli-plugins
+curl -fsSL "https://github.com/docker/compose/releases/download/v2.29.7/docker-compose-linux-x86_64" \
+  -o /usr/local/lib/docker/cli-plugins/docker-compose
+chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+docker compose version
+
+echo "=== [cra] fetching GitHub deploy key from Secrets Manager ==="
+install -m 700 -d /root/.ssh
+aws secretsmanager get-secret-value \
+  --secret-id "${deploy_key_secret_id}" --region "${region}" \
+  --query SecretString --output text > /root/.ssh/id_deploy
+chmod 600 /root/.ssh/id_deploy
+ssh-keyscan -t rsa,ed25519 github.com >> /root/.ssh/known_hosts 2>/dev/null
+
+echo "=== [cra] cloning ${repo_url} (${repo_branch}) ==="
+export GIT_SSH_COMMAND="ssh -i /root/.ssh/id_deploy -o IdentitiesOnly=yes"
+rm -rf "$CLONE_DIR"
+git clone --depth 1 --branch "${repo_branch}" "${repo_url}" "$CLONE_DIR"
+
+echo "=== [cra] building the sandbox image ==="
+docker build -t research-assistant-sandbox:latest "$CLONE_DIR/sandbox"
+
+echo "=== [cra] preparing host dirs (docker-out-of-docker bind mounts) ==="
+mkdir -p "$CLONE_DIR/sandbox-work" "$CLONE_DIR/images" "$CLONE_DIR/library"
+
+echo "=== [cra] rendering .env from Secrets Manager + instance config ==="
+SECRET_JSON=$(aws secretsmanager get-secret-value \
+  --secret-id "${app_secret_id}" --region "${region}" \
+  --query SecretString --output text)
+
+{
+  # Runtime secrets (Tavily/NCBI/Cognito client secret/session/DB passwords).
+  echo "$SECRET_JSON" | jq -r 'to_entries[] | "\(.key)=\(.value)"'
+  # Non-secret config. NB: no AWS_ACCESS_KEY_ID / AWS_PROFILE — the instance
+  # role provides Bedrock/Cognito/Secrets creds via IMDS.
+  echo "AWS_DEFAULT_REGION=${region}"
+  echo "BEDROCK_MODEL_ID=${bedrock_model_id}"
+  echo "EMBEDDING_MODEL_ID=amazon.titan-embed-text-v2:0"
+  echo "HOST_SANDBOX_WORK_DIR=$CLONE_DIR/sandbox-work"
+  echo "COGNITO_REGION=${region}"
+  echo "COGNITO_REDIRECT_URI=https://${alb_dns_name}/auth/callback"
+%{ if enable_cognito_auth ~}
+  echo "COGNITO_USER_POOL_ID=${cognito_user_pool_id}"
+  echo "COGNITO_CLIENT_ID=${cognito_client_id}"
+  echo "COGNITO_DOMAIN=${cognito_domain}"
+%{ else ~}
+  # Auth disabled for first bring-up → land as default-user/admin.
+  echo "COGNITO_USER_POOL_ID="
+  echo "COGNITO_CLIENT_ID="
+%{ endif ~}
+} > "$ENV_FILE"
+chmod 600 "$ENV_FILE"
+
+echo "=== [cra] bringing the stack up ==="
+cd "$CLONE_DIR"
+docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --build
+
+echo "=== [cra] bootstrap complete ==="

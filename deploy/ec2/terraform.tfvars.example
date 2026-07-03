@@ -1,0 +1,32 @@
+# Copy to terraform.tfvars and fill in. terraform.tfvars is gitignored.
+#
+#   cp terraform.tfvars.example terraform.tfvars
+
+# ── REQUIRED: lock the public entrypoint to your IP ─────────────────────────
+# Find yours: curl -s https://checkip.amazonaws.com
+allowed_ingress_cidrs = ["203.0.113.7/32"]
+
+# ── App secrets → serialised into the cra/test/app Secrets Manager secret ───
+# AWS keys are intentionally NOT here — the instance role handles those.
+app_secrets = {
+  TAVILY_API_KEY             = ""
+  NCBI_API_KEY               = ""
+  COGNITO_CLIENT_SECRET      = "1n7cqcsc4isulqo0gqvackfp9p1756v3rq29cg31mgk8d02beq4k"
+  SESSION_COOKIE_SECRET      = "" # generate: openssl rand -base64 48
+  POSTGRES_PASSWORD          = "change-me"
+  CLINICAL_POSTGRES_PASSWORD = "change-me-too"
+}
+
+# ── GitHub deploy key (private PEM) → cra/test/deploy-key secret ─────────────
+# Register the matching PUBLIC key as a read-only deploy key on the repo.
+# Alternatively leave empty and `aws secretsmanager put-secret-value` yourself
+# BEFORE the instance boots.
+#   ssh-keygen -t ed25519 -f deploy_key -N "" -C "cra-ec2-deploy"
+# Then paste the private key here (or use: github_deploy_key = file("deploy_key"))
+github_deploy_key = ""
+
+# ── Optional overrides ──────────────────────────────────────────────────────
+# region              = "us-east-1"
+# instance_type       = "t3.large"
+# repo_branch         = "main"
+# enable_cognito_auth = false   # keep false for first bring-up

@@ -1,0 +1,14 @@
+# OpenTofu / Terraform — never commit state or secrets.
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+
+# tfvars carry real secrets (deploy key, API keys, DB passwords).
+*.tfvars
+!*.tfvars.example
+
+# Rendered at boot on the instance, not here — but ignore defensively.
+.env
