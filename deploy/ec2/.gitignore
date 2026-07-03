@@ -12,3 +12,8 @@ crash.*.log
 
 # Rendered at boot on the instance, not here — but ignore defensively.
 .env
+
+# GitHub SSH deploy key generated per the README — NEVER commit the private key.
+deploy_key
+deploy_key.*
+*.pem

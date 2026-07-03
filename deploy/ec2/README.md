@@ -14,6 +14,12 @@ Internet ──443──▶ ALB (public subnets, your-IP only) ──8000──�
                                                           instance role ─▶ Bedrock · Secrets · Cognito · SSM
 ```
 
+> **Where commands run.** Two environments are involved:
+> - 🪟 **Your Windows machine — PowerShell**, always from `D:\researchwork\cra\deploy\ec2`.
+>   `tofu`, `aws`, `ssh-keygen` all run here.
+> - 🐧 **The EC2 box — Linux shell** (Amazon Linux 2023), reached with
+>   `aws ssm start-session`. Blocks marked "on the box" run there, not on Windows.
+
 ## What Terraform creates
 
 | File | Resources |
@@ -27,87 +33,118 @@ Internet ──443──▶ ALB (public subnets, your-IP only) ──8000──�
 | `ec2.tf` | `t3.large` AL2023, private, IMDSv2-required, encrypted gp3, `user-data.sh.tftpl` |
 | `docker-compose.ec2.yml` | Standalone stack (instance-role auth, no `~/.aws`) used on the box |
 
-## Prerequisites
+## Prerequisites 🪟 (Windows / PowerShell)
 
-1. **OpenTofu ≥ 1.6** (`tofu`) and AWS credentials for account `157470074212`
-   in your shell (`aws sts get-caller-identity` should show it).
-2. **A GitHub read-only deploy key** for the repo:
-   ```bash
-   ssh-keygen -t ed25519 -f deploy_key -N "" -C "cra-ec2-deploy"
+Start every local step from the EC2 directory:
+
+```powershell
+Set-Location D:\researchwork\cra\deploy\ec2
+```
+
+1. **OpenTofu ≥ 1.6** (`tofu`) on `PATH`, and AWS credentials for account
+   `157470074212` in your shell — verify:
+   ```powershell
+   tofu version
+   aws sts get-caller-identity
+   ```
+2. **AWS Session Manager plugin** (required for `aws ssm start-session`):
+   <https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html>
+3. **A GitHub read-only deploy key** (OpenSSH ships with Windows 10/11):
+   ```powershell
+   ssh-keygen -t ed25519 -f deploy_key -C "cra-ec2-deploy"
+   #   → press Enter twice for an empty passphrase
    ```
    Add `deploy_key.pub` as a **Deploy key** on the GitHub repo (Settings →
-   Deploy keys → Add, read-only). Put the **private** key into
-   `github_deploy_key` in `terraform.tfvars` (or populate the secret manually
-   after apply — see below).
+   Deploy keys → Add, read-only). Put the **private** key `deploy_key` into
+   `github_deploy_key` in `terraform.tfvars` (or populate the secret manually —
+   see below). `deploy_key*` is gitignored, so it won't be committed.
 
-## Deploy
+## Deploy 🪟 (Windows / PowerShell)
 
-```bash
-cd deploy/ec2
-cp terraform.tfvars.example terraform.tfvars
-#   → set allowed_ingress_cidrs to "$(curl -s https://checkip.amazonaws.com)/32"
-#   → fill app_secrets + github_deploy_key
+```powershell
+Copy-Item terraform.tfvars.example terraform.tfvars
+#   then edit terraform.tfvars:
+#     allowed_ingress_cidrs → your public IP as ["x.x.x.x/32"]  (command below)
+#     app_secrets           → Tavily / NCBI / session / DB passwords
+#     github_deploy_key      → contents of the deploy_key file (or leave "")
 tofu init
 tofu plan
 tofu apply
 ```
 
-Outputs give you the URL and the SSM command:
+Find your public IP for `allowed_ingress_cidrs`:
 
-```bash
-tofu output app_url                 # https://<alb-dns>  (accept the self-signed warning)
-tofu output ssm_session_command     # open a shell on the box
+```powershell
+(Invoke-RestMethod https://checkip.amazonaws.com).Trim()
+#   → put "<that-ip>/32" in terraform.tfvars, e.g. allowed_ingress_cidrs = ["203.0.113.7/32"]
 ```
 
-First boot takes a few minutes (dnf, image builds). Watch it:
+> Tip: to load the private key straight from the file instead of pasting it,
+> set `github_deploy_key = file("deploy_key")` in `terraform.tfvars`.
+
+Outputs give you the URL and the SSM command:
+
+```powershell
+tofu output app_url                 # https://<alb-dns>  (accept the self-signed warning)
+tofu output ssm_session_command     # ready-to-run start-session command
+```
+
+First boot takes a few minutes (dnf, image builds). Open a shell on the box
+(🪟 PowerShell — needs the Session Manager plugin):
+
+```powershell
+aws ssm start-session --target (tofu output -raw instance_id) --region us-east-1
+```
+
+Then, 🐧 **on the box**, watch bootstrap and check the stack:
 
 ```bash
-aws ssm start-session --target "$(tofu output -raw instance_id)" --region us-east-1
 sudo tail -f /var/log/cloud-init-output.log      # look for "bootstrap complete"
-docker compose --env-file /opt/cra/deploy/ec2/.env \
+sudo docker compose --env-file /opt/cra/deploy/ec2/.env \
   -f /opt/cra/deploy/ec2/docker-compose.ec2.yml ps
 ```
 
 The ALB target turns **healthy** once `/api/health` returns 200; then the URL
 serves the app (as `default-user`/admin while auth is disabled).
 
-### Populating the deploy key out-of-band (optional)
+### Populating the deploy key out-of-band (optional) 🪟
 
-If you left `github_deploy_key = ""`, set it before the instance boots:
+If you left `github_deploy_key = ""`, set it before the instance boots. In
+PowerShell, quote the `-target` argument and use a backtick for line-continuation:
 
-```bash
-aws secretsmanager put-secret-value --secret-id cra/test/deploy-key \
+```powershell
+tofu apply "-target=aws_secretsmanager_secret.deploy_key"
+aws secretsmanager put-secret-value --secret-id cra/test/deploy-key `
   --secret-string file://deploy_key --region us-east-1
+tofu apply
 ```
 
-(Apply the secrets first with `tofu apply -target=aws_secretsmanager_secret.deploy_key`,
-put the value, then run the full `tofu apply`.)
-
-## Turning Cognito auth on
+## Turning Cognito auth on 🪟
 
 1. In the Cognito app client (`us-east-1_HpFCZvhKV`), add the callback URL:
-   `tofu output cognito_callback_url`.
+   ```powershell
+   tofu output cognito_callback_url
+   ```
 2. Set `enable_cognito_auth = true` in `terraform.tfvars`.
 3. `tofu apply` — user-data changes, so the **instance is replaced** and comes
    back with auth on. (Volumes are on the instance root; back up first if you
    have test data you care about — see caveats.)
 
-## Redeploying app changes
+## Redeploying app changes 🐧 (on the box, via SSM)
 
 The box clones a **shallow** copy of `repo_branch`. To pick up new commits:
 
 ```bash
-# on the box, via SSM:
 cd /opt/cra && sudo git pull
 sudo docker compose --env-file deploy/ec2/.env -f deploy/ec2/docker-compose.ec2.yml up -d --build
 ```
 
-For an immutable redeploy, bump anything in `user-data.sh.tftpl` and
-`tofu apply` (replaces the instance).
+For an immutable redeploy, bump anything in `user-data.sh.tftpl` and run
+`tofu apply` from Windows (replaces the instance).
 
-## Teardown
+## Teardown 🪟 (Windows / PowerShell)
 
-```bash
+```powershell
 tofu destroy
 ```
 
@@ -132,3 +169,13 @@ Secrets use `recovery_window_in_days = 0`, so they delete immediately (no
 - **VPC endpoints bill ~$7/mo each** (six interface endpoints). Set
   `enable_vpc_endpoints = false` for the cheapest box — SSM still reaches the
   instance over NAT.
+
+## Windows notes
+
+- All 🪟 commands are **PowerShell** (your default shell). `Copy-Item`,
+  `Invoke-RestMethod`, and backtick line-continuation are PowerShell-native;
+  the Unix `cp` / `curl` / `\` continuations do **not** behave the same here.
+- `tofu`, `aws`, and `ssh-keygen` are the same binaries on Windows — only the
+  surrounding shell syntax differs.
+- Paths in `.tf` files and `docker-compose.ec2.yml` use `/opt/cra/...` because
+  they run on the **Linux** EC2 host, not on Windows. Don't translate those.

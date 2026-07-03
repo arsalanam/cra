@@ -40,7 +40,7 @@ resource "aws_security_group_rule" "alb_out_to_app" {
 # handles admin access, so no SSH rule at all.
 resource "aws_security_group" "app" {
   name        = "${var.name_prefix}-app"
-  description = "EC2 app tier — ingress only from the ALB"
+  description = "EC2 app tier - ingress only from the ALB"
   vpc_id      = aws_vpc.this.id
   tags        = { Name = "${var.name_prefix}-app" }
 }
