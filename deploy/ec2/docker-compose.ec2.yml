@@ -1,0 +1,102 @@
+# EC2 (Option A) stack — standalone, NOT a merge-override of the local dev
+# compose. Differences from deploy/compose/docker-compose.yml:
+#   * No ~/.aws mount and no AWS_PROFILE — boto3 resolves Bedrock/Cognito/
+#     Secrets creds from the EC2 instance role via IMDS.
+#   * Postgres host ports are not published (private box; use `docker exec`).
+#   * DB passwords come from the .env rendered out of Secrets Manager.
+#
+# Paths are relative to THIS file's directory (deploy/ec2), so `../..` is the
+# repo root that user-data clones to /opt/cra.
+name: research-assistant
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-cra}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cra}
+      POSTGRES_DB: ${POSTGRES_DB:-cra}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ../compose/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    networks:
+      default:
+        aliases: [postgres, db]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-cra} -d ${POSTGRES_DB:-cra}"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  clinical-postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${CLINICAL_POSTGRES_USER:-cra}
+      POSTGRES_PASSWORD: ${CLINICAL_POSTGRES_PASSWORD:-cra}
+      POSTGRES_DB: ${CLINICAL_POSTGRES_DB:-cra_clinical}
+    volumes:
+      - clinical-postgres-data:/var/lib/postgresql/data
+    networks:
+      default:
+        aliases: [clinical-postgres]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${CLINICAL_POSTGRES_USER:-cra} -d ${CLINICAL_POSTGRES_DB:-cra_clinical}"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  agent:
+    build:
+      context: ../..
+      dockerfile: deploy/compose/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      clinical-postgres:
+        condition: service_healthy
+    environment:
+      # — Bedrock via instance role (no keys, no profile) —
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-us-east-1}
+      BEDROCK_MODEL_ID: ${BEDROCK_MODEL_ID:-us.anthropic.claude-haiku-4-5-20251001-v1:0}
+      EMBEDDING_MODEL_ID: ${EMBEDDING_MODEL_ID:-amazon.titan-embed-text-v2:0}
+      EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-1024}
+      EMBEDDING_ENABLED: ${EMBEDDING_ENABLED:-true}
+      # — DBs (passwords interpolated from the .env rendered by user-data) —
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-cra}:${POSTGRES_PASSWORD:-cra}@postgres:5432/${POSTGRES_DB:-cra}
+      CLINICAL_DATABASE_URL: postgresql+asyncpg://${CLINICAL_POSTGRES_USER:-cra}:${CLINICAL_POSTGRES_PASSWORD:-cra}@clinical-postgres:5432/${CLINICAL_POSTGRES_DB:-cra_clinical}
+      # — External APIs —
+      TAVILY_API_KEY: ${TAVILY_API_KEY:-}
+      NCBI_API_KEY: ${NCBI_API_KEY:-}
+      # — Token budgets —
+      MAX_INPUT_TOKENS_PER_DAY: ${MAX_INPUT_TOKENS_PER_DAY:-3000000}
+      MAX_OUTPUT_TOKENS_PER_DAY: ${MAX_OUTPUT_TOKENS_PER_DAY:-600000}
+      # — Sandbox docker-out-of-docker path translation —
+      SANDBOX_WORK_DIR: /work/sandbox
+      HOST_SANDBOX_WORK_DIR: ${HOST_SANDBOX_WORK_DIR}
+      IMAGES_DIR: /work/images
+      LIBRARY_RAW_DIR: /work/library
+      LIBRARY_CACHE_ENABLED: ${LIBRARY_CACHE_ENABLED:-true}
+      # — Cognito (blank → auth disabled, land as default-user) —
+      COGNITO_REGION: ${COGNITO_REGION:-us-east-1}
+      COGNITO_USER_POOL_ID: ${COGNITO_USER_POOL_ID:-}
+      COGNITO_CLIENT_ID: ${COGNITO_CLIENT_ID:-}
+      COGNITO_CLIENT_SECRET: ${COGNITO_CLIENT_SECRET:-}
+      COGNITO_DOMAIN: ${COGNITO_DOMAIN:-}
+      COGNITO_REDIRECT_URI: ${COGNITO_REDIRECT_URI:-http://localhost:8000/auth/callback}
+      SESSION_COOKIE_SECRET: ${SESSION_COOKIE_SECRET:-}
+    ports:
+      - "8000:8000" # reachable only from the ALB SG (see security_groups.tf)
+    volumes:
+      # Host docker daemon — lets sandbox_exec spawn sibling containers.
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Shared sandbox work-dir (host path forwarded via HOST_SANDBOX_WORK_DIR).
+      - ../../sandbox-work:/work/sandbox
+      - ../../images:/work/images
+      - ../../library:/work/library
+
+volumes:
+  postgres-data:
+  clinical-postgres-data:
