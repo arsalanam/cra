@@ -36,6 +36,7 @@ resource "aws_instance" "app" {
     bedrock_model_id     = var.bedrock_model_id
     alb_dns_name         = aws_lb.this.dns_name
     enable_cognito_auth  = var.enable_cognito_auth
+    enable_alb_auth      = var.enable_alb_auth
     cognito_user_pool_id = var.cognito_user_pool_id
     cognito_client_id    = var.cognito_client_id
     cognito_domain       = var.cognito_domain

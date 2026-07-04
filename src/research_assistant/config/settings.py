@@ -135,6 +135,16 @@ class Settings(BaseSettings):
     cognito_domain: str = ""  # e.g. https://cra-arsalanam.auth.us-east-1.amazoncognito.com
     cognito_redirect_uri: str = "http://localhost:8000/auth/callback"
 
+    # ── ALB edge auth (Option A) ─────────────────────────────────────────
+    # When the load balancer runs the Cognito login (not the app), the app
+    # exposes GET /logout to expire the ALB session cookies AND end the
+    # Cognito hosted-UI session. Independent of `auth_enabled` — the app's
+    # own login stays off. Populated by the EC2 deploy when enable_alb_auth.
+    alb_auth_enabled: bool = False
+    alb_cognito_domain: str = ""
+    alb_cognito_client_id: str = ""
+    alb_post_logout_url: str = ""
+
     # Session cookie signing key. Must be a high-entropy random string;
     # tests get a fixed value via env. Generate one with:
     #   python -c "import secrets; print(secrets.token_urlsafe(64))"

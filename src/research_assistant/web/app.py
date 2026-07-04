@@ -14,11 +14,14 @@ import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
+from urllib.parse import urlencode
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
+from ..auth import clear_session
 from ..config import get_settings
 from ..data.sample_questions import SAMPLE_QUESTIONS
 from ..persistence.clinical.database import init_clinical_db
@@ -115,13 +118,44 @@ def create_app() -> FastAPI:
         return SAMPLE_QUESTIONS
 
     @app.get("/api/health")
-    async def health() -> dict[str, str]:
-        """Health check — also shows which model is configured."""
+    async def health() -> dict[str, object]:
+        """Health check — also shows which model is configured.
+
+        `alb_auth` tells the frontend whether the load balancer runs the
+        Cognito login (Option A), so the sidebar can show a Log-out link
+        even though the app's own auth is disabled.
+        """
         return {
             "status": "ok",
             "model": settings.bedrock_model_id,
             "region": settings.aws_region,
+            "alb_auth": settings.alb_auth_enabled,
         }
+
+    @app.get("/logout")
+    async def logout() -> RedirectResponse:
+        """Log out of an ALB edge-auth (Cognito) deployment.
+
+        The load balancer runs the login, so a genuine logout must BOTH
+        expire the ALB session cookies AND end the Cognito hosted-UI session
+        — otherwise the ALB silently re-authenticates on the next request.
+        Falls back to a plain redirect home when ALB auth isn't configured.
+        """
+        if settings.alb_cognito_domain and settings.alb_cognito_client_id:
+            target = f"{settings.alb_cognito_domain}/logout?" + urlencode(
+                {
+                    "client_id": settings.alb_cognito_client_id,
+                    "logout_uri": settings.alb_post_logout_url or "/",
+                }
+            )
+        else:
+            target = "/"
+        response = RedirectResponse(url=target, status_code=302)
+        # Expire the ALB session cookies (chunked as -0, -1, ...).
+        for i in range(4):
+            response.delete_cookie(key=f"AWSELBAuthSessionCookie-{i}", path="/")
+        clear_session(response)  # also drop the app's own session cookie, if any
+        return response
 
     # ─── Generated image artefacts (forest plots, etc.) ────────────────────
     # Written by sandbox_exec into settings.images_dir; served read-only.

@@ -87,6 +87,11 @@ services:
       COGNITO_DOMAIN: ${COGNITO_DOMAIN:-}
       COGNITO_REDIRECT_URI: ${COGNITO_REDIRECT_URI:-http://localhost:8000/auth/callback}
       SESSION_COOKIE_SECRET: ${SESSION_COOKIE_SECRET:-}
+      # — ALB edge-auth logout (Option A): lets the app expose GET /logout —
+      ALB_AUTH_ENABLED: ${ALB_AUTH_ENABLED:-false}
+      ALB_COGNITO_DOMAIN: ${ALB_COGNITO_DOMAIN:-}
+      ALB_COGNITO_CLIENT_ID: ${ALB_COGNITO_CLIENT_ID:-}
+      ALB_POST_LOGOUT_URL: ${ALB_POST_LOGOUT_URL:-}
     ports:
       - "8000:8000" # reachable only from the ALB SG (see security_groups.tf)
     volumes:
