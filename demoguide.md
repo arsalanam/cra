@@ -21,76 +21,31 @@ Every paste target lives in a fenced code block — click the copy icon, drop it
 
 ---
 
-## Setup (do once before any demo)
+## Before you start
 
-The app runs as a Docker Compose stack (FastAPI `agent` + Postgres + clinical-Postgres). Plain `uv run` is for tests / tooling only — the runtime path is compose (per CLAUDE.md).
+The app is deployed on AWS and reached over HTTPS through a load balancer — there's no local stack to bring up. Just open the URL and sign in.
 
-### Prerequisites (one-time)
+**App URL:** `https://cra-test-alb-1950107331.us-east-1.elb.amazonaws.com/`
 
-- Docker Desktop running.
-- Sandbox image built (separate from the agent image):
+### First-time access
 
-  ```
-  docker build -t research-assistant-sandbox:latest ./sandbox
-  ```
-
-- `.env` populated with AWS / Tavily / NCBI keys and `HOST_SANDBOX_WORK_DIR` set to the absolute host path of `./sandbox-work`:
-
-  ```
-  cp deploy/compose/.env.example deploy/compose/.env
-  ```
-
-### Clean restart (recommended before any demo)
-
-Brings every service down (so no stale in-memory scheduler / cached config / orphaned thread state survives), then back up detached:
-
-```
-docker compose -f deploy/compose/docker-compose.yml down
-docker compose -f deploy/compose/docker-compose.yml up -d
-```
-
-### Tail the agent logs in a side terminal
-
-Run this in a second terminal — it streams `sandbox_exec` calls, `search_papers` calls, the `_require_sandbox_for_results` retry warning, and any errors live:
-
-```
-docker compose -f deploy/compose/docker-compose.yml logs -f agent
-```
-
-On startup you should see in the log stream:
-
-```
-INFO  Application startup complete.
-INFO  Uvicorn running on http://0.0.0.0:8000
-INFO  Scheduler started
-INFO  Scheduler re-registered N active watch(es) from DB
-```
-
-### If you changed code since last demo
-
-The Dockerfile `COPY`s `src/` at build time — there's no host bind-mount and no `--reload`. So a plain restart of the agent container would run the *old* code. After any code change, rebuild + recreate the `agent` container atomically (Postgres untouched, data preserved, ≈ 1 minute mostly cached):
-
-```
-docker compose -f deploy/compose/docker-compose.yml up -d --build agent
-```
-
-### Open the app
-
-In the browser at `http://localhost:8000/`, do a **hard-refresh** (`Ctrl+F5`) so the sidebar bell, watches link, multisite link, portfolio link, and the latest specialist cards load. Log in via Cognito if prompted.
+- The site uses a **self-signed TLS certificate**, so your browser shows a security warning on first visit. Accept it once (**Advanced → proceed to site**) — do this *before* signing in, or the login redirect can be blocked on the certificate error.
+- Access is gated by a **Cognito login at the load balancer**: you're redirected to a hosted sign-in page, then back to the app. You need a Cognito account in the pool — ask the admin for an invite if you don't have one.
+- After signing in, **hard-refresh** (`Ctrl+F5`) so the sidebar bell, watches / multisite / portfolio links, and the latest specialist cards load.
 
 ### Surface map (all the URLs you'll touch)
 
 ```
-http://localhost:8000/                — main app (chat workflows)
-http://localhost:8000/admin.html      — paper-source admin · role admin · validation-pack
-http://localhost:8000/sr.html         — SR screening (Phase 01)
-http://localhost:8000/watches.html    — watches + group subscriptions (Phase 01)
-http://localhost:8000/ecrf.html       — Form Builder (Phase 04, admin)
-http://localhost:8000/collector.html  — Site EDC + safety + recruitment + visit + drug + labs (Phase 04)
-http://localhost:8000/epro.html?token=…  — Participant ePRO (Phase 04, magic-link)
-http://localhost:8000/multisite.html  — Central-coordinator multi-site rollup (Phase 04)
-http://localhost:8000/portfolio.html  — Portfolio + budget dashboard (Phase 06)
-http://localhost:8000/library.html    — Library + RAG (Phase 06)
+https://cra-test-alb-1950107331.us-east-1.elb.amazonaws.com/                — main app (chat workflows)
+https://cra-test-alb-1950107331.us-east-1.elb.amazonaws.com/admin.html      — paper-source admin · role admin · validation-pack
+https://cra-test-alb-1950107331.us-east-1.elb.amazonaws.com/sr.html         — SR screening (Phase 01)
+https://cra-test-alb-1950107331.us-east-1.elb.amazonaws.com/watches.html    — watches + group subscriptions (Phase 01)
+https://cra-test-alb-1950107331.us-east-1.elb.amazonaws.com/ecrf.html       — Form Builder (Phase 04, admin)
+https://cra-test-alb-1950107331.us-east-1.elb.amazonaws.com/collector.html  — Site EDC + safety + recruitment + visit + drug + labs (Phase 04)
+https://cra-test-alb-1950107331.us-east-1.elb.amazonaws.com/epro.html?token=…  — Participant ePRO (Phase 04, magic-link)
+https://cra-test-alb-1950107331.us-east-1.elb.amazonaws.com/multisite.html  — Central-coordinator multi-site rollup (Phase 04)
+https://cra-test-alb-1950107331.us-east-1.elb.amazonaws.com/portfolio.html  — Portfolio + budget dashboard (Phase 06)
+https://cra-test-alb-1950107331.us-east-1.elb.amazonaws.com/library.html    — Library + RAG (Phase 06)
 ```
 
 ### Pre-seed data for Phase-04 + Phase-05 demos (the "Smoke deployment")
@@ -251,7 +206,7 @@ From the meta-analysis `data_extraction` card, click **Assess risk of bias** —
 
 **Pre-req.** Researcher role (carries `sr.create`).
 
-**Open at:** `http://localhost:8000/sr.html`
+**Open at:** `https://cra-test-alb-1950107331.us-east-1.elb.amazonaws.com/sr.html`
 
 #### Steps
 
@@ -637,7 +592,7 @@ POST /api/edc/deployments/{deployment_id}/cdisc/derive
 
 **Pre-req.** An admin Cognito user already onboarded (run cognito_setup.py + complete the wizard once; default-user account works in auth-disabled mode).
 
-**Open at:** `http://localhost:8000/users-admin.html`
+**Open at:** `https://cra-test-alb-1950107331.us-east-1.elb.amazonaws.com/users-admin.html`
 
 #### X0a. Roles catalogue + SoD reference
 
@@ -842,7 +797,7 @@ Click the **Training expiring** tab.
 
 **Demos.** AI-drafted CRFs from a protocol paste — designer reviews and edits, never auto-publish.
 
-**Open at:** `http://localhost:8000/ecrf.html`
+**Open at:** `https://cra-test-alb-1950107331.us-east-1.elb.amazonaws.com/ecrf.html`
 
 #### Steps
 
@@ -907,7 +862,7 @@ Click **Draft forms** → `StudyDraft` returned with proposed forms (Demographic
 
 **Pre-req.** X1 (published Vital Signs form).
 
-**Open at:** `http://localhost:8000/collector.html`
+**Open at:** `https://cra-test-alb-1950107331.us-east-1.elb.amazonaws.com/collector.html`
 
 #### Steps
 
@@ -946,7 +901,7 @@ Click **Draft forms** → `StudyDraft` returned with proposed forms (Demographic
 **2. Open the participant surface in an incognito window:**
 
 ```
-http://localhost:8000/epro.html?token=<the-issued-token>
+https://cra-test-alb-1950107331.us-east-1.elb.amazonaws.com/epro.html?token=<the-issued-token>
 ```
 
 Consent gate appears first → tap **I consent** → `POST /api/epro/consent?token=…` records timestamp.
@@ -1421,7 +1376,7 @@ POST /api/edc/deployments/{deployment_id}/cdisc/derive
 
 **Pre-req.** A deployment with ≥2 sites + some screenings + queries + AEs + planned visits + lab batches.
 
-**Open at:** `http://localhost:8000/multisite.html`
+**Open at:** `https://cra-test-alb-1950107331.us-east-1.elb.amazonaws.com/multisite.html`
 
 #### Steps
 
@@ -1469,7 +1424,7 @@ GET   /api/edc/form-instances/{form_instance_id}/audit
 - **Signing locks the form.** PUT new ItemData → 409. Signature bound to data hash at sign time.
 - **Unlock voids the signature** (`voided=True`) but keeps the row + writes a new AuditEntry.
 - **Append-only audit.** No UPDATE or DELETE statements ever touch `AuditEntry`. DB-level constraint enforces this (E6). Try `UPDATE audit_entries …` in psql → rejected.
-- **PHI segregation.** `docker exec research-assistant-clinical-postgres-1 psql -U cra -d cra_clinical -c "\dt"` shows Subject + FormInstance + ItemData + Signature + Query + AuditEntry **only** in the clinical DB.
+- **PHI segregation.** Clinical tables — Subject + FormInstance + ItemData + Signature + Query + AuditEntry — live **only** in the separate clinical database, never in the research-app database.
 
 ---
 
@@ -1792,7 +1747,7 @@ POST /api/citations/parse (multipart file)
 
 ### C1 — Portfolio dashboard (≈ 3 min)
 
-**Open at:** `http://localhost:8000/portfolio.html`
+**Open at:** `https://cra-test-alb-1950107331.us-east-1.elb.amazonaws.com/portfolio.html`
 
 #### What to demo
 
@@ -1833,7 +1788,7 @@ Same `portfolio.html` page → "Spend (USD)" section.
 
 ### C3 — RBAC role admin (≈ 5 min)
 
-**Open at:** `http://localhost:8000/admin.html`
+**Open at:** `https://cra-test-alb-1950107331.us-east-1.elb.amazonaws.com/admin.html`
 
 #### What to demo
 
@@ -1853,7 +1808,7 @@ Same `portfolio.html` page → "Spend (USD)" section.
 
 ### C4 — Library + RAG (≈ 5 min)
 
-**Open at:** `http://localhost:8000/library.html`
+**Open at:** `https://cra-test-alb-1950107331.us-east-1.elb.amazonaws.com/library.html`
 
 #### What to demo
 
@@ -2164,42 +2119,6 @@ Reviewer 2:
 /general, /ask                    → general_qa specialist
 ```
 
-### Server commands
-
-Clean restart of the whole stack:
-
-```
-docker compose -f deploy/compose/docker-compose.yml down
-docker compose -f deploy/compose/docker-compose.yml up -d
-```
-
-Tail the agent logs:
-
-```
-docker compose -f deploy/compose/docker-compose.yml logs -f agent
-```
-
-Rebuild + recreate the agent container after a code change (Postgres untouched):
-
-```
-docker compose -f deploy/compose/docker-compose.yml up -d --build agent
-```
-
-Restart just the agent container (no rebuild — only useful for transient process state, not code changes):
-
-```
-docker compose -f deploy/compose/docker-compose.yml restart agent
-```
-
-### Verify PHI segregation
-
-```
-docker exec research-assistant-clinical-postgres-1 psql -U cra -d cra_clinical -c "\dt"
-docker exec research-assistant-postgres-1           psql -U cra -d cra            -c "\dt"
-```
-
-Subject / FormInstance / ItemData / Signature / Query / AuditEntry / Allocation / AdverseEvent / ScreeningLog / PlannedVisit / InvestigationalProduct / LabResult / etc. should only appear in the clinical DB.
-
 ---
 
 ## Walking a customer through a phase
@@ -2222,7 +2141,7 @@ For a 15-minute "elevator demo" pick one from each phase: E1 → D1 → S2 → X
 
 Every demo doubles as an end-to-end functional test. To run the full surface as an acceptance check:
 
-1. Clean restart (Setup).
+1. Open the app and sign in (see **Before you start**).
 2. Walk E1 through C5 in order, executing each demo's **Steps**.
 3. Confirm every **Sanity check** passes.
 4. Note any **Failure modes** that fire unexpectedly.
