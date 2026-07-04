@@ -20,6 +20,10 @@ coverage.xml
 .env
 *.env.local
 # `.env.example` templates are intentionally tracked.
+# SSH deploy keys (generated for the EC2 deploy) — private material.
+deploy_key
+deploy_key.*
+*.pem
 
 # ── Local runtime data & generated artefacts (keep dirs, ignore contents) ──
 /threads.db

@@ -65,6 +65,13 @@ SECRET_JSON=$(aws secretsmanager get-secret-value \
   echo "COGNITO_USER_POOL_ID="
   echo "COGNITO_CLIENT_ID="
 %{ endif ~}
+%{ if enable_alb_auth ~}
+  # ALB edge-auth (Cognito) is on → let the app expose GET /logout.
+  echo "ALB_AUTH_ENABLED=true"
+  echo "ALB_COGNITO_DOMAIN=${cognito_domain}"
+  echo "ALB_COGNITO_CLIENT_ID=${cognito_client_id}"
+  echo "ALB_POST_LOGOUT_URL=https://${alb_dns_name}/"
+%{ endif ~}
 } > "$ENV_FILE"
 chmod 600 "$ENV_FILE"
 

@@ -1456,7 +1456,11 @@ function App() {
                 <button type="submit" className="sidebar-link">⎋ Log out</button>
               </form>
             </>
-          ) : me && me.sub === "default-user" ? null : (
+          ) : me && me.sub === "default-user" ? (
+            health && health.alb_auth ? (
+              <a className="sidebar-link" href="/logout">⎋ Log out</a>
+            ) : null
+          ) : (
             <a className="sidebar-link" href="/auth/login">⇥ Log in</a>
           )}
           <div className="sidebar-link" style={{ cursor: "default", fontSize: "11px", color: "#3a3f4a" }}>{health ? health.model : "..."}</div>

@@ -162,6 +162,38 @@ variable "cognito_domain" {
   default = "https://cra-arsalanam.auth.us-east-1.amazoncognito.com"
 }
 
+# ── Edge auth (Option A: ALB -> Cognito) ───────────────────────────────────
+
+variable "enable_alb_auth" {
+  description = <<-EOT
+    true → the ALB requires a Cognito hosted-UI login before forwarding to the
+    app (edge gate, independent of the app's own enable_cognito_auth). Also
+    adds ALB egress 443 for the server-side token exchange. Prereq: add
+    https://<alb-dns>/oauth2/idpresponse to the app client's allowed callback
+    URLs, and have users in the pool.
+  EOT
+  type        = bool
+  default     = true
+}
+
+variable "cognito_user_pool_domain_prefix" {
+  description = "Cognito hosted-UI domain PREFIX (not the full URL) for authenticate-cognito, e.g. 'cra-arsalanam'."
+  type        = string
+  default     = "cra-arsalanam"
+}
+
+# ── ALB tuning ─────────────────────────────────────────────────────────────
+
+variable "alb_idle_timeout_seconds" {
+  description = <<-EOT
+    ALB idle timeout. The 60s default is shorter than a long agent turn
+    (meta-analysis + sandbox), causing 504s. 300s comfortably exceeds the
+    app's agent_timeout_seconds (120). Max allowed is 4000.
+  EOT
+  type        = number
+  default     = 300
+}
+
 # ── TLS (self-signed) ──────────────────────────────────────────────────────
 
 variable "server_common_name" {

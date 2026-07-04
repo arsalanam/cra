@@ -36,6 +36,20 @@ resource "aws_security_group_rule" "alb_out_to_app" {
   description              = "Forward to the agent container"
 }
 
+# authenticate-cognito: the ALB itself calls the Cognito token endpoint
+# (server-side code exchange). Without outbound 443 the login hangs at the
+# token step. Only present when edge auth is enabled.
+resource "aws_security_group_rule" "alb_out_https" {
+  count             = var.enable_alb_auth ? 1 : 0
+  type              = "egress"
+  security_group_id = aws_security_group.alb.id
+  protocol          = "tcp"
+  from_port         = 443
+  to_port           = 443
+  cidr_blocks       = ["0.0.0.0/0"]
+  description       = "ALB egress to Cognito token endpoint (authenticate-cognito)"
+}
+
 # App/instance SG — no public ingress. Only the ALB may reach :8000; SSM
 # handles admin access, so no SSH rule at all.
 resource "aws_security_group" "app" {
