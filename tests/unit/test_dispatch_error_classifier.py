@@ -52,6 +52,18 @@ def test_usage_limit_exceeded_returns_400_with_actionable_message() -> None:
     assert "narrow the question" in detail
 
 
+def test_tool_error_budget_exceeded_returns_502() -> None:
+    """The per-turn tool-error circuit breaker surfaces a transient 502, not a
+    raw 500, so the user knows to retry."""
+    from research_assistant.agent.deps import ToolErrorBudgetExceeded
+
+    exc = ToolErrorBudgetExceeded("Aborted after 5 failed tool calls in one turn")
+    status, detail = _classify_agent_error(exc)
+    assert status == 502
+    assert "several tool calls failed in a row" in detail
+    assert "retry" in detail.lower()
+
+
 def test_daily_quota_check_beats_generic_throttle_check() -> None:
     """A daily-quota error also matches the generic ThrottlingException pattern;
     classifier must return the more specific message."""
