@@ -101,6 +101,27 @@ resource "aws_lb_listener" "https" {
   }
 }
 
+# ePRO participant surface is token-authenticated (magic-link), NOT Cognito.
+# This rule matches the ePRO paths and forwards straight to the app (no
+# authenticate-cognito), so external participants can reach it while every
+# other path still requires the Cognito login. Only needed when edge auth is on.
+resource "aws_lb_listener_rule" "epro_no_auth" {
+  count        = var.enable_alb_auth ? 1 : 0
+  listener_arn = aws_lb_listener.https.arn
+  priority     = 10
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.app.arn
+  }
+
+  condition {
+    path_pattern {
+      values = ["/epro*", "/api/epro/*"]
+    }
+  }
+}
+
 resource "aws_lb_listener" "http_redirect" {
   load_balancer_arn = aws_lb.this.arn
   port              = 80

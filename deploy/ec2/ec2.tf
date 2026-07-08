@@ -42,10 +42,17 @@ resource "aws_instance" "app" {
     cognito_domain       = var.cognito_domain
   })
 
-  # Re-run bootstrap when the script changes (replaces the instance).
-  user_data_replace_on_change = true
-
   tags = { Name = "${var.name_prefix}-app" }
+
+  # Stateful box: the Postgres volumes live on the root disk, and app code is
+  # redeployed via `git pull` on the instance (not by re-bootstrapping). So
+  # ignore AMI churn (AL2023 publishes new images constantly) and user_data
+  # drift so a routine `tofu apply` never silently destroys the box. Instance
+  # replacement is opt-in only:
+  #   tofu apply -replace=aws_instance.app
+  lifecycle {
+    ignore_changes = [ami, user_data]
+  }
 
   # The secret VALUES must exist before boot (user-data reads them).
   depends_on = [
