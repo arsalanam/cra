@@ -27,7 +27,7 @@ from pydantic_ai.usage import UsageLimits
 
 from ...config import get_settings
 from ...domain.meta_analysis import MetaAnalysisResults, MetaAnalysisTurn
-from ...tools import CLINICAL_TOOLS, DATA_SCIENCE_TOOLS, GENERAL_TOOLS
+from ...tools import CLINICAL_TOOLS, DATA_SCIENCE_TOOLS, GENERAL_TOOLS, fetch_document
 from ...tools.clinical import rag_search
 from ...tools.data_science import visualisations
 from ..deps import AgentDeps, drain_tool_usage
@@ -38,9 +38,11 @@ logger = logging.getLogger(__name__)
 WORKFLOW_NAME = "meta_analysis"
 
 # Workflow-gated stages already structure the work — PICO → search →
-# extract → analyze. Each stage typically needs ~5-15 tool calls; 40
-# covers the whole workflow without leaving headroom for loops.
-_MAX_TOOL_CALLS = 40
+# extract → analyze. Each stage typically needs ~5-15 tool calls. Raised to
+# 100 after real questions with many search/full-text calls tripped the old
+# 40 cap; UsageLimitExceeded is now surfaced gracefully (see dispatch.py) so
+# this cap is a backstop against runaway loops, not a hard product ceiling.
+_MAX_TOOL_CALLS = 100
 
 
 # ── System prompt — workflow steps only; no routing logic ────────────────
@@ -413,10 +415,18 @@ def build_agent() -> Agent[AgentDeps, MetaAnalysisTurn]:
     # data science (sandbox for analysis) + general (web/wiki/file/etc.) +
     # rag_search over the local library (gated to early stages — context only) +
     # run_visualisation for the funnel plot at STEP 5.
+    # fetch_document is deliberately EXCLUDED from the meta-analysis toolset:
+    # the model would call it on publisher DOI links to grab full text, but
+    # those are paywalled (HTTP 403) and each failed fetch burns a tool call
+    # toward the per-turn cap. Open-access full text has a dedicated path
+    # (fetch_pmc_fulltext, gated by stage); extraction numbers the abstract
+    # lacks come from the user. web_search / wikipedia / read_file / describe
+    # remain available for grounding.
+    general_tools = [m for m in GENERAL_TOOLS if m is not fetch_document]
     tools = [
         *CLINICAL_TOOLS,
         *DATA_SCIENCE_TOOLS,
-        *GENERAL_TOOLS,
+        *general_tools,
         rag_search,
         visualisations,
     ]

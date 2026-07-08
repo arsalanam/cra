@@ -38,6 +38,20 @@ def test_unrecognized_error_falls_through_to_500() -> None:
     assert not detail.startswith("Agent error:")
 
 
+def test_usage_limit_exceeded_returns_400_with_actionable_message() -> None:
+    """A tripped per-turn tool-call cap must surface a friendly 400, not a raw
+    500 — the user narrows scope or pastes data instead of retrying blind."""
+    from pydantic_ai.exceptions import UsageLimitExceeded
+
+    exc = UsageLimitExceeded(
+        "The next tool call(s) would exceed the tool_calls_limit of 100 (tool_calls=101)."
+    )
+    status, detail = _classify_agent_error(exc)
+    assert status == 400
+    assert "ran out of research steps" in detail
+    assert "narrow the question" in detail
+
+
 def test_daily_quota_check_beats_generic_throttle_check() -> None:
     """A daily-quota error also matches the generic ThrottlingException pattern;
     classifier must return the more specific message."""
