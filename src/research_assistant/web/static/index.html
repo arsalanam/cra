@@ -355,6 +355,11 @@
   .composer { border-top: 1px solid #262a33; padding: 16px 32px; flex-shrink: 0; max-width: 920px; width: 100%; margin: 0 auto; }
   .composer-row { display: flex; gap: 10px; align-items: flex-start; }
   textarea.composer-input { flex: 1; background: #1f232c; color: #e6e6e6; border: 1px solid #2a2f3a; border-radius: 6px; padding: 10px; font: inherit; font-size: 14px; resize: vertical; min-height: 80px; }
+  .composer-attach-btn { display: flex; align-items: center; justify-content: center; width: 38px; height: 38px; background: #1f232c; border: 1px solid #2a2f3a; border-radius: 6px; cursor: pointer; font-size: 16px; user-select: none; }
+  .composer-attach-btn:hover { border-color: #3a4150; }
+  .composer-attachment { display: inline-flex; align-items: center; gap: 8px; background: #1f232c; border: 1px solid #2a2f3a; border-radius: 5px; padding: 4px 10px; margin-bottom: 8px; font-size: 12px; color: #a9b1c0; }
+  .composer-attachment button { background: none; border: none; color: #a9b1c0; cursor: pointer; font-size: 12px; padding: 0; }
+  .composer-attachment button:hover { color: #e6e6e6; }
 
   /* ── Welcome ────────────────────────────────────────────── */
   .welcome { flex: 1; overflow-y: auto; display: flex; flex-direction: column; align-items: stretch; padding: 36px 40px 60px; }
@@ -943,6 +948,25 @@ function App() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [running, setRunning] = useState(false);
+  /* Optional image attached to the NEXT turn — {name, base64, mediaType}.
+     Turn-scoped: cleared on send; the backend threads it to the vision
+     tool (describe_image) for this turn only. */
+  const [attachedImage, setAttachedImage] = useState(null);
+
+  function attachImageFile(file) {
+    if (!file) return;
+    if (!file.type || !file.type.startsWith("image/")) {
+      setError("Only image files (JPEG, PNG, GIF, WebP) can be attached.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      /* result is "data:<mime>;base64,<data>" — keep only the base64 body */
+      const base64 = String(reader.result).split(",", 2)[1] || "";
+      setAttachedImage({ name: file.name, base64, mediaType: file.type });
+    };
+    reader.readAsDataURL(file);
+  }
   const [error, setError] = useState(null);
   const [view, setView] = useState("chat");
   const [usageData, setUsageData] = useState(null);
@@ -1104,17 +1128,25 @@ function App() {
     setRunning(true);
     setError(null);
     setInput("");
+    const image = attachedImage;
+    setAttachedImage(null);
 
     /* Optimistic user message bubble */
     setMessages(prev => [...prev, {
       id: `tmp-${Date.now()}`, role: "user",
-      input_text: body, final_answer: null, created_at: new Date().toISOString(),
+      input_text: image ? `${body}\n📎 ${image.name}` : body,
+      final_answer: null, created_at: new Date().toISOString(),
     }]);
 
     try {
+      const payload = { thread_id: threadId, user_message: body };
+      if (image) {
+        payload.image_base64 = image.base64;
+        payload.image_media_type = image.mediaType;
+      }
       const res = await fetch("/api/turn", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ thread_id: threadId, user_message: body }),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) {
         const errText = (await res.text()) || res.statusText;
@@ -1493,6 +1525,12 @@ function App() {
               {error && <div className="turn"><div className="error-banner">{error}</div></div>}
             </div>
             <div className="composer">
+              {attachedImage && (
+                <div className="composer-attachment">
+                  <span>🖼 {attachedImage.name}</span>
+                  <button title="Remove attachment" onClick={() => setAttachedImage(null)} disabled={running}>✕</button>
+                </div>
+              )}
               <div className="composer-row">
                 <textarea
                   className="composer-input"
@@ -1502,6 +1540,16 @@ function App() {
                   onKeyDown={e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); sendMessage(input); } }}
                   disabled={running}
                 />
+                <label className="composer-attach-btn" title="Attach an image (forest plot, figure, lab report photo)">
+                  🖼
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/gif,image/webp"
+                    style={{ display: "none" }}
+                    disabled={running}
+                    onChange={e => { attachImageFile(e.target.files && e.target.files[0]); e.target.value = ""; }}
+                  />
+                </label>
                 <button className="btn-primary" onClick={() => sendMessage(input)} disabled={running || !input.trim()}>
                   {running ? "Working…" : "Send"}
                 </button>

@@ -167,3 +167,33 @@ one place), then Phase 1, then Phase 2.
 10. Verify sandbox container cleanup on timeout cancellation.
 11. Check whether source clients retry transient 5xx with backoff before
     returning `{"error": …}`; consider cross-turn source-health memory (C5).
+
+### Phase 5 — rollbacks of demo-era mitigations (added 2026-07-08)
+
+Both were emergency mitigations for problems that are now fixed at the
+root; unwind them. **Status: 12 + 13 implemented 2026-07-08** —
+`describe_image` is upload-only (bytes from `AgentDeps.image_content`, no
+URL parameter, hidden by `gate_attachment_tools` without an attachment;
+composer gained an attach button and /api/turn accepts
+`image_base64`/`image_media_type`), and general_qa's cap is back to 40.
+
+12. **Re-enable `describe_image` on general_qa + meta_analysis.** It was
+    dropped (PRs #10/#11) for two reasons: (a) the EC2 role wasn't
+    authorized for the vision model — fixed by `6ad7e93` (IAM grant);
+    (b) the model went fishing for web images (403 / bot-blocked forest
+    plots). Re-register the tool, but gate it via `prepare_tools` to
+    turns where the user actually supplied an image (deps upload
+    present), so (b) can't regress. `fetch_document` stays excluded —
+    its paywall-churn rationale is unchanged.
+13. **general_qa `_MAX_TOOL_CALLS` 80 → 40.** The bump to 80 existed
+    purely to survive routing errors dragging Q&A turns into tool-heavy
+    spirals. With definitional routing fixed (step 1), the repeat-call
+    cache, and per-tool disables (steps 4–5), 40 is the right envelope
+    again. Revisit the `agent_timeout_seconds` comment in
+    `config/settings.py` which cites the 80-call worst case.
+
+### Side items (observed live 2026-07-08)
+14. Frontend card for `kind: "error"` payloads — currently falls through
+    to the raw "Unknown turn kind" debug dump.
+15. `deploy/compose/.env.example` — document `TAVILY_API_KEY` as required
+    for web_search (a missing key surfaces only as an error-budget hit).

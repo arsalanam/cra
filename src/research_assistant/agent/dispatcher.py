@@ -40,6 +40,7 @@ from pydantic_ai.messages import ModelMessage
 from ..auth.rbac import SKILL_PERMISSION, Permission
 from ..config import get_settings
 from . import fallback_classifier
+from .deps import AgentDeps
 from .specialists import (
     SPECIALISTS,
     csr_drafter,
@@ -670,8 +671,14 @@ async def dispatch(
     message_history: Sequence[ModelMessage] | None = None,
     last_turn_kind: str | None = None,
     effective_permissions: frozenset[Permission] | None = None,
+    image_content: bytes | None = None,
+    image_media_type: str | None = None,
 ) -> tuple[Any, dict[str, Any], Route]:
     """Classify the message, run the chosen specialist, return (output, meta, route).
+
+    `image_content`/`image_media_type` carry a user-attached image (decoded
+    bytes + MIME type) into the specialist's `AgentDeps`; `describe_image`
+    is only surfaced to the model on turns where they are set.
 
     The endpoint persists `route.workflow` back to the thread (for sticky
     routes) so subsequent turns stay routed correctly even if the user's
@@ -718,10 +725,16 @@ async def dispatch(
         route = Route(general_qa.WORKFLOW_NAME, rule="auth_fallback", sticky=False)
 
     specialist = SPECIALISTS[route.workflow]
+    deps = AgentDeps(
+        last_turn_kind=last_turn_kind,
+        image_content=image_content,
+        image_media_type=image_media_type,
+    )
     output, meta = await specialist.run_turn(
         user_message,
         message_history=message_history,
         last_turn_kind=last_turn_kind,
+        deps=deps,
     )
     meta["route"] = {
         "workflow": route.workflow,

@@ -19,14 +19,12 @@ _ALLOWED = [
     # The live failure: CI phrase at end of a paragraph, numbered list next.
     "Each horizontal line represents the study's 95% CI\n\n5. The diamond "
     "shows the pooled estimate",
-    "The width reflects the confidence interval\n\n5. Heterogeneity is "
-    "shown at the bottom",
+    "The width reflects the confidence interval\n\n5. Heterogeneity is shown at the bottom",
     # Bare concepts with no adjacent number.
     "A forest plot displays each study's effect estimate and its 95% CI.",
     "A confidence interval that crosses the line of no effect suggests the "
     "result is not statistically significant.",
-    "The diamond at the bottom represents the pooled effect and its "
-    "confidence interval.",
+    "The diamond at the bottom represents the pooled effect and its confidence interval.",
     # Percentages that are not CI claims.
     "Weights are often shown as percentages next to each study.",
 ]

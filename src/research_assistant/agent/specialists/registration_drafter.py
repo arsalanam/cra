@@ -224,6 +224,7 @@ async def run_turn(
     user_message: str,
     message_history: Sequence[ModelMessage] | None = None,
     last_turn_kind: str | None = None,
+    deps: AgentDeps | None = None,
 ) -> tuple[RegistrationTurn, dict[str, Any]]:
     result, deps = await run_agent_turn(
         _get_agent(),
@@ -232,6 +233,7 @@ async def run_turn(
         max_tool_calls=_MAX_TOOL_CALLS,
         message_history=message_history,
         last_turn_kind=last_turn_kind,
+        deps=deps,
     )
     return result.output, turn_meta(result, deps)
 

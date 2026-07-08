@@ -26,15 +26,34 @@ import logging
 from collections.abc import Sequence
 from typing import Any
 
-from pydantic_ai import Agent
+from pydantic_ai import Agent, RunContext
 from pydantic_ai.agent import AgentRunResult
 from pydantic_ai.messages import ModelMessage
+from pydantic_ai.tools import ToolDefinition
 from pydantic_ai.usage import UsageLimits
 
 from ...config import get_settings
 from ..deps import AgentDeps, drain_tool_usage
 
 logger = logging.getLogger(__name__)
+
+
+async def gate_attachment_tools(
+    ctx: RunContext[AgentDeps],
+    tool_defs: list[ToolDefinition],
+) -> list[ToolDefinition]:
+    """Hide vision tools on turns without a user-attached image.
+
+    `describe_image` reads bytes from ``deps.image_content`` (populated by
+    /api/turn when the user attaches an image). On turns without an
+    attachment the tool is pointless — and historically the URL-based
+    variant sent the model fishing for web images — so it's hidden
+    entirely. Usable directly as ``prepare_tools`` or composed inside a
+    specialist's own gate (see meta_analysis._gate_workflow_tools).
+    """
+    if ctx.deps.image_content is not None:
+        return tool_defs
+    return [td for td in tool_defs if td.name != "describe_image"]
 
 
 async def run_agent_turn[OutputT](

@@ -47,9 +47,10 @@ class Settings(BaseSettings):
     # global cap proved too coarse — exploration-heavy general_qa needs
     # 80, workflow-gated meta_analysis is fine at 40.
     # Wall-clock cap per turn. Must align with the per-workflow tool-call
-    # envelopes: a worst-case general_qa turn (80 calls × ~5s/round-trip
-    # on growing context) ≈ ~6 min, but 300s keeps the UX synchronous.
-    # Raise for unusually deep questions; lower if the UI needs sharper
+    # envelopes: the largest cap is meta_analysis at 100 calls; general_qa
+    # sits at 40 (it was 80 only while routing errors dragged Q&A turns
+    # into tool-heavy spirals). 300s keeps the UX synchronous. Raise for
+    # unusually deep questions; lower if the UI needs sharper
     # responsiveness.
     agent_timeout_seconds: float = 300.0
 

@@ -26,20 +26,22 @@ from pydantic_ai import Agent, ModelRetry
 from pydantic_ai.messages import ModelMessage
 
 from ...domain.common import Answer, ClarificationRequest
-from ...tools import GENERAL_TOOLS, describe_image, fetch_document
+from ...tools import GENERAL_TOOLS, fetch_document
 from ...tools.clinical import rag_search
 from ...tools.data_science import calculator, python_repl
 from ..deps import AgentDeps
 from ..model import build_bedrock_model
-from ._runner import run_agent_turn, turn_meta
+from ._runner import gate_attachment_tools, run_agent_turn, turn_meta
 
 logger = logging.getLogger(__name__)
 
 WORKFLOW_NAME = "general_qa"
 
 # Exploration-heavy: web research, definitional lookups, math iterations.
-# Highest cap of any specialist because the question shape is open-ended.
-_MAX_TOOL_CALLS = 80
+# Was briefly 80 while routing errors dragged Q&A turns into tool-heavy
+# spirals; with definitional routing fixed and the circuit breaker's
+# repeat-call cache + per-tool disables in place, 40 is the right envelope.
+_MAX_TOOL_CALLS = 40
 
 
 _SYSTEM_PROMPT = """\
@@ -195,19 +197,25 @@ def build_agent() -> Agent[AgentDeps, Answer | ClarificationRequest]:
         # (initial + 1 retry). The _reject_clinical_synthesis validator can
         # otherwise triple the cost of one unlucky turn.
         output_retries=1,
+        # describe_image is registered but hidden unless the user attached
+        # an image to this turn (deps.image_content) — see gate docstring.
+        prepare_tools=gate_attachment_tools,
     )
 
-    # GENERAL_TOOLS (minus the web-resource "fishing" tools) + the two
+    # GENERAL_TOOLS (minus the web-resource "fishing" tool) + the two
     # lightweight math tools (no sandbox_exec — see module docstring) +
     # rag_search over the library. general_qa is a TEXT Q&A specialist.
     #
-    # fetch_document AND describe_image are EXCLUDED: web_search (Tavily)
-    # already returns an AI summary + per-result extracted page content, so
-    # the model answers from that + its own knowledge + wikipedia. Left in,
-    # the model chases result URLs / forest-plot images off the web — usually
-    # paywalled or bot-blocked (403), DNS-dead, or (for images) requiring the
-    # vision model — which wastes tool calls and trips the error budget.
-    _EXCLUDED = (fetch_document, describe_image)
+    # fetch_document is EXCLUDED: web_search (Tavily) already returns an AI
+    # summary + per-result extracted page content, so the model answers from
+    # that + its own knowledge + wikipedia. Left in, the model chases result
+    # URLs off the web — usually paywalled or bot-blocked (403) — which
+    # wastes tool calls and trips the error budget.
+    #
+    # describe_image is back (vision IAM grant landed) but upload-only: the
+    # tool reads the user-attached image from deps and has no URL parameter,
+    # and prepare_tools hides it entirely on turns without an attachment.
+    _EXCLUDED = (fetch_document,)
     general_tools = [m for m in GENERAL_TOOLS if m not in _EXCLUDED]
     tools = [*general_tools, calculator, python_repl, rag_search]
     for tool_module in tools:
@@ -253,6 +261,7 @@ async def run_turn(
     user_message: str,
     message_history: Sequence[ModelMessage] | None = None,
     last_turn_kind: str | None = None,
+    deps: AgentDeps | None = None,
 ) -> tuple[Answer | ClarificationRequest, dict[str, Any]]:
     """Run one general-QA turn.
 
@@ -267,5 +276,6 @@ async def run_turn(
         max_tool_calls=_MAX_TOOL_CALLS,
         message_history=message_history,
         last_turn_kind=last_turn_kind,
+        deps=deps,
     )
     return result.output, turn_meta(result, deps)

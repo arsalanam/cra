@@ -162,3 +162,41 @@ async def test_authorized_keyword_route_is_unchanged(stub_general_qa: dict[str, 
     assert route.workflow == "general_qa"
     assert route.rule == "default"
     assert meta["route"]["sticky"] is True
+
+
+# ── Attached-image threading (upload-gated vision) ───────────────────────
+
+
+async def test_dispatch_threads_attached_image_into_deps(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    async def _fake_run_turn(user_message: str, **kwargs: Any) -> tuple[Any, dict[str, Any]]:
+        captured["deps"] = kwargs.get("deps")
+        return object(), {}
+
+    monkeypatch.setattr(dispatcher.SPECIALISTS["general_qa"], "run_turn", _fake_run_turn)
+    await dispatch(
+        "hello there",
+        image_content=b"\x89PNG-bytes",
+        image_media_type="image/png",
+    )
+    assert captured["deps"] is not None
+    assert captured["deps"].image_content == b"\x89PNG-bytes"
+    assert captured["deps"].image_media_type == "image/png"
+
+
+async def test_dispatch_without_image_leaves_deps_imageless(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    async def _fake_run_turn(user_message: str, **kwargs: Any) -> tuple[Any, dict[str, Any]]:
+        captured["deps"] = kwargs.get("deps")
+        return object(), {}
+
+    monkeypatch.setattr(dispatcher.SPECIALISTS["general_qa"], "run_turn", _fake_run_turn)
+    await dispatch("hello there")
+    assert captured["deps"] is not None
+    assert captured["deps"].image_content is None

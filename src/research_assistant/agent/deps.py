@@ -69,6 +69,13 @@ class AgentDeps:
     artifacts: dict[str, str] = field(default_factory=dict)
     file_content: str | None = None
     file_name: str = "upload.txt"
+    # Image the user attached to THIS turn (decoded bytes + its MIME type).
+    # None on turns without an attachment. `describe_image` reads these and
+    # is hidden by prepare_tools when they're absent — the tool never
+    # downloads web images (that path was removed after the model chased
+    # paywalled/bot-blocked forest plots off the web).
+    image_content: bytes | None = None
+    image_media_type: str | None = None
     # ── Per-turn tool circuit breaker (tools/_emit.py) ────────────────────
     # Tools return {"error": ...} on failure (they don't raise); the emit
     # wrapper counts those. Three escalating layers:

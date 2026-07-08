@@ -15,6 +15,8 @@ Two URLs serve the same handler for backward compatibility:
 
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import logging
 from datetime import UTC, datetime, timedelta
@@ -305,6 +307,38 @@ async def _persist_errored_turn(
 class TurnRequest(BaseModel):
     thread_id: str
     user_message: str
+    # Optional user-attached image for this turn (vision). Base64-encoded
+    # bytes + MIME type; decoded server-side and threaded into AgentDeps so
+    # describe_image can see it. Not persisted — the attachment is
+    # turn-scoped and won't be visible to later turns' history.
+    image_base64: str | None = None
+    image_media_type: str | None = None
+
+
+_ALLOWED_IMAGE_MEDIA_TYPES = {"image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp"}
+_MAX_IMAGE_UPLOAD_BYTES = 20 * 1024 * 1024  # matches describe_image's cap
+
+
+def _decode_turn_image(body: TurnRequest) -> tuple[bytes | None, str | None]:
+    """Validate + decode the optional image attachment; raise 400 on bad input."""
+    if not body.image_base64:
+        return None, None
+    media_type = (body.image_media_type or "").lower().split(";")[0].strip()
+    if media_type not in _ALLOWED_IMAGE_MEDIA_TYPES:
+        raise HTTPException(
+            400,
+            f"Unsupported image type {body.image_media_type!r}. Supported: JPEG, PNG, GIF, WebP.",
+        )
+    try:
+        image_bytes = base64.b64decode(body.image_base64, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise HTTPException(400, "image_base64 is not valid base64.") from exc
+    if len(image_bytes) > _MAX_IMAGE_UPLOAD_BYTES:
+        raise HTTPException(
+            400,
+            f"Image too large ({len(image_bytes)} bytes, max {_MAX_IMAGE_UPLOAD_BYTES}).",
+        )
+    return image_bytes, media_type
 
 
 class TurnResponse(BaseModel):
@@ -385,6 +419,8 @@ def create_dispatch_router() -> APIRouter:
             else:
                 effective_perms = None
 
+        image_bytes, image_media_type = _decode_turn_image(body)
+
         try:
             output, meta, route = await dispatch(
                 body.user_message,
@@ -392,6 +428,8 @@ def create_dispatch_router() -> APIRouter:
                 message_history=history,
                 last_turn_kind=last_kind,
                 effective_permissions=effective_perms,
+                image_content=image_bytes,
+                image_media_type=image_media_type,
             )
             chosen_workflow = route.workflow
         except SkillNotAuthorizedError as skill_exc:
