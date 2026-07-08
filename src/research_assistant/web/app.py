@@ -20,6 +20,8 @@ from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.responses import Response
+from starlette.types import Scope
 
 from ..auth import clear_session
 from ..config import get_settings
@@ -46,6 +48,24 @@ from .watch_subscriptions import create_subscriptions_router
 from .watches import create_notifications_router, create_watches_router
 
 logger = logging.getLogger(__name__)
+
+
+class _RevalidatingStatics(StaticFiles):
+    """StaticFiles that makes browsers revalidate HTML on every load.
+
+    The whole SPA is a single index.html (React via CDN + inline JSX), so a
+    cached copy means users keep running the old UI after a deploy. Serving
+    HTML with `Cache-Control: no-cache` forces a revalidation on each load — a
+    cheap 304 when unchanged, a fresh 200 after a new build — so a normal
+    reload always picks up the latest UI and no hard-refresh (Ctrl+F5) is
+    needed. Non-HTML assets keep their default caching.
+    """
+
+    async def get_response(self, path: str, scope: Scope) -> Response:
+        response = await super().get_response(path, scope)
+        if response.headers.get("content-type", "").startswith("text/html"):
+            response.headers["Cache-Control"] = "no-cache"
+        return response
 
 
 def create_app() -> FastAPI:
@@ -169,7 +189,7 @@ def create_app() -> FastAPI:
     # Must be mounted AFTER the API routes so /api/* routes take precedence.
     static_dir = Path(__file__).parent / "static"
     static_dir.mkdir(exist_ok=True)
-    app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="static")
+    app.mount("/", _RevalidatingStatics(directory=str(static_dir), html=True), name="static")
 
     return app
 
