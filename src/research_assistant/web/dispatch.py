@@ -22,6 +22,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+from pydantic_ai.exceptions import UsageLimitExceeded
 
 from ..agent.dispatcher import SkillNotAuthorizedError, dispatch
 from ..config import get_settings
@@ -84,6 +85,23 @@ def _classify_agent_error(exc: Exception) -> tuple[int, str]:
                 f"AGENT_TIMEOUT_SECONDS. "
                 f"(4) If it keeps happening for the same question, check the "
                 f"server logs for a misbehaving tool stuck in a retry loop."
+            ),
+        )
+
+    # Per-turn tool-call cap tripped — a specialist exhausted its
+    # tool_calls_limit before producing a final answer (often the model
+    # chasing full-text it can't reach). Retry won't help; the user must
+    # narrow scope or supply the data directly.
+    if isinstance(exc, UsageLimitExceeded):
+        return (
+            400,
+            (
+                "This turn ran out of research steps before it could finish. "
+                "That usually means the model spent too many steps searching "
+                "or chasing full text it couldn't reach. Try: (1) narrow the "
+                "question, (2) paste the studies / extraction data directly so "
+                "it doesn't need to search, or (3) if the question is "
+                "legitimately deep, raise the specialist's tool-call limit."
             ),
         )
 
