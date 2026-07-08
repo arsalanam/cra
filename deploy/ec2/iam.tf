@@ -38,9 +38,14 @@ data "aws_iam_policy_document" "app" {
     sid     = "BedrockInvoke"
     actions = ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"]
     resources = [
+      # Chat model (Haiku 4.5) — inference profile + underlying foundation model.
       "arn:aws:bedrock:*:${local.account_id}:inference-profile/${var.bedrock_model_id}",
       "arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0",
+      # Titan embeddings.
       "arn:aws:bedrock:*::foundation-model/amazon.titan-embed-text-v2:0",
+      # Vision model (Sonnet 4) used by describe_image — same dual-ARN rule.
+      "arn:aws:bedrock:*:${local.account_id}:inference-profile/${var.vision_model_id}",
+      "arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-20250514-v1:0",
     ]
   }
 

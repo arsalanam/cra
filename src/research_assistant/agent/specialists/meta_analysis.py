@@ -27,7 +27,13 @@ from pydantic_ai.usage import UsageLimits
 
 from ...config import get_settings
 from ...domain.meta_analysis import MetaAnalysisResults, MetaAnalysisTurn
-from ...tools import CLINICAL_TOOLS, DATA_SCIENCE_TOOLS, GENERAL_TOOLS, fetch_document
+from ...tools import (
+    CLINICAL_TOOLS,
+    DATA_SCIENCE_TOOLS,
+    GENERAL_TOOLS,
+    describe_image,
+    fetch_document,
+)
 from ...tools.clinical import rag_search
 from ...tools.data_science import visualisations
 from ..deps import AgentDeps, drain_tool_usage
@@ -415,14 +421,19 @@ def build_agent() -> Agent[AgentDeps, MetaAnalysisTurn]:
     # data science (sandbox for analysis) + general (web/wiki/file/etc.) +
     # rag_search over the local library (gated to early stages — context only) +
     # run_visualisation for the funnel plot at STEP 5.
-    # fetch_document is deliberately EXCLUDED from the meta-analysis toolset:
-    # the model would call it on publisher DOI links to grab full text, but
-    # those are paywalled (HTTP 403) and each failed fetch burns a tool call
-    # toward the per-turn cap. Open-access full text has a dedicated path
-    # (fetch_pmc_fulltext, gated by stage); extraction numbers the abstract
-    # lacks come from the user. web_search / wikipedia / read_file / describe
-    # remain available for grounding.
-    general_tools = [m for m in GENERAL_TOOLS if m is not fetch_document]
+    # fetch_document AND describe_image are deliberately EXCLUDED from the
+    # meta-analysis toolset:
+    #  • fetch_document — the model would call it on publisher DOI links to
+    #    grab full text, but those are paywalled (HTTP 403). Open-access full
+    #    text has a dedicated path (fetch_pmc_fulltext, gated by stage);
+    #    numbers the abstract lacks come from the user.
+    #  • describe_image — the model would fetch forest-plot images off the web
+    #    to "look at" (403 / bot-blocked / needs the vision model). This
+    #    specialist renders its OWN forest plots via sandbox_exec, so it never
+    #    needs to describe web images.
+    # web_search / wikipedia / read_file remain available for grounding.
+    _excluded = (fetch_document, describe_image)
+    general_tools = [m for m in GENERAL_TOOLS if m not in _excluded]
     tools = [
         *CLINICAL_TOOLS,
         *DATA_SCIENCE_TOOLS,
