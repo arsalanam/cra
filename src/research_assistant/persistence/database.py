@@ -52,6 +52,12 @@ _COLUMN_MIGRATIONS: dict[str, dict[str, str]] = {
     # `<table>: {column_name: SQL ALTER fragment}`. We check the existing
     # columns at startup and ADD any that are missing — never drop or
     # rename. Move to Alembic if migrations get more complex.
+    "messages": {
+        # Which specialist produced an assistant turn — lets the /turn
+        # endpoint scope last-kind lookups to the routed workflow. NULL on
+        # user rows and legacy rows.
+        "workflow": "TEXT",
+    },
     "threads": {
         "user_id": "TEXT REFERENCES users(id) ON DELETE SET NULL",
         "workflow": "TEXT",

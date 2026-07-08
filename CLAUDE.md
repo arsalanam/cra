@@ -42,7 +42,9 @@ config/service.py  ← merges .env defaults with the source_configs DB table
 ```
 
 Key modules:
-- `agent/dispatcher.py:101` — `classify(user_message, current_workflow)` is the routing brain.
+- `agent/dispatcher.py` — `classify_route(user_message, current_workflow)` is the routing brain; returns a `Route` (workflow, rule, sticky). Continuation prefixes are scoped to the pinned workflow; cross-workflow jumps go through `_HANDOFF_SEEDS`; definitional questions detour to general_qa without re-pinning the thread; unauthorized keyword-inferred routes fall back to general_qa (slash commands still 403). See `docs/agent-loop-review.md`.
+- `agent/specialists/_runner.py` — shared `run_agent_turn` (deps, usage limits, wall-clock timeout) + `turn_meta`; every specialist's `run_turn` is a thin wrapper over it.
+- `tools/_emit.py` — per-turn tool circuit breaker: identical-call short-circuit (cached result + "do not repeat" nudge), per-tool disable after 3 failures, global soft-disable of all tools at 5 failures with a forced best-effort answer; `ToolErrorBudgetExceeded` only fires if the model keeps calling tools after that.
 - `agent/specialists/meta_analysis.py` — 5-stage PICO → search → extraction → meta-analysis workflow, with strict matplotlib rules in the system prompt to keep `sandbox_exec` reliable.
 - `agent/specialists/general_qa.py` — narrow tool subset; `_reject_clinical_synthesis` validator forbids quoting effect sizes / PMIDs / guideline citations from training data.
 - `tools/clinical/search_papers.py` — multi-source paper search. `asyncio.gather` over `get_enabled_sources()`, dedupe by PMID → DOI → source:source_id (PubMed wins ties for richer Medline metadata).

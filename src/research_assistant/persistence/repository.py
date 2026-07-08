@@ -97,12 +97,14 @@ class ThreadRepository:
         role: str,
         input_text: str | None = None,
         final_answer: str | None = None,
+        workflow: str | None = None,
     ) -> Message:
         msg = Message(
             thread_id=thread_id,
             role=role,
             input_text=input_text,
             final_answer=final_answer,
+            workflow=workflow,
         )
         self._s.add(msg)
         await self._s.flush()

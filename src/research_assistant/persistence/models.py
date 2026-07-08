@@ -467,6 +467,11 @@ class Message(Base):
     role: Mapped[str] = mapped_column(Text)  # "user" or "assistant"
     input_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     final_answer: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Which specialist produced this assistant turn. NULL for user rows and
+    # legacy rows written before the column existed. Lets the /turn endpoint
+    # scope last-kind lookups to the routed workflow, so a general_qa detour
+    # mid-workflow doesn't corrupt the workflow's stage gate.
+    workflow: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
     thread: Mapped[Thread] = relationship(back_populates="messages")

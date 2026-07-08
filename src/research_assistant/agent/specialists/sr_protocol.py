@@ -18,7 +18,6 @@ the workflow once dispatched.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from collections.abc import Sequence
 from typing import Any
@@ -26,15 +25,14 @@ from typing import Any
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.tools import ToolDefinition
-from pydantic_ai.usage import UsageLimits
 
-from ...config import get_settings
 from ...domain.sr_protocol import SrProtocolTurn
 from ...tools import ToolModule
 from ...tools.clinical import mesh_lookup, search_papers
 from ...tools.general import import_citations, web_search, wikipedia
-from ..deps import AgentDeps, drain_tool_usage
+from ..deps import AgentDeps
 from ..model import build_bedrock_model
+from ._runner import run_agent_turn, turn_meta
 
 logger = logging.getLogger(__name__)
 
@@ -393,42 +391,12 @@ async def run_turn(
     `kind` the most recent assistant message in this thread had (or None
     on the first turn).
     """
-    settings = get_settings()
-    agent = _get_agent()
-    deps = AgentDeps(last_turn_kind=last_turn_kind)
-
-    usage_limits = UsageLimits(
-        request_limit=settings.max_model_requests,
-        tool_calls_limit=_MAX_TOOL_CALLS,
+    result, deps = await run_agent_turn(
+        _get_agent(),
+        user_message,
+        log_name="sr_protocol",
+        max_tool_calls=_MAX_TOOL_CALLS,
+        message_history=message_history,
+        last_turn_kind=last_turn_kind,
     )
-
-    history = list(message_history) if message_history else None
-    logger.info(
-        "sr_protocol turn: msg=%r history=%d stage=%r",
-        user_message[:80],
-        len(history) if history else 0,
-        last_turn_kind,
-    )
-
-    result = await asyncio.wait_for(
-        agent.run(
-            user_message,
-            deps=deps,
-            usage_limits=usage_limits,
-            message_history=history,
-        ),
-        timeout=settings.agent_timeout_seconds,
-    )
-
-    usage = result.usage()
-    meta: dict[str, Any] = {
-        "usage": {
-            "input_tokens": usage.input_tokens,
-            "output_tokens": usage.output_tokens,
-            "total_tokens": usage.input_tokens + usage.output_tokens,
-            "requests": usage.requests,
-            "tool_calls": usage.tool_calls,
-        },
-        "tool_usage": drain_tool_usage(deps),
-    }
-    return result.output, meta
+    return result.output, turn_meta(result, deps)

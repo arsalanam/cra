@@ -15,7 +15,6 @@ existed only to back-stop missing routing.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from collections.abc import Sequence
 from typing import Any
@@ -23,9 +22,7 @@ from typing import Any
 from pydantic_ai import Agent, ModelRetry, RunContext
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.tools import ToolDefinition
-from pydantic_ai.usage import UsageLimits
 
-from ...config import get_settings
 from ...domain.meta_analysis import MetaAnalysisResults, MetaAnalysisTurn
 from ...tools import (
     CLINICAL_TOOLS,
@@ -36,8 +33,9 @@ from ...tools import (
 )
 from ...tools.clinical import rag_search
 from ...tools.data_science import visualisations
-from ..deps import AgentDeps, drain_tool_usage
+from ..deps import AgentDeps
 from ..model import build_bedrock_model
+from ._runner import run_agent_turn, turn_meta
 
 logger = logging.getLogger(__name__)
 
@@ -473,49 +471,20 @@ async def run_turn(
     `kind` the most recent assistant message in this thread had (or None
     on the first turn).
     """
-    settings = get_settings()
-    agent = _get_agent()
-    deps = AgentDeps(last_turn_kind=last_turn_kind)
-
-    usage_limits = UsageLimits(
-        request_limit=settings.max_model_requests,
-        tool_calls_limit=_MAX_TOOL_CALLS,
-    )
-
-    history = list(message_history) if message_history else None
-    logger.info(
-        "Meta-analysis turn: msg=%r history=%d stage=%r",
-        user_message[:80],
-        len(history) if history else 0,
-        last_turn_kind,
-    )
-
-    result = await asyncio.wait_for(
-        agent.run(
-            user_message,
-            deps=deps,
-            usage_limits=usage_limits,
-            message_history=history,
-        ),
-        timeout=settings.agent_timeout_seconds,
+    result, deps = await run_agent_turn(
+        _get_agent(),
+        user_message,
+        log_name="Meta-analysis",
+        max_tool_calls=_MAX_TOOL_CALLS,
+        message_history=message_history,
+        last_turn_kind=last_turn_kind,
     )
 
     output = result.output
     if isinstance(output, MetaAnalysisResults):
         _resolve_plot_artifacts(output, deps.artifacts)
 
-    usage = result.usage()
-    meta: dict[str, Any] = {
-        "usage": {
-            "input_tokens": usage.input_tokens,
-            "output_tokens": usage.output_tokens,
-            "total_tokens": usage.input_tokens + usage.output_tokens,
-            "requests": usage.requests,
-            "tool_calls": usage.tool_calls,
-        },
-        "tool_usage": drain_tool_usage(deps),
-    }
-    return output, meta
+    return output, turn_meta(result, deps)
 
 
 def _resolve_plot_artifacts(output: MetaAnalysisResults, artifacts: dict[str, str]) -> None:
