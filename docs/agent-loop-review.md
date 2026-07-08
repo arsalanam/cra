@@ -122,7 +122,14 @@ one place), then Phase 1, then Phase 2.
 >   keep-calling backstop.
 > - Tests: `test_dispatcher_routes.py`, `test_tool_circuit_breaker.py`,
 >   `test_last_kind_scoping.py`.
-> Remaining open: step 9 (LLM fallback classifier) and Phase 4 audits.
+> - Step 9: `agent/fallback_classifier.py` — one structured Bedrock call
+>   (session model) picks a workflow for rule="default" turns only;
+>   fail-open to general_qa; gated by `dispatcher_llm_fallback_enabled`
+>   (on by default, off in tests); routes as rule="llm_fallback"
+>   (implicit → RBAC degrades to general_qa, never 403s). Tests:
+>   `test_llm_fallback.py`.
+> Remaining open: Phase 4 audits (sandbox cleanup on timeout, source
+> HTTP retry posture).
 
 ### Phase 1 — routing correctness
 1. **Fix A1**: `classify` returns route metadata (workflow + sticky flag);
@@ -153,8 +160,8 @@ one place), then Phase 1, then Phase 2.
    (`_MAX_TOOL_CALLS`, retries) collapse into one visible table.
 8. **Routing observability**: persist which rule/pattern matched into turn
    `meta` — makes misroutes diagnosable, builds a corpus for step 9.
-9. Optional: small-LLM (Haiku) fallback classifier for no-match/ambiguous
-   first turns; regexes stay as the fast path.
+9. Small-LLM fallback classifier for no-match first turns; regexes stay
+   as the fast path. (Implemented — see status note above.)
 
 ### Phase 4 — audit items
 10. Verify sandbox container cleanup on timeout cancellation.

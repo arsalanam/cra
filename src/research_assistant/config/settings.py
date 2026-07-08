@@ -63,6 +63,15 @@ class Settings(BaseSettings):
     max_input_tokens_per_day: int = 3_000_000
     max_output_tokens_per_day: int = 600_000
 
+    # Dispatcher LLM fallback classifier (step 9 in docs/agent-loop-review.md).
+    # When the regex cascade finds NO keyword match on a first turn (rule
+    # "default"), one cheap structured Bedrock call picks the workflow instead
+    # of silently landing in general_qa. Fail-open: any error / timeout keeps
+    # the general_qa default, so the dispatcher is never worse than the regex
+    # behaviour. Disabled in tests via conftest env.
+    dispatcher_llm_fallback_enabled: bool = True
+    dispatcher_llm_fallback_timeout_seconds: float = 10.0
+
     # Vision model for image description (Sonnet recommended)
     vision_model_id: str = "us.anthropic.claude-sonnet-4-20250514-v1:0"
 

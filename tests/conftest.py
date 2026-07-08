@@ -16,6 +16,10 @@ os.environ.setdefault("BEDROCK_MODEL_ID", "us.anthropic.claude-3-5-sonnet-202410
 os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
 os.environ.setdefault("CLINICAL_DATABASE_URL", "sqlite+aiosqlite:///:memory:")
 os.environ.setdefault("TAVILY_API_KEY", "test-key")
+# Keep dispatch() hermetic in tests — the LLM fallback classifier would
+# otherwise attempt a live Bedrock call on unmatched messages. Tests that
+# exercise the fallback stub `classify_with_llm` and flip the setting.
+os.environ.setdefault("DISPATCHER_LLM_FALLBACK_ENABLED", "false")
 
 
 @pytest.fixture

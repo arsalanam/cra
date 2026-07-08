@@ -38,6 +38,8 @@ from typing import Any
 from pydantic_ai.messages import ModelMessage
 
 from ..auth.rbac import SKILL_PERMISSION, Permission
+from ..config import get_settings
+from . import fallback_classifier
 from .specialists import (
     SPECIALISTS,
     csr_drafter,
@@ -85,7 +87,7 @@ class Route:
 # general_qa instead of 403ing — the user never asked for the gated
 # specialist. Explicit requests (slash commands) and in-flight workflow
 # turns (continuation / handoff / pinned) still fail hard.
-_IMPLICIT_RULES = frozenset({"keyword", "default", "definitional"})
+_IMPLICIT_RULES = frozenset({"keyword", "default", "definitional", "llm_fallback"})
 
 
 class SkillNotAuthorizedError(Exception):
@@ -685,6 +687,21 @@ async def dispatch(
     handoff, pinned) still raise `SkillNotAuthorizedError`.
     """
     route = classify_route(user_message, current_workflow)
+
+    # Step 9 (docs/agent-loop-review.md): a first turn with NO keyword
+    # signal lands on rule="default" → general_qa. When enabled, one cheap
+    # structured LLM call gets a chance to pick a better workflow. Fail-open:
+    # classify_with_llm returns None on any error and the default stands.
+    if route.rule == "default" and get_settings().dispatcher_llm_fallback_enabled:
+        llm_workflow = await fallback_classifier.classify_with_llm(user_message)
+        if (
+            llm_workflow
+            and llm_workflow in SPECIALISTS
+            and llm_workflow != general_qa.WORKFLOW_NAME
+        ):
+            logger.info("Dispatcher: LLM fallback -> %s", llm_workflow)
+            route = Route(llm_workflow, rule="llm_fallback")
+
     try:
         authorize_workflow(route.workflow, effective_permissions)
     except SkillNotAuthorizedError:
