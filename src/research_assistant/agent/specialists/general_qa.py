@@ -144,9 +144,13 @@ _CLINICAL_RED_FLAGS: tuple[re.Pattern[str], ...] = (
     # bare concept. Explaining what a forest plot / CI *is* must be allowed
     # (those answers unavoidably say "confidence interval"); quoting a specific
     # interval like "95% CI 0.34-0.58" is what's forbidden. So require an
-    # adjacent number.
-    re.compile(r"\b95\s*%\s*CI\b[\s:]*[\[(]?\s*-?\d", re.I),
-    re.compile(r"\bconfidence interval\b(?:\s+(?:of|from|is|was))?[\s:]*[\[(]?\s*-?\d", re.I),
+    # adjacent number ON THE SAME LINE — `\s` would match newlines and bridge
+    # a paragraph break into a following numbered-list item ("…the 95% CI\n\n
+    # 5. The diamond…"), rejecting perfectly definitional answers.
+    re.compile(r"\b95\s*%\s*CI\b[ \t:]*[\[(]?[ \t]*-?\d", re.I),
+    re.compile(
+        r"\bconfidence interval\b(?:[ \t]+(?:of|from|is|was))?[ \t:]*[\[(]?[ \t]*-?\d", re.I
+    ),
     # I² with operator + digit.
     re.compile(r"\bI[²2]\s*[=:]\s*\d"),
     # p-value with operator + decimal.
