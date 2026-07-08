@@ -13,6 +13,20 @@ from dataclasses import dataclass, field
 from typing import Any
 
 
+class ToolErrorBudgetExceeded(RuntimeError):
+    """Raised when a single turn accumulates too many failed tool calls.
+
+    Tools report failure by returning a JSON result with a truthy ``error``
+    key (they don't raise). The shared emit wrapper (tools/_emit.py) counts
+    those; once the per-turn budget (``AgentDeps.max_tool_errors``) is reached
+    it raises this to abort the run — so a repeatedly-failing tool (an
+    unreachable source, erroring fetches) can't burn the whole 5-min /
+    100-tool-call budget. Normal ``{"available": false}`` results are NOT
+    errors and don't count. Surfaced to the user as a graceful message by
+    web/dispatch._classify_agent_error.
+    """
+
+
 def drain_tool_usage(deps: AgentDeps) -> dict[str, int]:
     """Drain `deps.event_queue` and count `tool_start` events by tool name.
 
@@ -52,6 +66,13 @@ class AgentDeps:
     artifacts: dict[str, str] = field(default_factory=dict)
     file_content: str | None = None
     file_name: str = "upload.txt"
+    # Per-turn tool-error circuit breaker. Tools return {"error": ...} on
+    # failure (they don't raise); the emit wrapper counts those and aborts the
+    # run once error_count reaches max_tool_errors — so a repeatedly-failing
+    # tool can't consume the whole 5-min / 100-call budget. A "not available"
+    # result (e.g. paywalled full text) is not an error and doesn't count.
+    error_count: int = 0
+    max_tool_errors: int = 5
     # Most recent assistant turn `kind` (e.g. "pico", "search_results"). None
     # before any assistant turn exists. Used by the clinical agent's
     # `prepare_tools` to gate pubmed_search / fetch_pmc_fulltext / sandbox_exec

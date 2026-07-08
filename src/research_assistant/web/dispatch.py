@@ -24,6 +24,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from pydantic_ai.exceptions import UsageLimitExceeded
 
+from ..agent.deps import ToolErrorBudgetExceeded
 from ..agent.dispatcher import SkillNotAuthorizedError, dispatch
 from ..config import get_settings
 from ..persistence.context import messages_to_history
@@ -102,6 +103,21 @@ def _classify_agent_error(exc: Exception) -> tuple[int, str]:
                 "question, (2) paste the studies / extraction data directly so "
                 "it doesn't need to search, or (3) if the question is "
                 "legitimately deep, raise the specialist's tool-call limit."
+            ),
+        )
+
+    # Per-turn tool-error circuit breaker tripped — a tool failed repeatedly
+    # (unreachable source, erroring fetches) and the run was aborted before it
+    # burned the whole time / tool-call budget. Usually transient / upstream.
+    if isinstance(exc, ToolErrorBudgetExceeded):
+        return (
+            502,
+            (
+                "The assistant stopped because several tool calls failed in a "
+                "row — typically a paper source or document fetch that was "
+                "unreachable or erroring. This is usually a transient upstream "
+                "issue: retry in a moment. If it persists, check the paper-"
+                "source settings and the server logs."
             ),
         )
 
