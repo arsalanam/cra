@@ -14,7 +14,6 @@ from research_assistant.agent.dispatcher import classify
         "I want NMA pooling DOAC trials",
         "Indirect comparison of 4 statins for cholesterol",
         "Build a league table for the SGLT2 inhibitors",
-        "What does SUCRA tell me about these treatments?",
         "Mixed-treatment comparison of antihypertensives",
         "Compare 5 DOACs head-to-head where direct trials don't exist",
         "Ranking of treatments by efficacy across all RCTs",
@@ -63,5 +62,14 @@ def test_pairwise_meta_analysis_still_routes_to_meta_analysis() -> None:
     assert classify("Does aspirin reduce stroke vs placebo", None) == "meta_analysis"
 
 
-def test_definitional_question_about_nma_routes_to_general_qa() -> None:
-    assert classify("what is network meta-analysis?", None) == "general_qa"
+@pytest.mark.parametrize(
+    "msg",
+    [
+        "what is network meta-analysis?",
+        # "what does X tell me" is a definitional ask — answer it, don't spin up
+        # the NMA workflow (which would then time out on a question).
+        "What does SUCRA tell me about these treatments?",
+    ],
+)
+def test_definitional_question_about_nma_routes_to_general_qa(msg: str) -> None:
+    assert classify(msg, None) == "general_qa"

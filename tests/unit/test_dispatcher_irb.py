@@ -14,7 +14,6 @@ from research_assistant.agent.dispatcher import classify
         "Help draft the informed consent form",
         "I need an ICF for this study",
         "Draft a protocol synopsis for the IRB",
-        "What does 21 CFR 50.25 require",
         "Build an IRB packet",
         "We're submitting to the ethics committee",
         "ICH E6 requirements for consent",
@@ -44,5 +43,14 @@ def test_slash_irb_routes_to_irb_drafter() -> None:
     assert classify("/consent", None) == "irb_drafter"
 
 
-def test_definitional_question_about_consent_routes_to_general_qa() -> None:
-    assert classify("what is informed consent?", None) == "general_qa"
+@pytest.mark.parametrize(
+    "msg",
+    [
+        "what is informed consent?",
+        # A "what does <regulation> require" lookup is answerable directly —
+        # don't start an IRB-drafting workflow for it.
+        "What does 21 CFR 50.25 require",
+    ],
+)
+def test_definitional_question_about_consent_routes_to_general_qa(msg: str) -> None:
+    assert classify(msg, None) == "general_qa"
