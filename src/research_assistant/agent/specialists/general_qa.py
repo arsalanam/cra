@@ -29,7 +29,7 @@ from pydantic_ai.usage import UsageLimits
 
 from ...config import get_settings
 from ...domain.common import Answer, ClarificationRequest
-from ...tools import GENERAL_TOOLS
+from ...tools import GENERAL_TOOLS, fetch_document
 from ...tools.clinical import rag_search
 from ...tools.data_science import calculator, python_repl
 from ..deps import AgentDeps, drain_tool_usage
@@ -191,9 +191,16 @@ def build_agent() -> Agent[AgentDeps, Answer | ClarificationRequest]:
         output_retries=1,
     )
 
-    # GENERAL_TOOLS + the two lightweight math tools (no sandbox_exec —
-    # see module docstring for why) + rag_search over the local library.
-    tools = [*GENERAL_TOOLS, calculator, python_repl, rag_search]
+    # GENERAL_TOOLS (minus fetch_document) + the two lightweight math tools
+    # (no sandbox_exec — see module docstring) + rag_search over the library.
+    #
+    # fetch_document is EXCLUDED: web_search (Tavily) already returns an AI
+    # summary plus per-result extracted page content, so for general Q&A the
+    # model can answer from that + its own knowledge + wikipedia. Left in, the
+    # model chases the result URLs — usually paywalled publisher pages that
+    # 403 — which wastes tool calls and trips the per-turn error budget.
+    general_tools = [m for m in GENERAL_TOOLS if m is not fetch_document]
+    tools = [*general_tools, calculator, python_repl, rag_search]
     for tool_module in tools:
         tool_module.register(agent)
 
@@ -221,7 +228,7 @@ def build_agent() -> Agent[AgentDeps, Answer | ClarificationRequest]:
 
     logger.info(
         "General-QA specialist built — %d tools registered",
-        len(GENERAL_TOOLS),
+        len(tools),
     )
     return agent
 
