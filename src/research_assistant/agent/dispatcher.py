@@ -1,17 +1,26 @@
 """Heuristic router that picks a specialist for each user turn.
 
-Two-phase classification:
+Classification order (`classify_route`):
 
   1. Slash commands take precedence (`/meta`, `/general`, …) so a user
      can force a specific specialist.
-  2. Continuation messages (those starting with workflow-specific
-     prefixes like "PICO confirmed", "Selected studies for data
-     extraction", "Confirmed extracted data") stay in the current
-     workflow regardless of keywords.
-  3. Otherwise, if the thread is already pinned to a workflow, stay
-     there.
-  4. First-turn classification: keyword match against `_TRIGGER_KEYWORDS`
+  2. Continuation messages ("PICO confirmed", "Confirmed extracted
+     data", …) stay in the CURRENT workflow — prefixes are scoped to the
+     workflow the thread is pinned to, so one workflow's button text can
+     never yank a thread into another workflow.
+  3. Handoff seeds ("Draft CSR from meta-analysis", …) are the explicit
+     cross-workflow triggers; they may switch workflow from anywhere.
+  4. Definitional openings ("what is …", "explain …") route to
+     general_qa as a NON-STICKY detour: the question is answered but the
+     thread stays pinned to its workflow (`Route.sticky=False`).
+  5. If the thread is already pinned to a workflow, stay there.
+  6. First-turn classification: keyword match against `_TRIGGER_KEYWORDS`
      by workflow. Default fallback is `general_qa`.
+
+Every decision is returned as a `Route` carrying the matched rule and a
+sticky flag; the /turn endpoint persists the workflow back onto the
+thread only for sticky routes, and records the rule in the turn meta for
+misroute diagnosis.
 
 All routing is heuristic / regex-based. We can swap in a small classifier
 LLM later if heuristics start misclassifying. The slash-command path
@@ -23,11 +32,15 @@ from __future__ import annotations
 import logging
 import re
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Any
 
 from pydantic_ai.messages import ModelMessage
 
 from ..auth.rbac import SKILL_PERMISSION, Permission
+from ..config import get_settings
+from . import fallback_classifier
+from .deps import AgentDeps
 from .specialists import (
     SPECIALISTS,
     csr_drafter,
@@ -48,6 +61,34 @@ from .specialists import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class Route:
+    """One routing decision.
+
+    workflow: the specialist that should run this turn.
+    rule:     which classification rule fired — "slash", "continuation",
+              "handoff", "definitional", "pinned", "keyword", "default",
+              or "auth_fallback". Persisted into the turn meta so
+              misroutes are diagnosable after the fact.
+    sticky:   whether the /turn endpoint should pin the thread to this
+              workflow. Definitional detours mid-workflow are non-sticky:
+              general_qa answers the question but the thread stays in its
+              workflow (and its stage state survives).
+    """
+
+    workflow: str
+    rule: str
+    sticky: bool = True
+
+
+# Rules where the workflow was inferred rather than requested. If the
+# caller lacks the permission for an inferred workflow, we fall back to
+# general_qa instead of 403ing — the user never asked for the gated
+# specialist. Explicit requests (slash commands) and in-flight workflow
+# turns (continuation / handoff / pinned) still fail hard.
+_IMPLICIT_RULES = frozenset({"keyword", "default", "definitional", "llm_fallback"})
 
 
 class SkillNotAuthorizedError(Exception):
@@ -130,7 +171,9 @@ _SLASH_COMMANDS: dict[str, str] = {
 
 # When the frontend emits one of these (after the user clicks a button in a
 # workflow card), we MUST stay in the originating workflow regardless of
-# any keywords in the message body.
+# any keywords in the message body. Prefixes are scoped: they only match
+# when the thread is already pinned to that workflow (or not pinned at
+# all) — cross-workflow jumps go through `_HANDOFF_SEEDS` below.
 _WORKFLOW_CONTINUATIONS: dict[str, tuple[str, ...]] = {
     meta_analysis.WORKFLOW_NAME: (
         "PICO confirmed",
@@ -150,8 +193,6 @@ _WORKFLOW_CONTINUATIONS: dict[str, tuple[str, ...]] = {
     risk_of_bias.WORKFLOW_NAME: (
         "RoB confirmed",
         "Finalize RoB",
-        "Run RoB on PMID",  # explicit ad-hoc trigger
-        "Run risk of bias on extracted",  # handoff seed from data_extraction
     ),
     sap_drafter.WORKFLOW_NAME: (
         "PICOT confirmed",
@@ -165,8 +206,6 @@ _WORKFLOW_CONTINUATIONS: dict[str, tuple[str, ...]] = {
         "Finalize manuscript",
         "Reviewer comments:",
         "Finalize reviewer response",
-        "Draft as manuscript from meta-analysis",  # handoff seed (frontend)
-        "Draft as manuscript from SR protocol",  # handoff seed
     ),
     registration_drafter.WORKFLOW_NAME: (
         "Intake confirmed",
@@ -179,7 +218,6 @@ _WORKFLOW_CONTINUATIONS: dict[str, tuple[str, ...]] = {
         "Refine ICF:",
         "ICF confirmed",
         "Finalize IRB",
-        "Draft IRB packet from registration intake",  # handoff seed
     ),
     csr_drafter.WORKFLOW_NAME: (
         "CSR intake confirmed",
@@ -187,10 +225,6 @@ _WORKFLOW_CONTINUATIONS: dict[str, tuple[str, ...]] = {
         "CSR data sections confirmed",
         "Refine CSR:",
         "Finalize CSR",
-        "Draft CSR from meta-analysis",  # handoff seed
-        "Draft CSR from ADTTE",  # handoff seed
-        "Draft CSR from SAP",  # handoff seed
-        "Draft CSR from trial-stats",  # handoff seed (TRIAL-6)
     ),
     grade_drafter.WORKFLOW_NAME: (
         "GRADE intake confirmed",
@@ -199,7 +233,6 @@ _WORKFLOW_CONTINUATIONS: dict[str, tuple[str, ...]] = {
         "PRISMA confirmed",
         "Refine SoF:",
         "Finalize GRADE",
-        "Draft GRADE from meta-analysis",  # handoff seed
     ),
     trial_stats.WORKFLOW_NAME: (
         "Trial-stats intake confirmed",
@@ -213,8 +246,6 @@ _WORKFLOW_CONTINUATIONS: dict[str, tuple[str, ...]] = {
         "Add swimmer:",
         "Refine trial-stats:",
         "Finalize trial-stats",
-        "Draft trial-stats from ADTTE",  # handoff seed
-        "Draft trial-stats from CDISC",  # handoff seed
     ),
     nma.WORKFLOW_NAME: (
         "NMA PICO confirmed",
@@ -241,11 +272,31 @@ _WORKFLOW_CONTINUATIONS: dict[str, tuple[str, ...]] = {
         "Reduce reading level",
         "Refine lay summary:",
         "Finalize lay summary",
-        "Draft lay summary from meta-analysis",  # handoff seed
-        "Draft lay summary from CSR",  # handoff seed
-        "Draft lay summary from IRB packet",  # handoff seed
     ),
     # Future: research_gap / ecrf continuations
+}
+
+
+# Explicit cross-workflow triggers: the frontend's "→ Draft <kind>" buttons
+# and ad-hoc commands that name their target workflow in the message
+# itself. These may switch workflow from ANY thread state — unlike
+# `_WORKFLOW_CONTINUATIONS`, which is scoped to the pinned workflow.
+_HANDOFF_SEEDS: dict[str, str] = {
+    "Run RoB on PMID": risk_of_bias.WORKFLOW_NAME,  # explicit ad-hoc trigger
+    "Run risk of bias on extracted": risk_of_bias.WORKFLOW_NAME,  # from data_extraction
+    "Draft as manuscript from meta-analysis": manuscript_drafter.WORKFLOW_NAME,
+    "Draft as manuscript from SR protocol": manuscript_drafter.WORKFLOW_NAME,
+    "Draft IRB packet from registration intake": irb_drafter.WORKFLOW_NAME,
+    "Draft CSR from meta-analysis": csr_drafter.WORKFLOW_NAME,
+    "Draft CSR from ADTTE": csr_drafter.WORKFLOW_NAME,
+    "Draft CSR from SAP": csr_drafter.WORKFLOW_NAME,
+    "Draft CSR from trial-stats": csr_drafter.WORKFLOW_NAME,  # TRIAL-6
+    "Draft GRADE from meta-analysis": grade_drafter.WORKFLOW_NAME,
+    "Draft trial-stats from ADTTE": trial_stats.WORKFLOW_NAME,
+    "Draft trial-stats from CDISC": trial_stats.WORKFLOW_NAME,
+    "Draft lay summary from meta-analysis": lay_summary.WORKFLOW_NAME,
+    "Draft lay summary from CSR": lay_summary.WORKFLOW_NAME,
+    "Draft lay summary from IRB packet": lay_summary.WORKFLOW_NAME,
 }
 
 
@@ -498,8 +549,8 @@ _TRIGGER_KEYWORDS: list[tuple[str, list[re.Pattern[str]]]] = [
 ]
 
 
-def classify(user_message: str, current_workflow: str | None) -> str:
-    """Return the workflow id that should handle this turn.
+def classify_route(user_message: str, current_workflow: str | None) -> Route:
+    """Return the full routing decision for this turn.
 
     `current_workflow` is the workflow this thread was previously routed
     into (read from `Thread.workflow`). When set, continuation messages
@@ -514,44 +565,80 @@ def classify(user_message: str, current_workflow: str | None) -> str:
         if first in _SLASH_COMMANDS:
             chosen = _SLASH_COMMANDS[first]
             logger.info("Dispatcher: slash-command /%s -> %s", first, chosen)
-            return chosen
+            return Route(chosen, rule="slash")
 
-    # 2. Continuation messages — stay in the current workflow
-    for workflow, prefixes in _WORKFLOW_CONTINUATIONS.items():
+    # 2. Continuation messages — stay in the CURRENT workflow. Scoped:
+    #    only the pinned workflow's own prefixes count, so another
+    #    workflow's button text (or a user message that happens to start
+    #    with one) can't yank the thread sideways.
+    if current_workflow:
+        prefixes = _WORKFLOW_CONTINUATIONS.get(current_workflow, ())
         if any(msg.startswith(p) for p in prefixes):
             logger.info(
                 "Dispatcher: continuation prefix matched -> %s",
-                workflow,
+                current_workflow,
             )
-            return workflow
+            return Route(current_workflow, rule="continuation")
 
-    # 3. Definitional openings always go to general_qa, even mid-workflow
+    # 3. Handoff seeds — explicit cross-workflow triggers ("Draft CSR
+    #    from meta-analysis"). These name their target in the message, so
+    #    they may switch workflow from anywhere (in-thread button or a
+    #    freshly seeded thread).
+    for prefix, workflow in _HANDOFF_SEEDS.items():
+        if msg.startswith(prefix):
+            logger.info("Dispatcher: handoff seed matched -> %s", workflow)
+            return Route(workflow, rule="handoff")
+
+    # 3b. Unpinned thread receiving a continuation message (e.g. a card
+    #     button replayed into a new thread) — honor any workflow's
+    #     prefixes, matching the pre-scoping behaviour.
+    if not current_workflow:
+        for workflow, prefixes in _WORKFLOW_CONTINUATIONS.items():
+            if any(msg.startswith(p) for p in prefixes):
+                logger.info(
+                    "Dispatcher: continuation prefix matched (unpinned) -> %s",
+                    workflow,
+                )
+                return Route(workflow, rule="continuation")
+
+    # 4. Definitional openings go to general_qa, even mid-workflow
     #    ("what is a forest plot?", "explain PICO"). The user wants a
-    #    definition, not a specialist takeover.
+    #    definition, not a specialist takeover — and not a workflow
+    #    takeover either: mid-workflow this is a NON-STICKY detour, so
+    #    the thread stays pinned and its stage state survives.
     if _DEFINITIONAL_OPENINGS.match(msg):
         logger.info("Dispatcher: definitional opening -> general_qa")
-        return general_qa.WORKFLOW_NAME
+        return Route(
+            general_qa.WORKFLOW_NAME,
+            rule="definitional",
+            sticky=current_workflow is None,
+        )
 
-    # 4. If already pinned to a workflow, stay there
+    # 5. If already pinned to a workflow, stay there
     if current_workflow and current_workflow in SPECIALISTS:
         logger.debug(
             "Dispatcher: thread pinned to %r, staying",
             current_workflow,
         )
-        return current_workflow
+        return Route(current_workflow, rule="pinned")
 
-    # 5. First-turn keyword classification
+    # 6. First-turn keyword classification
     for workflow, patterns in _TRIGGER_KEYWORDS:
         if any(p.search(msg_lower) for p in patterns):
             logger.info(
                 "Dispatcher: keyword match -> %s",
                 workflow,
             )
-            return workflow
+            return Route(workflow, rule="keyword")
 
-    # 6. Default
+    # 7. Default
     logger.info("Dispatcher: no match -> %s", general_qa.WORKFLOW_NAME)
-    return general_qa.WORKFLOW_NAME
+    return Route(general_qa.WORKFLOW_NAME, rule="default")
+
+
+def classify(user_message: str, current_workflow: str | None) -> str:
+    """Back-compat shim: return only the workflow id for this turn."""
+    return classify_route(user_message, current_workflow).workflow
 
 
 def authorize_workflow(
@@ -584,22 +671,74 @@ async def dispatch(
     message_history: Sequence[ModelMessage] | None = None,
     last_turn_kind: str | None = None,
     effective_permissions: frozenset[Permission] | None = None,
-) -> tuple[Any, dict[str, Any], str]:
-    """Classify the message, run the chosen specialist, return (output, meta, workflow).
+    image_content: bytes | None = None,
+    image_media_type: str | None = None,
+) -> tuple[Any, dict[str, Any], Route]:
+    """Classify the message, run the chosen specialist, return (output, meta, route).
 
-    The endpoint persists `workflow` back to the thread so subsequent turns
-    stay routed correctly even if the user's later phrasing is ambiguous.
+    `image_content`/`image_media_type` carry a user-attached image (decoded
+    bytes + MIME type) into the specialist's `AgentDeps`; `describe_image`
+    is only surfaced to the model on turns where they are set.
+
+    The endpoint persists `route.workflow` back to the thread (for sticky
+    routes) so subsequent turns stay routed correctly even if the user's
+    later phrasing is ambiguous.
 
     `effective_permissions` gates which specialist may run. Passing None
     (the default) preserves the pre-RBAC behaviour where any workflow is
     reachable, which is what we want for auth-disabled test/dev runs.
+
+    Authorization failures on IMPLICIT routes (keyword / default /
+    definitional — the user never named the workflow) fall back to
+    general_qa instead of 403ing; explicit routes (slash, continuation,
+    handoff, pinned) still raise `SkillNotAuthorizedError`.
     """
-    workflow = classify(user_message, current_workflow)
-    authorize_workflow(workflow, effective_permissions)
-    specialist = SPECIALISTS[workflow]
+    route = classify_route(user_message, current_workflow)
+
+    # Step 9 (docs/agent-loop-review.md): a first turn with NO keyword
+    # signal lands on rule="default" → general_qa. When enabled, one cheap
+    # structured LLM call gets a chance to pick a better workflow. Fail-open:
+    # classify_with_llm returns None on any error and the default stands.
+    if route.rule == "default" and get_settings().dispatcher_llm_fallback_enabled:
+        llm_workflow = await fallback_classifier.classify_with_llm(user_message)
+        if (
+            llm_workflow
+            and llm_workflow in SPECIALISTS
+            and llm_workflow != general_qa.WORKFLOW_NAME
+        ):
+            logger.info("Dispatcher: LLM fallback -> %s", llm_workflow)
+            route = Route(llm_workflow, rule="llm_fallback")
+
+    try:
+        authorize_workflow(route.workflow, effective_permissions)
+    except SkillNotAuthorizedError:
+        if route.rule not in _IMPLICIT_RULES or route.workflow == general_qa.WORKFLOW_NAME:
+            raise
+        # The inferred workflow is gated for this caller — answer in
+        # general_qa instead (if even that is denied, surface the error).
+        authorize_workflow(general_qa.WORKFLOW_NAME, effective_permissions)
+        logger.info(
+            "Dispatcher: %r not authorized (rule=%s) — falling back to general_qa",
+            route.workflow,
+            route.rule,
+        )
+        route = Route(general_qa.WORKFLOW_NAME, rule="auth_fallback", sticky=False)
+
+    specialist = SPECIALISTS[route.workflow]
+    deps = AgentDeps(
+        last_turn_kind=last_turn_kind,
+        image_content=image_content,
+        image_media_type=image_media_type,
+    )
     output, meta = await specialist.run_turn(
         user_message,
         message_history=message_history,
         last_turn_kind=last_turn_kind,
+        deps=deps,
     )
-    return output, meta, workflow
+    meta["route"] = {
+        "workflow": route.workflow,
+        "rule": route.rule,
+        "sticky": route.sticky,
+    }
+    return output, meta, route

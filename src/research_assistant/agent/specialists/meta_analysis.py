@@ -15,7 +15,6 @@ existed only to back-stop missing routing.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from collections.abc import Sequence
 from typing import Any
@@ -23,21 +22,19 @@ from typing import Any
 from pydantic_ai import Agent, ModelRetry, RunContext
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.tools import ToolDefinition
-from pydantic_ai.usage import UsageLimits
 
-from ...config import get_settings
 from ...domain.meta_analysis import MetaAnalysisResults, MetaAnalysisTurn
 from ...tools import (
     CLINICAL_TOOLS,
     DATA_SCIENCE_TOOLS,
     GENERAL_TOOLS,
-    describe_image,
     fetch_document,
 )
 from ...tools.clinical import rag_search
 from ...tools.data_science import visualisations
-from ..deps import AgentDeps, drain_tool_usage
+from ..deps import AgentDeps
 from ..model import build_bedrock_model
+from ._runner import gate_attachment_tools, run_agent_turn, turn_meta
 
 logger = logging.getLogger(__name__)
 
@@ -331,6 +328,8 @@ async def _gate_workflow_tools(
     tool_defs: list[ToolDefinition],
 ) -> list[ToolDefinition]:
     """Hide workflow-late tools until the conversation reaches the right stage."""
+    # Vision first: describe_image only exists on turns with an attachment.
+    tool_defs = await gate_attachment_tools(ctx, tool_defs)
     last = ctx.deps.last_turn_kind
     allowed: list[ToolDefinition] = []
     hidden: list[str] = []
@@ -421,18 +420,18 @@ def build_agent() -> Agent[AgentDeps, MetaAnalysisTurn]:
     # data science (sandbox for analysis) + general (web/wiki/file/etc.) +
     # rag_search over the local library (gated to early stages — context only) +
     # run_visualisation for the funnel plot at STEP 5.
-    # fetch_document AND describe_image are deliberately EXCLUDED from the
-    # meta-analysis toolset:
-    #  • fetch_document — the model would call it on publisher DOI links to
-    #    grab full text, but those are paywalled (HTTP 403). Open-access full
-    #    text has a dedicated path (fetch_pmc_fulltext, gated by stage);
-    #    numbers the abstract lacks come from the user.
-    #  • describe_image — the model would fetch forest-plot images off the web
-    #    to "look at" (403 / bot-blocked / needs the vision model). This
-    #    specialist renders its OWN forest plots via sandbox_exec, so it never
-    #    needs to describe web images.
+    # fetch_document is deliberately EXCLUDED from the meta-analysis toolset:
+    # the model would call it on publisher DOI links to grab full text, but
+    # those are paywalled (HTTP 403). Open-access full text has a dedicated
+    # path (fetch_pmc_fulltext, gated by stage); numbers the abstract lacks
+    # come from the user.
+    # describe_image is back (vision IAM grant landed) but upload-only: it
+    # reads the user-attached image from deps (no URL parameter — the old
+    # web-image-fishing path is gone) and _gate_workflow_tools hides it on
+    # turns without an attachment. Useful when the user pastes a figure
+    # from a paper during extraction.
     # web_search / wikipedia / read_file remain available for grounding.
-    _excluded = (fetch_document, describe_image)
+    _excluded = (fetch_document,)
     general_tools = [m for m in GENERAL_TOOLS if m not in _excluded]
     tools = [
         *CLINICAL_TOOLS,
@@ -466,6 +465,7 @@ async def run_turn(
     user_message: str,
     message_history: Sequence[ModelMessage] | None = None,
     last_turn_kind: str | None = None,
+    deps: AgentDeps | None = None,
 ) -> tuple[MetaAnalysisTurn, dict[str, Any]]:
     """Run one meta-analysis turn.
 
@@ -473,49 +473,21 @@ async def run_turn(
     `kind` the most recent assistant message in this thread had (or None
     on the first turn).
     """
-    settings = get_settings()
-    agent = _get_agent()
-    deps = AgentDeps(last_turn_kind=last_turn_kind)
-
-    usage_limits = UsageLimits(
-        request_limit=settings.max_model_requests,
-        tool_calls_limit=_MAX_TOOL_CALLS,
-    )
-
-    history = list(message_history) if message_history else None
-    logger.info(
-        "Meta-analysis turn: msg=%r history=%d stage=%r",
-        user_message[:80],
-        len(history) if history else 0,
-        last_turn_kind,
-    )
-
-    result = await asyncio.wait_for(
-        agent.run(
-            user_message,
-            deps=deps,
-            usage_limits=usage_limits,
-            message_history=history,
-        ),
-        timeout=settings.agent_timeout_seconds,
+    result, deps = await run_agent_turn(
+        _get_agent(),
+        user_message,
+        log_name="Meta-analysis",
+        max_tool_calls=_MAX_TOOL_CALLS,
+        message_history=message_history,
+        last_turn_kind=last_turn_kind,
+        deps=deps,
     )
 
     output = result.output
     if isinstance(output, MetaAnalysisResults):
         _resolve_plot_artifacts(output, deps.artifacts)
 
-    usage = result.usage()
-    meta: dict[str, Any] = {
-        "usage": {
-            "input_tokens": usage.input_tokens,
-            "output_tokens": usage.output_tokens,
-            "total_tokens": usage.input_tokens + usage.output_tokens,
-            "requests": usage.requests,
-            "tool_calls": usage.tool_calls,
-        },
-        "tool_usage": drain_tool_usage(deps),
-    }
-    return output, meta
+    return output, turn_meta(result, deps)
 
 
 def _resolve_plot_artifacts(output: MetaAnalysisResults, artifacts: dict[str, str]) -> None:

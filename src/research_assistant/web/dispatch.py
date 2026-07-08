@@ -15,6 +15,8 @@ Two URLs serve the same handler for backward compatibility:
 
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import logging
 from datetime import UTC, datetime, timedelta
@@ -25,7 +27,7 @@ from pydantic import BaseModel
 from pydantic_ai.exceptions import UsageLimitExceeded
 
 from ..agent.deps import ToolErrorBudgetExceeded
-from ..agent.dispatcher import SkillNotAuthorizedError, dispatch
+from ..agent.dispatcher import SkillNotAuthorizedError, classify_route, dispatch
 from ..config import get_settings
 from ..persistence.context import messages_to_history
 from ..persistence.database import get_db_session
@@ -106,16 +108,18 @@ def _classify_agent_error(exc: Exception) -> tuple[int, str]:
             ),
         )
 
-    # Per-turn tool-error circuit breaker tripped — a tool failed repeatedly
-    # (unreachable source, erroring fetches) and the run was aborted before it
-    # burned the whole time / tool-call budget. Usually transient / upstream.
+    # Per-turn tool-error circuit breaker backstop — the error budget was
+    # exhausted (all tools soft-disabled, model told to answer with what it
+    # had) and the model STILL kept attempting tool calls instead of
+    # producing an answer. Usually a transient upstream failure underneath.
     if isinstance(exc, ToolErrorBudgetExceeded):
         return (
             502,
             (
                 "The assistant stopped because several tool calls failed in a "
                 "row — typically a paper source or document fetch that was "
-                "unreachable or erroring. This is usually a transient upstream "
+                "unreachable or erroring — and it could not produce a partial "
+                "answer from what it had. This is usually a transient upstream "
                 "issue: retry in a moment. If it persists, check the paper-"
                 "source settings and the server logs."
             ),
@@ -217,10 +221,19 @@ async def _maybe_autobind_artefact(
         )
 
 
-def _last_assistant_kind(messages: list[Message]) -> str | None:
-    """Find the `kind` of the most recent assistant turn, if any."""
+def _last_assistant_kind(messages: list[Message], workflow: str | None = None) -> str | None:
+    """Find the `kind` of the most recent assistant turn, if any.
+
+    When `workflow` is given, only assistant turns produced by THAT
+    workflow count — a general_qa detour mid-meta-analysis must not feed
+    its "answer" kind into the meta-analysis stage gate. Legacy rows
+    (written before Message.workflow existed) have NULL and still count,
+    preserving pre-column behaviour for old threads.
+    """
     for msg in reversed(messages):
         if msg.role != "assistant" or not msg.final_answer:
+            continue
+        if workflow is not None and msg.workflow is not None and msg.workflow != workflow:
             continue
         try:
             payload = json.loads(msg.final_answer)
@@ -268,6 +281,7 @@ async def _persist_errored_turn(
                 thread_id=thread_id,
                 role="assistant",
                 final_answer=json.dumps(error_payload),
+                workflow=fallback_workflow,
             )
             await repo.add_stream_event(
                 message_id=assistant_msg.id,
@@ -293,6 +307,38 @@ async def _persist_errored_turn(
 class TurnRequest(BaseModel):
     thread_id: str
     user_message: str
+    # Optional user-attached image for this turn (vision). Base64-encoded
+    # bytes + MIME type; decoded server-side and threaded into AgentDeps so
+    # describe_image can see it. Not persisted — the attachment is
+    # turn-scoped and won't be visible to later turns' history.
+    image_base64: str | None = None
+    image_media_type: str | None = None
+
+
+_ALLOWED_IMAGE_MEDIA_TYPES = {"image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp"}
+_MAX_IMAGE_UPLOAD_BYTES = 20 * 1024 * 1024  # matches describe_image's cap
+
+
+def _decode_turn_image(body: TurnRequest) -> tuple[bytes | None, str | None]:
+    """Validate + decode the optional image attachment; raise 400 on bad input."""
+    if not body.image_base64:
+        return None, None
+    media_type = (body.image_media_type or "").lower().split(";")[0].strip()
+    if media_type not in _ALLOWED_IMAGE_MEDIA_TYPES:
+        raise HTTPException(
+            400,
+            f"Unsupported image type {body.image_media_type!r}. Supported: JPEG, PNG, GIF, WebP.",
+        )
+    try:
+        image_bytes = base64.b64decode(body.image_base64, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise HTTPException(400, "image_base64 is not valid base64.") from exc
+    if len(image_bytes) > _MAX_IMAGE_UPLOAD_BYTES:
+        raise HTTPException(
+            400,
+            f"Image too large ({len(image_bytes)} bytes, max {_MAX_IMAGE_UPLOAD_BYTES}).",
+        )
+    return image_bytes, media_type
 
 
 class TurnResponse(BaseModel):
@@ -349,8 +395,12 @@ def create_dispatch_router() -> APIRouter:
                 body.thread_id, limit=settings.context_window_messages
             )
             history = messages_to_history(context_msgs, thread_summary=thread.summary)
-            last_kind = _last_assistant_kind(context_msgs)
             current_workflow = thread.workflow
+            # Classify up front (pure + deterministic; dispatch() repeats it)
+            # so the stage-gate input is scoped to the workflow that will
+            # actually run — not whatever specialist answered last.
+            route_preview = classify_route(body.user_message, current_workflow)
+            last_kind = _last_assistant_kind(context_msgs, workflow=route_preview.workflow)
 
             summarizer = StubThreadSummarizer(threshold=settings.summarize_after_messages)
             if await summarizer.should_summarize(body.thread_id, session):
@@ -369,14 +419,19 @@ def create_dispatch_router() -> APIRouter:
             else:
                 effective_perms = None
 
+        image_bytes, image_media_type = _decode_turn_image(body)
+
         try:
-            output, meta, chosen_workflow = await dispatch(
+            output, meta, route = await dispatch(
                 body.user_message,
                 current_workflow=current_workflow,
                 message_history=history,
                 last_turn_kind=last_kind,
                 effective_permissions=effective_perms,
+                image_content=image_bytes,
+                image_media_type=image_media_type,
             )
+            chosen_workflow = route.workflow
         except SkillNotAuthorizedError as skill_exc:
             # 403 with an actionable message — tells the user which workflow
             # was attempted and which permission they'd need. The frontend
@@ -424,6 +479,7 @@ def create_dispatch_router() -> APIRouter:
                 thread_id=body.thread_id,
                 role="assistant",
                 final_answer=output_json,
+                workflow=chosen_workflow,
             )
             assistant_msg_id = assistant_msg.id
             # Inject the bedrock model_id into the done event so the
@@ -438,10 +494,15 @@ def create_dispatch_router() -> APIRouter:
                     "usage": usage_with_model,
                     "tool_usage": meta.get("tool_usage", {}),
                     "workflow": chosen_workflow,
+                    # Routing observability: which classification rule fired.
+                    "route_rule": route.rule,
                 },
                 sequence_num=0,
             )
-            if thread.workflow != chosen_workflow:
+            # Pin the thread only for sticky routes — a definitional detour
+            # to general_qa answers the question without stealing the thread
+            # from its workflow.
+            if route.sticky and thread.workflow != chosen_workflow:
                 await repo.update_thread(body.thread_id, workflow=chosen_workflow)
 
             # Sprint A2.5: when the turn produced a terminal artefact and

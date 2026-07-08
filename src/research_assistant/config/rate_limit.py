@@ -4,7 +4,10 @@ Wraps `httpx.AsyncClient.get` with:
   • Per-source credential injection via a pluggable `AuthStrategy`
     (query-param, header, bearer token, …) — see `config/auth.py`.
   • Per-source common-param injection (NCBI's tool/email etiquette, etc.)
-  • Automatic retry on 429 with exponential backoff (Retry-After honoured)
+  • Automatic retry with exponential backoff on transient failures:
+    429 (Retry-After honoured), 5xx, and transport errors (connect /
+    read timeouts, resets). One upstream blip must not surface as a tool
+    error — those count against the per-turn tool-error circuit breaker.
 
 Per-source backends in `tools/clinical/sources/` instantiate one of these
 with their own `RateLimitConfig`. The DB-backed `SourceConfig` row +
@@ -38,8 +41,13 @@ class RateLimitConfig:
     backoff_cap_sec: float = 10.0
 
 
+# Statuses worth retrying: rate limiting plus transient upstream failures.
+# 4xx other than 429 (bad query, auth, not-found) will not improve on retry.
+_RETRYABLE_STATUSES = frozenset({429, 500, 502, 503, 504})
+
+
 class RateLimitedClient:
-    """Wraps httpx.AsyncClient with retry-on-429 for one paper source."""
+    """Wraps httpx.AsyncClient with transient-failure retry for one paper source."""
 
     def __init__(self, client: httpx.AsyncClient, config: RateLimitConfig) -> None:
         self._client = client
@@ -58,29 +66,60 @@ class RateLimitedClient:
         endpoint: str,
         params: dict[str, str | int] | None = None,
     ) -> httpx.Response:
-        """GET `<base_url>/<endpoint>` with retry-on-429 backoff.
+        """GET `<base_url>/<endpoint>` with retry-on-transient-failure backoff.
 
-        Raises `httpx.HTTPStatusError` on non-429 errors and after the retry
-        budget is exhausted.
+        Retries 429 (Retry-After honoured), 5xx, and transport errors
+        (connect/read timeouts, resets) up to `max_retries` times. Raises
+        `httpx.HTTPStatusError` on non-retryable statuses immediately and on
+        retryable statuses once the budget is exhausted; re-raises the final
+        transport error likewise.
         """
         full_params, headers = self._prepare(params or {})
         url = f"{self._cfg.base_url}/{endpoint}"
 
-        last_response: httpx.Response | None = None
         for attempt in range(self._cfg.max_retries + 1):
-            resp = await self._client.get(url, params=full_params, headers=headers)
-            last_response = resp
-            if resp.status_code != 429:
+            last_attempt = attempt == self._cfg.max_retries
+            try:
+                resp = await self._client.get(url, params=full_params, headers=headers)
+            except httpx.TransportError as e:
+                # Connect/read timeout, reset, DNS blip — transient by nature.
+                if last_attempt:
+                    logger.warning(
+                        "%s %s transport error after %d retries — giving up: %s",
+                        self._cfg.name,
+                        endpoint,
+                        attempt,
+                        e,
+                    )
+                    raise
+                wait = _compute_backoff(
+                    None, self._cfg.backoff_base_sec, attempt, self._cfg.backoff_cap_sec
+                )
+                logger.info(
+                    "%s %s transport error (attempt %d) — backing off %.1fs: %s",
+                    self._cfg.name,
+                    endpoint,
+                    attempt + 1,
+                    wait,
+                    e,
+                )
+                await asyncio.sleep(wait)
+                continue
+
+            if resp.status_code not in _RETRYABLE_STATUSES:
                 resp.raise_for_status()
                 return resp
 
-            if attempt == self._cfg.max_retries:
+            if last_attempt:
                 logger.warning(
-                    "%s %s 429 after %d retries — giving up%s",
+                    "%s %s HTTP %d after %d retries — giving up%s",
                     self._cfg.name,
                     endpoint,
+                    resp.status_code,
                     attempt,
-                    "" if self._cfg.auth.has_credentials else " (consider configuring credentials)",
+                    ""
+                    if resp.status_code != 429 or self._cfg.auth.has_credentials
+                    else " (consider configuring credentials)",
                 )
                 resp.raise_for_status()  # raises HTTPStatusError
 
@@ -91,18 +130,16 @@ class RateLimitedClient:
                 self._cfg.backoff_cap_sec,
             )
             logger.info(
-                "%s %s 429 (attempt %d) — backing off %.1fs",
+                "%s %s HTTP %d (attempt %d) — backing off %.1fs",
                 self._cfg.name,
                 endpoint,
+                resp.status_code,
                 attempt + 1,
                 wait,
             )
             await asyncio.sleep(wait)
 
-        # Unreachable — raise_for_status() inside the loop will have fired.
-        assert last_response is not None
-        last_response.raise_for_status()
-        return last_response
+        raise AssertionError("unreachable — the loop always returns or raises")
 
 
 def _compute_backoff(

@@ -13,6 +13,8 @@ import logging
 import os
 import shutil
 import tempfile
+import threading
+import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -141,10 +143,20 @@ async def _impl(
             settings.sandbox_memory_limit,
             len(code),
         )
-        client = docker.from_env(timeout=settings.sandbox_timeout_seconds)
+        # Client HTTP timeout sits ABOVE the container wait timeout so the
+        # explicit `wait(timeout=…)` below fires first with a clean error.
+        client = docker.from_env(timeout=settings.sandbox_timeout_seconds + 30)
 
-        def _run_container() -> bytes:
-            output: bytes = client.containers.run(
+        # Container lifecycle: run detached, wait with a real timeout, then
+        # force-remove in EVERY path (success, failure, turn-cancellation).
+        # The previous `remove=True, detach=False` form leaked a
+        # still-running container whenever the client-side wait timed out or
+        # the turn was cancelled — a client HTTP timeout does not stop the
+        # container, and docker-py's remove step only ran after a clean wait.
+        holder: dict[str, Any] = {}
+
+        def _run_container() -> tuple[int, bytes]:
+            container = client.containers.run(
                 image=settings.sandbox_image,
                 volumes={
                     f"{host_tmppath}/script.py": {
@@ -163,23 +175,74 @@ async def _impl(
                 mem_limit=settings.sandbox_memory_limit,
                 nano_cpus=int(settings.sandbox_cpu_count * 1e9),
                 network_disabled=True,
-                remove=True,
-                stdout=True,
-                stderr=True,
+                detach=True,
             )
-            return output
+            holder["container"] = container
+            exit_info: dict[str, Any] = container.wait(timeout=settings.sandbox_timeout_seconds)
+            logs: bytes = container.logs(stdout=True, stderr=True)
+            return int(exit_info.get("StatusCode", -1)), logs
 
-        container_result = await asyncio.to_thread(_run_container)
+        def _force_remove(wait_for_handle: bool = False) -> None:
+            """Kill + remove the container; idempotent and never raises.
+
+            On turn-cancellation the worker thread may not have stored the
+            handle yet — poll briefly so a just-created container is still
+            reaped instead of orphaned.
+            """
+            if wait_for_handle:
+                for _ in range(20):
+                    if "container" in holder:
+                        break
+                    time.sleep(0.5)
+            container = holder.get("container")
+            if container is None:
+                return
+            try:
+                container.remove(force=True)
+            except Exception:
+                # NotFound (already gone) or daemon hiccup — log and move on;
+                # cleanup must never mask the primary result.
+                logger.warning("Sandbox container cleanup failed", exc_info=True)
+
+        try:
+            exit_code, raw_logs = await asyncio.to_thread(_run_container)
+        except asyncio.CancelledError:
+            # Turn cancelled (agent wall-clock timeout). We cannot await
+            # while cancelled — reap the container from a detached thread.
+            threading.Thread(
+                target=_force_remove, kwargs={"wait_for_handle": True}, daemon=True
+            ).start()
+            raise
+        except Exception:
+            # wait() timeout or daemon error — kill the container before
+            # surfacing the error (outer handler formats the message).
+            await asyncio.to_thread(_force_remove)
+            raise
+        else:
+            await asyncio.to_thread(_force_remove)
+
         logger.info(
-            "Container finished, output=%d bytes",
-            len(container_result) if container_result else 0,
+            "Container finished, exit_code=%d, output=%d bytes",
+            exit_code,
+            len(raw_logs) if raw_logs else 0,
         )
 
         stdout_text = (
-            container_result.decode("utf-8", errors="replace")
-            if isinstance(container_result, bytes)
-            else str(container_result)
+            raw_logs.decode("utf-8", errors="replace")
+            if isinstance(raw_logs, bytes)
+            else str(raw_logs)
         )
+
+        if exit_code != 0:
+            # Parity with the old ContainerError path: a crashing script
+            # surfaces as an error result (counts toward the tool-error
+            # budget) with the output tail so the model can fix its code.
+            tail = stdout_text[-2000:]
+            return SandboxResult(
+                stdout=stdout_text,
+                files={},
+                error=f"Sandbox script exited with code {exit_code}. Output tail:\n{tail}",
+            )
 
         # Collect output files. Images move to a persistent disk location
         # (settings.images_dir) and are referenced by URL path; small text
@@ -214,6 +277,12 @@ async def _impl(
             hint = (
                 " Build the image first: "
                 "docker build -t research-assistant-sandbox:latest ./sandbox"
+            )
+        elif "timed out" in err.lower() or "timeout" in err.lower():
+            hint = (
+                f" The script exceeded the {get_settings().sandbox_timeout_seconds}s "
+                f"sandbox limit and the container was killed. Simplify the code "
+                f"(smaller loops, lower dpi) or raise SANDBOX_TIMEOUT_SECONDS."
             )
         elif "connect" in err.lower() or "pipe" in err.lower() or "daemon" in err.lower():
             hint = " Docker Desktop does not appear to be running. Start it and try again."

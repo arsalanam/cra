@@ -47,9 +47,10 @@ class Settings(BaseSettings):
     # global cap proved too coarse — exploration-heavy general_qa needs
     # 80, workflow-gated meta_analysis is fine at 40.
     # Wall-clock cap per turn. Must align with the per-workflow tool-call
-    # envelopes: a worst-case general_qa turn (80 calls × ~5s/round-trip
-    # on growing context) ≈ ~6 min, but 300s keeps the UX synchronous.
-    # Raise for unusually deep questions; lower if the UI needs sharper
+    # envelopes: the largest cap is meta_analysis at 100 calls; general_qa
+    # sits at 40 (it was 80 only while routing errors dragged Q&A turns
+    # into tool-heavy spirals). 300s keeps the UX synchronous. Raise for
+    # unusually deep questions; lower if the UI needs sharper
     # responsiveness.
     agent_timeout_seconds: float = 300.0
 
@@ -62,6 +63,15 @@ class Settings(BaseSettings):
     # upstream throttling. Set to 0 to disable enforcement.
     max_input_tokens_per_day: int = 3_000_000
     max_output_tokens_per_day: int = 600_000
+
+    # Dispatcher LLM fallback classifier (step 9 in docs/agent-loop-review.md).
+    # When the regex cascade finds NO keyword match on a first turn (rule
+    # "default"), one cheap structured Bedrock call picks the workflow instead
+    # of silently landing in general_qa. Fail-open: any error / timeout keeps
+    # the general_qa default, so the dispatcher is never worse than the regex
+    # behaviour. Disabled in tests via conftest env.
+    dispatcher_llm_fallback_enabled: bool = True
+    dispatcher_llm_fallback_timeout_seconds: float = 10.0
 
     # Vision model for image description (Sonnet recommended)
     vision_model_id: str = "us.anthropic.claude-sonnet-4-20250514-v1:0"
