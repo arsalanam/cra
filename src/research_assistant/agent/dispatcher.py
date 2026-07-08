@@ -255,8 +255,22 @@ _WORKFLOW_CONTINUATIONS: dict[str, tuple[str, ...]] = {
 # Definitional / explanatory openings that should always go to general_qa
 # even if they mention clinical concepts (e.g. "what is a forest plot",
 # "explain meta-analysis"). Beats workflow keywords below.
+# Conceptual / definitional questions always go to general_qa, even when the
+# body mentions workflow keywords ("what does a forest plot show in a
+# meta-analysis?"). Without this, keyword-matching drags a "please explain"
+# question into a full workflow specialist, which spins up its PICO/search
+# pipeline and times out. Covers "what is/are/does/do", "why", "how
+# does/do/to/is", "explain/define/describe", "difference between", and
+# "<the> value/purpose/meaning/... of".
 _DEFINITIONAL_OPENINGS = re.compile(
-    r"^\s*(what(\s+is|'s|\s+are)|explain|define|describe what|tell me about)\b",
+    r"^\s*("
+    r"what(\s+is|'s|\s+are|\s+does|\s+do)"
+    r"|why\b"
+    r"|how\s+(does|to|is|are|can)\b"
+    r"|explain|define|describe|tell me about"
+    r"|(the\s+)?(difference|differences)\s+between"
+    r"|(the\s+)?(meaning|purpose|value|point|role|benefit|benefits|advantage|advantages)\s+of"
+    r")\b",
     re.I,
 )
 

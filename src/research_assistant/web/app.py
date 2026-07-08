@@ -72,6 +72,19 @@ def create_app() -> FastAPI:
     """Build and configure the FastAPI application."""
     settings = get_settings()
 
+    # Surface application logs (research_assistant.*) on stdout even when the
+    # server is started via `uvicorn app:app` directly — that path skips the
+    # basicConfig in __main__.py, so tool calls / routing / retries were
+    # invisible in the container. Give the app logger its own stdout handler
+    # at the configured level; propagate=False avoids double-logging.
+    _app_logger = logging.getLogger("research_assistant")
+    if not _app_logger.handlers:
+        _handler = logging.StreamHandler()
+        _handler.setFormatter(logging.Formatter("%(levelname)s:%(name)s:%(message)s"))
+        _app_logger.addHandler(_handler)
+    _app_logger.setLevel(getattr(logging, settings.log_level.upper(), logging.INFO))
+    _app_logger.propagate = False
+
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         logger.info(

@@ -142,9 +142,13 @@ _CLINICAL_RED_FLAGS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\b(?:OR|RR|HR|MD|SMD)\s*[=:]\s*-?\d"),
     re.compile(r"\b(?:OR|RR|HR|MD|SMD)\s+of\s+-?\d"),
     re.compile(r"\b(?:OR|RR|HR|MD|SMD)\s+\d+\.\d"),
-    # 95% CI / confidence interval — concrete numerical claim.
-    re.compile(r"\b95\s*%\s*CI\b", re.I),
-    re.compile(r"\bconfidence interval\b", re.I),
+    # 95% CI / confidence interval — only a CONCRETE NUMERIC claim, not the
+    # bare concept. Explaining what a forest plot / CI *is* must be allowed
+    # (those answers unavoidably say "confidence interval"); quoting a specific
+    # interval like "95% CI 0.34-0.58" is what's forbidden. So require an
+    # adjacent number.
+    re.compile(r"\b95\s*%\s*CI\b[\s:]*[\[(]?\s*-?\d", re.I),
+    re.compile(r"\bconfidence interval\b(?:\s+(?:of|from|is|was))?[\s:]*[\[(]?\s*-?\d", re.I),
     # I² with operator + digit.
     re.compile(r"\bI[²2]\s*[=:]\s*\d"),
     # p-value with operator + decimal.
