@@ -168,6 +168,32 @@ one place), then Phase 1, then Phase 2.
 11. Check whether source clients retry transient 5xx with backoff before
     returning `{"error": …}`; consider cross-turn source-health memory (C5).
 
+**Status: audited 2026-07-08 — both were real bugs, both fixed.**
+
+- **10 (confirmed + fixed):** `containers.run(remove=True, detach=False)`
+  had no daemon-side timeout at all — the docker client "timeout" is only
+  an HTTP read timeout that never stops the container, and docker-py's
+  client-side remove step was skipped whenever wait raised, so a hung or
+  slow script left an orphaned, still-running container; turn
+  cancellation abandoned the worker thread the same way. Reworked to a
+  detached run with `container.wait(timeout=sandbox_timeout_seconds)` +
+  `logs()` + guaranteed `remove(force=True)` on every path — success,
+  wait-timeout/daemon error, and turn-cancellation (reaped from a
+  detached thread that polls briefly for the handle). Non-zero exit now
+  returns an error result with the output tail (parity with the old
+  ContainerError path); timeouts get a "was killed after Ns" hint.
+- **11 (confirmed + fixed):** `RateLimitedClient` retried ONLY 429 — a
+  single transient 5xx or connect/read timeout surfaced immediately as
+  `{"error": …}` and burned 1/5 of the turn's error budget. Retry now
+  covers 429 (Retry-After honoured) + 500/502/503/504 + transport
+  errors, same backoff budget; other 4xx still fail fast. Applies
+  uniformly to pubmed (search/MeSH/PMC) + europepmc + future sources.
+- **C5 (cross-turn source-health memory): deliberately deferred.** With
+  in-turn retries underneath and the per-tool breaker disables above,
+  a dead source costs at most 3 failing calls per turn; global mutable
+  health state isn't worth it. Revisit only if logs show turns
+  repeatedly paying the same source's failures.
+
 ### Phase 5 — rollbacks of demo-era mitigations (added 2026-07-08)
 
 Both were emergency mitigations for problems that are now fixed at the
