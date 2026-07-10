@@ -1,0 +1,478 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+<title>CRA — Clinical Research Assistant · Executive Brief</title>
+<style>
+  :root {
+    --paper: #f7f9f8;
+    --ink: #0e2a32;
+    --text: #3a4644;
+    --muted: #6b7a77;
+    --accent: #0e7c66;
+    --accent-soft: #e3efeb;
+    --copper: #b0673b;
+    --line: #d7e0dd;
+    --card: #ffffff;
+    --tag-bg: #eef4f2;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #0c1514;
+      --ink: #e6efec;
+      --text: #b7c6c2;
+      --muted: #7e908c;
+      --accent: #35b394;
+      --accent-soft: #12302a;
+      --copper: #d08a5a;
+      --line: #22332f;
+      --card: #101d1b;
+      --tag-bg: #162623;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #0c1514;
+    --ink: #e6efec;
+    --text: #b7c6c2;
+    --muted: #7e908c;
+    --accent: #35b394;
+    --accent-soft: #12302a;
+    --copper: #d08a5a;
+    --line: #22332f;
+    --card: #101d1b;
+    --tag-bg: #162623;
+  }
+  :root[data-theme="light"] {
+    --paper: #f7f9f8;
+    --ink: #0e2a32;
+    --text: #3a4644;
+    --muted: #6b7a77;
+    --accent: #0e7c66;
+    --accent-soft: #e3efeb;
+    --copper: #b0673b;
+    --line: #d7e0dd;
+    --card: #ffffff;
+    --tag-bg: #eef4f2;
+  }
+
+  html { background: var(--paper); }
+  body {
+    background: var(--paper);
+    color: var(--text);
+    font: 16px/1.65 system-ui, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    margin: 0;
+  }
+  .sheet { max-width: 880px; margin: 0 auto; padding: 0 32px; }
+
+  h1, h2, h3, .display {
+    font-family: Georgia, "Iowan Old Style", "Times New Roman", serif;
+    color: var(--ink);
+    text-wrap: balance;
+    margin: 0;
+  }
+  p { margin: 0; max-width: 66ch; }
+  a { color: var(--accent); }
+
+  .eyebrow {
+    font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--accent); font-weight: 600;
+    font-family: system-ui, sans-serif;
+  }
+  .spec {
+    font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+    font-size: 11.5px; letter-spacing: 0.02em;
+    background: var(--tag-bg); color: var(--muted);
+    border: 1px solid var(--line);
+    padding: 2px 8px; border-radius: 3px; white-space: nowrap;
+  }
+
+  /* ── Masthead ─────────────────────────────────────────── */
+  .masthead { padding: 64px 0 40px; border-bottom: 3px double var(--line); }
+  .masthead-rule { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--line); padding-bottom: 10px; margin-bottom: 40px; }
+  .wordmark { font-family: Georgia, serif; font-size: 20px; color: var(--ink); letter-spacing: 0.01em; }
+  .wordmark b { color: var(--accent); }
+  .masthead-kicker { font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+  .hero { display: grid; grid-template-columns: 1fr 220px; gap: 40px; align-items: center; }
+  .hero h1 { font-size: clamp(30px, 4.6vw, 44px); line-height: 1.14; font-weight: 500; }
+  .hero h1 em { font-style: italic; color: var(--accent); }
+  .hero .lede { margin-top: 20px; font-size: 17.5px; color: var(--text); }
+  .plot-caption { font-size: 11px; color: var(--muted); text-align: center; margin-top: 8px; font-family: ui-monospace, Consolas, monospace; }
+  @media (max-width: 640px) { .hero { grid-template-columns: 1fr; } .hero figure { display: none; } }
+
+  /* ── Section scaffolding ──────────────────────────────── */
+  section { padding: 52px 0; border-bottom: 1px solid var(--line); }
+  section:last-of-type { border-bottom: none; }
+  .section-head { display: flex; flex-direction: column; gap: 8px; margin-bottom: 28px; }
+  .section-head h2 { font-size: 27px; font-weight: 500; }
+  .section-head .sub { color: var(--muted); max-width: 62ch; }
+
+  /* ── Lifecycle strip ──────────────────────────────────── */
+  .lifecycle { display: grid; grid-template-columns: repeat(5, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+  .phase { background: var(--card); padding: 18px 16px 20px; display: flex; flex-direction: column; gap: 8px; }
+  .phase .n { font-family: ui-monospace, Consolas, monospace; font-size: 11px; color: var(--accent); }
+  .phase h3 { font-size: 15.5px; font-weight: 600; font-family: system-ui, sans-serif; }
+  .phase p { font-size: 13px; line-height: 1.55; color: var(--muted); }
+  @media (max-width: 760px) { .lifecycle { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 480px) { .lifecycle { grid-template-columns: 1fr; } }
+
+  .figures { display: flex; flex-wrap: wrap; gap: 12px 36px; margin-top: 26px; }
+  .figure { display: flex; flex-direction: column; }
+  .figure .num { font-family: Georgia, serif; font-size: 30px; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .figure .lbl { font-size: 12.5px; color: var(--muted); }
+
+  /* ── Guardrails ───────────────────────────────────────── */
+  .pull {
+    border-left: 3px solid var(--copper);
+    padding: 6px 0 6px 22px; margin: 0 0 30px;
+  }
+  .pull p { font-family: Georgia, serif; font-size: 21px; line-height: 1.45; color: var(--ink); max-width: 58ch; }
+  .guardrails { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .guardrail { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 18px 20px; }
+  .guardrail h3 { font-size: 15px; font-family: system-ui, sans-serif; font-weight: 600; margin-bottom: 6px; }
+  .guardrail p { font-size: 13.5px; color: var(--muted); line-height: 1.6; }
+  @media (max-width: 640px) { .guardrails { grid-template-columns: 1fr; } }
+
+  .standards { margin-top: 26px; display: flex; flex-wrap: wrap; gap: 8px; }
+
+  /* ── Economics ────────────────────────────────────────── */
+  .tiers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .tier { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 20px; display: flex; flex-direction: column; gap: 8px; }
+  .tier.lead { border-color: var(--copper); }
+  .tier .model { font-family: ui-monospace, Consolas, monospace; font-size: 12px; color: var(--accent); }
+  .tier h3 { font-size: 17px; font-family: Georgia, serif; font-weight: 500; }
+  .tier .price { font-family: Georgia, serif; font-size: 26px; color: var(--ink); }
+  .tier .price small { font-size: 13px; color: var(--muted); font-family: system-ui, sans-serif; }
+  .tier p { font-size: 13.5px; color: var(--muted); line-height: 1.6; }
+  @media (max-width: 640px) { .tiers { grid-template-columns: 1fr; } }
+  .econ-note { margin-top: 18px; font-size: 13.5px; color: var(--muted); max-width: 70ch; }
+
+  /* ── Capability index ─────────────────────────────────── */
+  .capabilities { columns: 2; column-gap: 44px; }
+  .cap-group { break-inside: avoid; margin-bottom: 22px; }
+  .cap-group h3 { font-size: 13px; font-family: system-ui, sans-serif; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); margin-bottom: 6px; }
+  .cap-group ul { margin: 0; padding: 0; list-style: none; }
+  .cap-group li { font-size: 13.5px; padding: 3px 0; color: var(--text); }
+  @media (max-width: 640px) { .capabilities { columns: 1; } }
+
+  /* ── Closing ──────────────────────────────────────────── */
+  .closing { padding: 48px 0 72px; }
+  .closing .frame { border: 1px solid var(--line); border-top: 3px solid var(--accent); border-radius: 6px; background: var(--card); padding: 34px 36px; }
+  .closing h2 { font-size: 24px; font-weight: 500; margin-bottom: 12px; }
+  .closing p { color: var(--muted); }
+  .closing .sig { margin-top: 22px; font-size: 12.5px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 14px; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+
+  @media print {
+    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    @page { margin: 9mm; }
+    body { font-size: 11.5px; zoom: 0.8; }
+    .sheet { max-width: none; padding: 0 10px; }
+    .masthead { padding: 18px 0 20px; }
+    .masthead-rule { margin-bottom: 20px; }
+    section { padding: 24px 0; }
+    .section-head { margin-bottom: 16px; }
+    .section-head h2 { font-size: 21px; }
+    .hero h1 { font-size: 30px; }
+    .hero .lede { font-size: 13px; margin-top: 12px; }
+    .phase p, .guardrail p, .tier p { font-size: 11px; }
+    .guardrail, .tier { padding: 12px 14px; }
+    .phase { padding: 12px 12px 14px; }
+    .figures { margin-top: 14px; }
+    .figure .num { font-size: 22px; }
+    .pull { margin-bottom: 16px; }
+    .pull p { font-size: 16px; }
+    .cap-group li { font-size: 11px; padding: 1.5px 0; }
+    .cap-group { margin-bottom: 12px; }
+    .closing { padding: 24px 0 20px; }
+    .closing .frame { padding: 20px 24px; }
+    .page-break { break-before: page; }
+    .guardrail, .tier, .phase, .cap-group, .closing .frame { break-inside: avoid; }
+  }
+</style>
+
+<div class="sheet">
+
+  <!-- ═══ Page 1 — the thesis ═══════════════════════════════ -->
+  <header class="masthead">
+    <div class="masthead-rule">
+      <span class="wordmark"><b>CRA</b> · Clinical Research Assistant</span>
+      <span class="masthead-kicker">Executive brief</span>
+    </div>
+    <div class="hero">
+      <div>
+        <h1>Research is the part that needs a human.<br><em>Everything else is mechanics.</em></h1>
+        <p class="lede">
+          CRA runs the full arc of clinical research — evidence synthesis,
+          trial design, regulatory start-up, data collection, statistical
+          analysis, and publication drafting — on one governed platform,
+          under the standards a submission must survive: ICH&nbsp;GCP,
+          21&nbsp;CFR&nbsp;Part&nbsp;11, PRISMA&nbsp;2020, CDISC. Your
+          researchers put their judgment on the science. The platform does
+          the rest, and proves it did it correctly.
+        </p>
+      </div>
+      <figure aria-label="Forest plot motif" style="margin:0">
+        <svg viewBox="0 0 220 170" role="img" style="width:100%; height:auto;">
+          <line x1="130" y1="10" x2="130" y2="140" stroke="var(--line)" stroke-width="1.5"/>
+          <line x1="52" y1="30" x2="128" y2="30" stroke="var(--muted)" stroke-width="1.5"/>
+          <rect x="84" y="25" width="10" height="10" fill="var(--accent)"/>
+          <line x1="70" y1="58" x2="150" y2="58" stroke="var(--muted)" stroke-width="1.5"/>
+          <rect x="103" y="53" width="10" height="10" fill="var(--accent)"/>
+          <line x1="40" y1="86" x2="118" y2="86" stroke="var(--muted)" stroke-width="1.5"/>
+          <rect x="72" y="81" width="10" height="10" fill="var(--accent)"/>
+          <line x1="60" y1="114" x2="136" y2="114" stroke="var(--muted)" stroke-width="1.5"/>
+          <rect x="92" y="109" width="10" height="10" fill="var(--accent)"/>
+          <polygon points="76,148 96,141 116,148 96,155" fill="var(--copper)"/>
+          <line x1="20" y1="164" x2="210" y2="164" stroke="var(--line)" stroke-width="1"/>
+        </svg>
+        <figcaption class="plot-caption">computed in sandbox · never estimated</figcaption>
+      </figure>
+    </div>
+  </header>
+
+  <!-- ═══ Lifecycle ═════════════════════════════════════════ -->
+  <section>
+    <div class="section-head">
+      <p class="eyebrow">End to end</p>
+      <h2>One platform, the whole research lifecycle</h2>
+      <p class="sub">Fifteen specialist AI workflows hand off to each other with full
+      context — the meta-analysis feeds the GRADE tables, the SAP feeds the
+      study report, the locked database feeds the statistics.</p>
+    </div>
+    <div class="lifecycle">
+      <div class="phase"><span class="n">I</span><h3>Evidence</h3>
+        <p>Literature search strategy, systematic-review protocol, dual-reviewer screening, meta-analysis, network &amp; IPD meta-analysis, risk of bias, GRADE, living reviews.</p></div>
+      <div class="phase"><span class="n">II</span><h3>Design</h3>
+        <p>PICOT framing, sample size &amp; power, full Statistical Analysis Plan drafted to ICH&nbsp;E9.</p></div>
+      <div class="phase"><span class="n">III</span><h3>Start-up</h3>
+        <p>Registry records (ClinicalTrials.gov, EU&nbsp;CTIS), IRB packet &amp; consent forms checked against 21&nbsp;CFR&nbsp;§50.25, randomisation schedules.</p></div>
+      <div class="phase"><span class="n">IV</span><h3>Execution</h3>
+        <p>EDC + ePRO capture, AE/SAE with the 24-hour clock, drug accountability, lab feeds, visit calendars, monitoring &amp; multi-site rollups — Part&nbsp;11 signatures and audit throughout.</p></div>
+      <div class="phase"><span class="n">V</span><h3>Reporting</h3>
+        <p>Post-lock statistics, CDISC SDTM/ADaM datasets, ICH&nbsp;E3 study report, journal manuscript, plain-language summaries.</p></div>
+    </div>
+    <div class="figures">
+      <div class="figure"><span class="num">15</span><span class="lbl">specialist workflows</span></div>
+      <div class="figure"><span class="num">1,650+</span><span class="lbl">automated tests</span></div>
+      <div class="figure"><span class="num">42</span><span class="lbl">PRISMA 2020 items enforced</span></div>
+      <div class="figure"><span class="num">7+2</span><span class="lbl">SDTM domains + ADaM datasets</span></div>
+      <div class="figure"><span class="num">24&nbsp;h</span><span class="lbl">SAE regulatory clock</span></div>
+    </div>
+  </section>
+
+  <!-- ═══ Page 2 — rigor ════════════════════════════════════ -->
+  <section class="page-break">
+    <div class="section-head">
+      <p class="eyebrow">Methodological integrity</p>
+      <h2>This is not “AI-generated research”</h2>
+      <p class="sub">The distinction that matters to a reviewer: who did the science,
+      and can every number be traced. CRA is built so the answers are
+      <i>your researchers</i> and <i>yes</i>.</p>
+    </div>
+    <div class="pull">
+      <p>The AI automates the mechanical work and structures the workflow
+      for compliance. It is architecturally prevented from inventing the
+      science.</p>
+    </div>
+    <div class="guardrails">
+      <div class="guardrail"><h3>Citations only from real searches</h3>
+        <p>The platform rejects any answer quoting effect sizes, confidence
+        intervals, or PMIDs from the model’s memory. Every citation traces
+        to an actual literature search executed during the session.</p></div>
+      <div class="guardrail"><h3>Statistics computed, never estimated</h3>
+        <p>Every pooled effect, survival curve, and forest plot is produced
+        by real statistical code running on real data in an isolated
+        sandbox — the model orchestrates the analysis; it cannot make up
+        the result.</p></div>
+      <div class="guardrail"><h3>Provenance on every number</h3>
+        <p>Each figure in a study report carries a machine-checked reference
+        to the source artefact it was derived from. GRADE certainty is
+        computed from the domain ratings — never asserted.</p></div>
+      <div class="guardrail"><h3>Structured, stage-gated workflows</h3>
+        <p>A meta-analysis cannot skip from question to conclusion: the
+        protocol, search, screening, and extraction stages are enforced in
+        order, with the researcher confirming each gate.</p></div>
+    </div>
+    <div class="standards">
+      <span class="spec">21 CFR Part 11</span>
+      <span class="spec">ICH E6 (GCP)</span>
+      <span class="spec">ICH E2A</span>
+      <span class="spec">ICH E3</span>
+      <span class="spec">ICH E9</span>
+      <span class="spec">ALCOA+</span>
+      <span class="spec">PRISMA 2020</span>
+      <span class="spec">GRADE</span>
+      <span class="spec">CDISC SDTM / ADaM / Define-XML</span>
+      <span class="spec">CONSORT</span>
+      <span class="spec">IQ / OQ / PQ validation pack</span>
+    </div>
+  </section>
+
+  <!-- ═══ What researchers stop doing ═══════════════════════ -->
+  <section>
+    <div class="section-head">
+      <p class="eyebrow">Where the time goes</p>
+      <h2>Offload the mechanics, keep the thinking</h2>
+      <p class="sub">Most of a study’s calendar time is consumed by work that is
+      essential, skilled — and mechanical. CRA absorbs it.</p>
+    </div>
+    <div class="guardrails">
+      <div class="guardrail"><h3>Hours, not weeks</h3>
+        <p>Boolean search strategies with MeSH expansion, PRISMA-P protocols,
+        screening logs, extraction tables, SAP boilerplate, registry field
+        mapping, consent-form compliance checks — drafted in minutes,
+        reviewed by your team, finalized the same day.</p></div>
+      <div class="guardrail"><h3>Compliance as a property, not a project</h3>
+        <p>Audit trails, electronic signatures with password re-authentication,
+        delegation logs, separation-of-duties checks, and inspector-ready
+        PDF reports accumulate automatically as the team works — not as a
+        pre-submission scramble.</p></div>
+      <div class="guardrail"><h3>Nothing falls through</h3>
+        <p>The serious-adverse-event clock, visit windows, query resolution,
+        drug reconciliation, and training expiries are tracked by the
+        system and surfaced before they become findings.</p></div>
+      <div class="guardrail"><h3>Higher-order work stays human</h3>
+        <p>Framing the question, judging clinical relevance, interpreting
+        heterogeneity, deciding what the evidence means — the work that
+        makes research <i>research</i> gets the researcher’s full attention.</p></div>
+    </div>
+  </section>
+
+  <!-- ═══ Page 3 — economics & operations ═══════════════════ -->
+  <section class="page-break">
+    <div class="section-head">
+      <p class="eyebrow">Cost control</p>
+      <h2>Budgets you set. Spend you can see.</h2>
+      <p class="sub">CRA runs on Claude models via Amazon Bedrock inside your own AWS
+      account. You choose the model tier per deployment, cap the spend, and
+      watch per-workflow cost rollups in real dollars.</p>
+    </div>
+    <div class="tiers">
+      <div class="tier lead">
+        <span class="model">Claude Haiku</span>
+        <h3>Small team</h3>
+        <span class="price">~$500<small> / month</small></span>
+        <p>A lean research group runs a substantial program — literature
+        reviews, meta-analyses, protocol and SAP drafting — on the
+        fastest, most economical tier.</p>
+      </div>
+      <div class="tier">
+        <span class="model">Claude Sonnet</span>
+        <h3>Department</h3>
+        <span class="price">Scaled<small> to workload</small></span>
+        <p>Deeper reasoning for complex synthesis, multi-arm network
+        meta-analysis, and higher concurrent usage across a department.</p>
+      </div>
+      <div class="tier">
+        <span class="model">Claude Opus</span>
+        <h3>Enterprise</h3>
+        <span class="price">Premium<small> tier</small></span>
+        <p>Maximum-capability model for the hardest synthesis and reporting
+        work, with the same guardrails and audit posture.</p>
+      </div>
+    </div>
+    <p class="econ-note">Daily token quotas, per-trial dollar budgets, and per-workflow /
+    per-model cost attribution are built in — spend stops at the cap you
+    set, and every dollar is traceable to the work it produced.</p>
+  </section>
+
+  <!-- ═══ Literature access + operations ════════════════════ -->
+  <section>
+    <div class="section-head">
+      <p class="eyebrow">Evidence access &amp; operations</p>
+      <h2>The literature your license already covers</h2>
+    </div>
+    <div class="guardrails">
+      <div class="guardrail"><h3>Open + subscription sources</h3>
+        <p>PubMed and Europe&nbsp;PMC are built in. Connect your institution’s
+        publisher credentials — Elsevier titles such as <i>The Lancet</i>,
+        and other subscription sources — with per-source API keys, rate
+        limits, and usage caps managed from the admin console.</p></div>
+      <div class="guardrail"><h3>Your private evidence library</h3>
+        <p>Upload PDFs and cached publications into a local, searchable
+        library; the AI grounds its answers in what your team has actually
+        collected, with citations back to each passage.</p></div>
+      <div class="guardrail"><h3>Your cloud, your data</h3>
+        <p>Deploys into your own AWS account — private network, single
+        sign-on, role-based access with separation-of-duties, and
+        PHI kept in a dedicated store. Nothing leaves your environment.</p></div>
+      <div class="guardrail"><h3>Every deliverable, export-ready</h3>
+        <p>Protocols, SAPs, study reports, GRADE tables, manuscripts, and
+        regulatory logs export as formatted PDF and Word documents —
+        submission-shaped from day one.</p></div>
+    </div>
+  </section>
+
+  <!-- ═══ Capability index (back cover) ═════════════════════ -->
+  <section class="page-break">
+    <div class="section-head">
+      <p class="eyebrow">Capability index</p>
+      <h2>What ships in the platform today</h2>
+    </div>
+    <div class="capabilities">
+      <div class="cap-group"><h3>Evidence synthesis</h3><ul>
+        <li>Search strategy &amp; MeSH expansion</li>
+        <li>SR protocol (PRISMA-P / PROSPERO)</li>
+        <li>Dual-reviewer screening + adjudication</li>
+        <li>Pairwise, network &amp; IPD meta-analysis</li>
+        <li>Risk of bias (RoB 2, ROBINS-I)</li>
+        <li>GRADE summary-of-findings</li>
+        <li>Living reviews with panel voting</li>
+      </ul></div>
+      <div class="cap-group"><h3>Design &amp; start-up</h3><ul>
+        <li>Sample size &amp; power (4 designs)</li>
+        <li>Statistical Analysis Plan drafter</li>
+        <li>CT.gov + EU CTIS registration records</li>
+        <li>IRB packet &amp; multilingual consent forms</li>
+        <li>Randomisation &amp; IRT (4 algorithms, blinding, code-break)</li>
+      </ul></div>
+      <div class="cap-group"><h3>Conduct (EDC)</h3><ul>
+        <li>Form builder, edit checks, queries, SDV</li>
+        <li>ePRO via participant magic links</li>
+        <li>AE/SAE (ICH E2A) + deviations/CAPA</li>
+        <li>Recruitment log with CONSORT funnel</li>
+        <li>Visit calendars + email reminders</li>
+        <li>Drug accountability &amp; reconciliation</li>
+        <li>Lab feeds: HL7 v2, CDISC LAB, FHIR R4</li>
+        <li>Multi-site KPI rollups</li>
+      </ul></div>
+      <div class="cap-group"><h3>Analysis &amp; reporting</h3><ul>
+        <li>Post-lock statistics: K-M, Cox, MMRM, subgroups</li>
+        <li>CDISC SDTM / ADaM / Define-XML bundle</li>
+        <li>ICH E3 clinical study report</li>
+        <li>Journal manuscript + reviewer responses</li>
+        <li>Plain-language summaries (readability-scored)</li>
+        <li>Funnel, waterfall, swimmer &amp; forest plots</li>
+      </ul></div>
+      <div class="cap-group"><h3>Governance</h3><ul>
+        <li>SSO (Amazon Cognito), RBAC, SoD matrix</li>
+        <li>Part 11 signatures + append-only audit</li>
+        <li>Delegation log with PI countersigning</li>
+        <li>Onboarding gates on clinical writes</li>
+        <li>IQ/OQ/PQ validation pack + traceability</li>
+        <li>Portfolio &amp; budget dashboards</li>
+      </ul></div>
+    </div>
+  </section>
+
+  <!-- ═══ Closing ═══════════════════════════════════════════ -->
+  <div class="closing">
+    <div class="frame">
+      <h2>The credibility of your research is the product.</h2>
+      <p>CRA exists so that when your team submits, the methodology holds —
+      every search reproducible, every number traceable, every signature
+      compliant. Faster because the mechanics are automated; publishable
+      because the science never was.</p>
+      <div class="sig">
+        <span>CRA · Clinical Research Assistant — Executive brief</span>
+        <span>Companion documents: Feature Guide · Demo Guide</span>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>
