@@ -11,7 +11,7 @@ checklist for ONE event — first external users.*
 
 | # | Item | Status | Depends on |
 |---|------|--------|-----------|
-| T1 | Trial-run spend quota (per-account USD budget, all metered spend) | DESIGN in review — [t1-spend-quota.md](t1-spend-quota.md) | — |
+| T1 | Trial-run spend quota (per-account USD budget, all metered spend) | ✅ BUILT 2026-07-19 (`feat/t1-spend-quota`, pending verify + merge) — [t1-spend-quota.md](t1-spend-quota.md) | — |
 | T2 | Paywalled sources (Lancet/Elsevier…) + credential encryption | TODO | secrets encryption (part of this item) |
 | T3 | Cognito production posture (real-user invites) | TODO | T4 for invite deliverability |
 | T4 | SES domain email for invites | TODO | T5 (domain) |

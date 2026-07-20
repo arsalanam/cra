@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Budgets · Clinical Research Assistant</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, Segoe UI, Roboto, sans-serif; background: #0f1115; color: #e6e6e6; }
+  .header { padding: 14px 24px; border-bottom: 1px solid #262a33; display: flex; justify-content: space-between; align-items: center; background: #171a21; }
+  .header h1 { margin: 0; font-size: 16px; }
+  .header a { color: #8b93a7; text-decoration: none; font-size: 13px; }
+  .header a:hover { color: #e6e6e6; }
+  .container { max-width: 980px; margin: 22px auto; padding: 0 24px; }
+  .lead { color: #8b93a7; font-size: 13px; margin: 0 0 18px; }
+  .card { background: #171a21; border: 1px solid #262a33; border-radius: 8px; padding: 18px 20px; margin-bottom: 16px; }
+  .card h2 { font-size: 15px; margin: 0; }
+  .card .sub { color: #8b93a7; font-size: 12px; margin-top: 2px; }
+  .row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .figures { display: flex; gap: 28px; margin: 14px 0 10px; flex-wrap: wrap; }
+  .fig .v { font-size: 22px; font-weight: 700; }
+  .fig .l { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: #8b93a7; }
+  .bar { height: 8px; background: #0f1115; border: 1px solid #262a33; border-radius: 5px; overflow: hidden; margin: 8px 0 4px; }
+  .bar .fill { height: 100%; background: #4a8f6d; transition: width .3s; }
+  .bar .fill.warn { background: #d9b96a; }
+  .bar .fill.over { background: #d97a7a; }
+  .muted { color: #5a6070; font-size: 12px; }
+  .err { color: #d97a7a; font-size: 13px; }
+  .breakdown { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 12px; }
+  .breakdown h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: #8b93a7; margin: 0 0 6px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  td { padding: 4px 2px; border-bottom: 1px solid #1f232c; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .edit { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 12px; padding-top: 12px; border-top: 1px solid #1f232c; }
+  .edit label { font-size: 12px; color: #8b93a7; }
+  .edit input { background: #0f1115; border: 1px solid #2a2f3a; color: #e6e6e6; border-radius: 6px; padding: 6px 8px; font-size: 13px; width: 110px; }
+  .edit button { background: #2b5e46; color: #dff3e8; border: 0; border-radius: 6px; padding: 7px 14px; font-size: 13px; cursor: pointer; }
+  .edit button:hover { background: #34724f; }
+  .edit .msg { font-size: 12px; }
+  .disabled-note { color: #8b93a7; font-size: 12.5px; margin-top: 10px; }
+  @media (max-width: 640px) { .breakdown { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+  <div class="header"><h1>Budgets</h1><a href="/">← Back to assistant</a></div>
+  <div class="container">
+    <p class="lead">Trial spend budgets per research account — Bedrock turns, web searches,
+    embeddings, and vision, priced into an append-only ledger. Turns stop with a
+    clear message when a budget is spent (owners/admins can raise it here).</p>
+    <div id="accounts"><div class="muted">Loading…</div></div>
+  </div>
+<script>
+  const CATEGORY_LABELS = { turn: "Model turns", search: "Web searches", embedding: "Embeddings", vision: "Vision" };
+
+  async function api(p, o) {
+    const r = await fetch(p, o);
+    if (r.status === 401) { window.location.href = "/auth/login"; throw new Error("unauth"); }
+    return r;
+  }
+
+  const usd = (v) => "$" + Number(v || 0).toFixed(v >= 100 ? 0 : 2);
+
+  function bar(pct) {
+    const cls = pct >= 100 ? "over" : (pct >= 80 ? "warn" : "");
+    return `<div class="bar"><div class="fill ${cls}" style="width:${Math.min(100, pct)}%"></div></div>`;
+  }
+
+  function renderAccount(acct, report) {
+    const b = report && report.budget;
+    const el = document.createElement("div");
+    el.className = "card";
+    let body = `<div class="row"><div><h2>${acct.name}</h2>
+      <div class="sub">${acct.n_trials} trial(s) · ${acct.n_members} member(s) · ${acct.status}</div></div></div>`;
+
+    if (b && b.enabled) {
+      body += `
+        <div class="figures">
+          <div class="fig"><div class="v">${usd(b.limit_usd)}</div><div class="l">Budget</div></div>
+          <div class="fig"><div class="v">${usd(b.spent_usd)}</div><div class="l">Spent</div></div>
+          <div class="fig"><div class="v">${usd(b.remaining_usd)}</div><div class="l">Remaining</div></div>
+          <div class="fig"><div class="v">${usd(report.burn_usd_per_day_7d)}/d</div><div class="l">Burn (7d)</div></div>
+        </div>
+        ${bar(b.percent_used)}
+        <div class="muted">${b.percent_used}% used since ${b.start_at ? b.start_at.slice(0, 10) : "—"}${
+          report.projected_exhaustion_date ? ` · projected exhaustion ${report.projected_exhaustion_date}` : ""}</div>`;
+    } else {
+      body += `<div class="disabled-note">No budget set — spend is tracked but never blocks work.
+        ${report ? `Ledger total so far: <b>${usd(Object.values(report.by_category).reduce((s, c) => s + c.usd, 0))}</b>` : ""}</div>`;
+    }
+
+    if (report) {
+      const cats = Object.entries(report.by_category);
+      const trials = Object.entries(report.by_trial);
+      body += `<div class="breakdown">
+        <div><h3>By category</h3><table>${
+          cats.length ? cats.map(([c, v]) =>
+            `<tr><td>${CATEGORY_LABELS[c] || c}</td><td class="num">${v.quantity.toLocaleString()}</td><td class="num">${usd(v.usd)}</td></tr>`).join("")
+          : `<tr><td class="muted">No spend recorded yet</td></tr>`}</table></div>
+        <div><h3>By trial</h3><table>${
+          trials.length ? trials.map(([t, v]) =>
+            `<tr><td>${t === "_untargeted" ? "<i>Q&A / analysis threads</i>" : ((report.trial_titles || {})[t] || t)}</td><td class="num">${usd(v)}</td></tr>`).join("")
+          : `<tr><td class="muted">No spend recorded yet</td></tr>`}</table></div>
+      </div>`;
+    }
+
+    body += `<div class="edit">
+      <label>Budget USD <input type="number" min="0" step="10" id="b-${acct.id}" value="${acct.budget_usd || 0}" /></label>
+      <label>Warn % <input type="number" min="1" max="100" id="w-${acct.id}" value="${acct.budget_warn_percent || 80}" /></label>
+      <button data-acct="${acct.id}">Save</button>
+      <span class="msg" id="m-${acct.id}"></span>
+      <span class="muted">0 disables enforcement · saving a first budget starts the spend window now</span>
+    </div>`;
+    el.innerHTML = body;
+    el.querySelector("button").addEventListener("click", () => saveBudget(acct.id));
+    return el;
+  }
+
+  async function saveBudget(accountId) {
+    const msg = document.getElementById(`m-${accountId}`);
+    msg.textContent = "Saving…"; msg.className = "msg muted";
+    const payload = {
+      budget_usd: parseFloat(document.getElementById(`b-${accountId}`).value || "0"),
+      budget_warn_percent: parseInt(document.getElementById(`w-${accountId}`).value || "80", 10),
+    };
+    try {
+      const r = await api(`/api/accounts/${accountId}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!r.ok) {
+        const t = await r.text();
+        msg.textContent = r.status === 403 ? "Not permitted — owner/admin only." : `Failed: ${t.slice(0, 160)}`;
+        msg.className = "msg err";
+        return;
+      }
+      msg.textContent = "Saved.";
+      await load();
+    } catch (e) {
+      msg.textContent = `Failed: ${e}`; msg.className = "msg err";
+    }
+  }
+
+  async function load() {
+    const root = document.getElementById("accounts");
+    try {
+      const accounts = await (await api("/api/accounts")).json();
+      if (!accounts.length) { root.innerHTML = `<div class="muted">No accounts visible to you.</div>`; return; }
+      const cards = await Promise.all(accounts.map(async (acct) => {
+        let report = null;
+        try { report = await (await api(`/api/accounts/${acct.id}/spend`)).json(); } catch {}
+        return renderAccount(acct, report);
+      }));
+      root.innerHTML = "";
+      cards.forEach(c => root.appendChild(c));
+    } catch (e) {
+      root.innerHTML = `<div class="err">Could not load accounts: ${e}</div>`;
+    }
+  }
+
+  load();
+</script>
+</body>
+</html>

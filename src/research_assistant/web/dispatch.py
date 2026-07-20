@@ -43,7 +43,9 @@ from ..services.quota import (
 )
 from ..services.spend import (
     AccountBudgetExceeded,
+    build_budget_payload,
     enforce_account_budget,
+    get_budget_status,
     record_turn_spend,
 )
 from .auth import CurrentUser
@@ -557,6 +559,11 @@ def create_dispatch_router() -> APIRouter:
             # the client receives.
             updated_totals = await get_today_token_totals(session)
             quota_payload = build_quota_payload(updated_totals, settings)
+            # T1 spend quota: budget axis for the composer banner — includes
+            # this turn's just-written ledger rows.
+            if thread.account_id is not None:
+                budget_status = await get_budget_status(session, account_id=thread.account_id)
+                quota_payload["budget"] = build_budget_payload(budget_status)
 
         return TurnResponse(
             user_message_id=user_msg_id,

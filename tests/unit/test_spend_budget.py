@@ -7,7 +7,7 @@ through, and the JSON payload shape the frontend consumes.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +16,7 @@ from research_assistant.persistence.models import Account, SpendLedger
 from research_assistant.services.spend import (
     AccountBudgetExceeded,
     build_budget_payload,
+    build_spend_report,
     enforce_account_budget,
     get_account_spend,
     get_budget_status,
@@ -156,3 +157,74 @@ async def test_payload_below_warn_threshold(db_session: AsyncSession) -> None:
 
 def test_payload_none_passthrough() -> None:
     assert build_budget_payload(None) is None
+
+
+# ── build_spend_report (Q4) ─────────────────────────────────────────────
+
+
+async def test_spend_report_breakdowns_and_burn(db_session: AsyncSession) -> None:
+    now = datetime(2026, 7, 19, 12, 0, tzinfo=UTC)
+    start = datetime(2026, 7, 1, tzinfo=UTC)
+    a = await _seed_account(db_session, budget_usd=100.0, budget_start_at=start)
+    db_session.add_all(
+        [
+            # In-window spend across categories and trials.
+            SpendLedger(
+                account_id=a.id,
+                trial_id="trial-x",
+                category="turn",
+                quantity=1000,
+                usd=10.0,
+                created_at=now - timedelta(days=2),
+            ),
+            SpendLedger(
+                account_id=a.id,
+                category="search",
+                quantity=5,
+                usd=0.04,
+                created_at=now - timedelta(days=1),
+            ),
+            # Older than 7 days: counts toward budget, not toward burn.
+            SpendLedger(
+                account_id=a.id,
+                category="embedding",
+                quantity=50_000,
+                usd=1.0,
+                created_at=datetime(2026, 7, 2, tzinfo=UTC),
+            ),
+            # Before the budget window entirely: invisible to the report.
+            SpendLedger(
+                account_id=a.id,
+                category="turn",
+                quantity=999,
+                usd=500.0,
+                created_at=datetime(2026, 6, 1, tzinfo=UTC),
+            ),
+        ]
+    )
+    await db_session.flush()
+
+    report = await build_spend_report(db_session, account_id=a.id, now=now)
+    assert report is not None
+    assert report["budget"]["spent_usd"] == pytest.approx(11.04)
+    assert report["by_category"]["turn"]["usd"] == pytest.approx(10.0)
+    assert report["by_category"]["search"]["quantity"] == 5
+    assert report["by_trial"]["trial-x"] == pytest.approx(10.0)
+    assert report["by_trial"]["_untargeted"] == pytest.approx(1.04)
+    # Burn: only the last 7 days (10.0 + 0.04) / 7.
+    assert report["burn_usd_per_day_7d"] == pytest.approx(10.04 / 7, rel=1e-3)
+    # Projection exists and is a date string beyond now.
+    assert report["projected_exhaustion_date"] is not None
+    assert report["projected_exhaustion_date"] > "2026-07-19"
+
+
+async def test_spend_report_unknown_account_is_none(db_session: AsyncSession) -> None:
+    assert await build_spend_report(db_session, account_id="nope") is None
+
+
+async def test_spend_report_no_burn_no_projection(db_session: AsyncSession) -> None:
+    a = await _seed_account(db_session, budget_usd=100.0)
+    report = await build_spend_report(db_session, account_id=a.id)
+    assert report is not None
+    assert report["burn_usd_per_day_7d"] == 0.0
+    assert report["projected_exhaustion_date"] is None

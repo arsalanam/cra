@@ -1,7 +1,15 @@
 # T1 — Per-account trial spend quota (design)
 
 *Design doc for trial-readiness item T1 (see [`trial-readiness.md`](trial-readiness.md)).
-Status: **building** — all decisions D1–D6 locked by the user 2026-07-19.*
+Status: **BUILT 2026-07-19** (Q1–Q4 on `feat/t1-spend-quota`) — pending
+user verification on compose/EC2, then merge. All decisions D1–D6 locked.*
+
+**Implementation notes (deltas from the design):** enforcement lives in
+`services/spend.py` (not a separate `spend_budget.py`); zero-cost events
+skip the ledger instead of writing zero rows; query-time RAG embeddings
+are not separately metered (sub-cent noise — the drain is the real cost
+and IS metered); background embedding of the shared publication cache
+bills the Default Account as platform overhead.*
 
 ## Goal
 

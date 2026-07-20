@@ -35,7 +35,8 @@ Permission gating:
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
+from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
@@ -47,11 +48,13 @@ from ..persistence.database import get_db_session
 from ..persistence.models import (
     DEFAULT_USER_ID,
     Account,
+    ClinicalTrial,
     EcrfStudy,
     User,
 )
 from ..persistence.repository import AccountError, AccountRepository
 from ..persistence.user_repository import UserRepository
+from ..services.spend import build_spend_report
 from .auth import CurrentUser
 from .authz import require_permission_scoped
 from .threads import resolve_local_user_id
@@ -73,6 +76,12 @@ class AccountPatch(BaseModel):
     name: str | None = None
     description: str | None = None
     status: str | None = None  # active | archived
+    # T1 spend quota (docs/t1-spend-quota.md). budget_usd 0 disables
+    # enforcement; budget_start_at is stamped to now when a budget is
+    # first set and not supplied explicitly.
+    budget_usd: float | None = Field(default=None, ge=0)
+    budget_start_at: datetime | None = None
+    budget_warn_percent: int | None = Field(default=None, ge=1, le=100)
 
 
 class MemberAdd(BaseModel):
@@ -134,6 +143,9 @@ class AccountView(BaseModel):
     n_trials: int
     n_active_trials: int
     n_locked_trials: int
+    budget_usd: float = 0.0
+    budget_start_at: datetime | None = None
+    budget_warn_percent: int = 80
     created_at: datetime
     updated_at: datetime
 
@@ -383,6 +395,31 @@ def create_accounts_router() -> APIRouter:
                 sites=[AccountSiteView.model_validate(s) for s in sites],
             )
 
+    @router.get("/accounts/{account_id}/spend")
+    async def get_account_spend_report(account_id: str, user: CurrentUser) -> dict[str, Any]:
+        """T1 spend quota: budget status + per-category / per-trial spend
+        breakdown + burn rate for one account. Any account member can see
+        where the budget stands (they're the ones whose turns get 429'd)."""
+        caller = await resolve_local_user_id(user)
+        async with get_db_session() as session:
+            repo = AccountRepository(session)
+            account = await _require_account_access(repo, account_id, caller)
+            report = await build_spend_report(session, account_id=account.id)
+            assert report is not None  # _require_account_access proved existence
+            # Decorate trial ids with titles so the budgets page doesn't
+            # need a second round-trip.
+            trial_ids = [t for t in report["by_trial"] if t != "_untargeted"]
+            if trial_ids:
+                titles = (
+                    await session.execute(
+                        select(ClinicalTrial.id, ClinicalTrial.title).where(
+                            ClinicalTrial.id.in_(trial_ids)
+                        )
+                    )
+                ).all()
+                report["trial_titles"] = {tid: title for tid, title in titles}
+            return report
+
     @router.patch("/accounts/{account_id}", response_model=AccountView)
     async def update_account(
         account_id: str,
@@ -395,15 +432,20 @@ def create_accounts_router() -> APIRouter:
             account = await _require_account_access(repo, account_id, caller)
             member = await repo.is_member(account_id=account_id, user_id=caller)
             await _require_owner_or_admin(account, member, caller)
+            updates = {
+                k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None
+            }
+            # T1 spend quota: setting a budget for the first time opens the
+            # spend window at "now" unless the caller supplies a start date.
+            # (budget_usd=0 disables enforcement, so no stamp needed then.)
+            if (
+                updates.get("budget_usd")
+                and account.budget_start_at is None
+                and "budget_start_at" not in updates
+            ):
+                updates["budget_start_at"] = datetime.now(UTC)
             try:
-                updated = await repo.update_account(
-                    account_id,
-                    **{
-                        k: v
-                        for k, v in body.model_dump(exclude_unset=True).items()
-                        if v is not None
-                    },
-                )
+                updated = await repo.update_account(account_id, **updates)
             except AccountError as e:
                 raise HTTPException(422, str(e)) from e
             assert updated is not None

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import func, select
@@ -136,6 +136,65 @@ def build_budget_payload(status: BudgetStatus | None) -> dict[str, Any] | None:
         "warn_percent": status.warn_percent,
         "warning": status.warning,
         "start_at": status.start_at.isoformat() if status.start_at else None,
+    }
+
+
+async def build_spend_report(
+    session: AsyncSession, *, account_id: str, now: datetime | None = None
+) -> dict[str, Any] | None:
+    """Full budget report for one account (the /spend endpoint + budgets
+    page): budget payload, per-category / per-trial USD breakdowns over the
+    budget window, 7-day burn rate, and a projected exhaustion date.
+
+    None if the account doesn't exist.
+    """
+    status = await get_budget_status(session, account_id=account_id)
+    if status is None:
+        return None
+    now = now or datetime.now(UTC)
+    window = [SpendLedger.account_id == account_id]
+    if status.start_at is not None:
+        window.append(SpendLedger.created_at >= status.start_at)
+
+    by_category_rows = (
+        await session.execute(
+            select(SpendLedger.category, func.sum(SpendLedger.usd), func.sum(SpendLedger.quantity))
+            .where(*window)
+            .group_by(SpendLedger.category)
+        )
+    ).all()
+    by_trial_rows = (
+        await session.execute(
+            select(SpendLedger.trial_id, func.sum(SpendLedger.usd))
+            .where(*window)
+            .group_by(SpendLedger.trial_id)
+        )
+    ).all()
+    week_spend = await session.scalar(
+        select(func.coalesce(func.sum(SpendLedger.usd), 0.0)).where(
+            SpendLedger.account_id == account_id,
+            SpendLedger.created_at >= now - timedelta(days=7),
+        )
+    )
+    burn_per_day = round(float(week_spend or 0.0) / 7.0, 6)
+    projected_exhaustion: str | None = None
+    if status.enabled and burn_per_day > 0 and status.remaining_usd > 0:
+        days_left = status.remaining_usd / burn_per_day
+        if days_left < 3650:  # don't project nonsense horizons
+            projected_exhaustion = (now + timedelta(days=days_left)).date().isoformat()
+
+    return {
+        "budget": build_budget_payload(status),
+        "by_category": {
+            cat: {"usd": round(float(usd or 0.0), 6), "quantity": int(qty or 0)}
+            for cat, usd, qty in by_category_rows
+        },
+        "by_trial": {
+            (trial_id or "_untargeted"): round(float(usd or 0.0), 6)
+            for trial_id, usd in by_trial_rows
+        },
+        "burn_usd_per_day_7d": burn_per_day,
+        "projected_exhaustion_date": projected_exhaustion,
     }
 
 
