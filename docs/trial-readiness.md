@@ -17,6 +17,7 @@ checklist for ONE event — first external users.*
 | T4 | SES domain email for invites | TODO | T5 (domain) |
 | T5 | Domain + ACM + Route 53 | TODO | user registers/picks domain |
 | T6 | Pending eCRF / data-collection gaps (trial-relevant subset) | TODO (needs pruning) | — |
+| T7 | PHI / HIPAA posture — shared-responsibility doc + small hardening items | DOC drafted — [hipaa-posture.md](hipaa-posture.md) | T2 (secrets), T5 (TLS) close two gaps |
 
 **Recommended order:** T5 → T4 → T3 form one infra arc (domain has external
 lead time — start it first). T1 is pure app work and must be live BEFORE
@@ -174,6 +175,35 @@ this list before building**:
 locale-aware reminders, MedDRA/WHODrug licenses, FHIR EHR pull, OCR,
 MLLP listener, unit-conversion table, blinded views, IRT-driven
 dispensation, destruction/recall workflows, lay_summary Trial slot.
+
+## T7 — PHI / HIPAA posture
+
+**Goal.** A defensible answer to "does HIPAA apply and what do you do
+about it" before real sites connect real participants. Full analysis in
+[`hipaa-posture.md`](hipaa-posture.md) (2026-07-19) — key finding: the
+clinical store is NOT Safe-Harbor de-identified (dates throughout;
+`participant_contacts` holds email/phone), so treat it as PHI-capable.
+
+**Already have:** dedicated clinical/PHI Postgres, Cognito + RBAC/SoD,
+append-only audit + Part 11 signatures, PHI-minimised rollups, hashed
+ePRO tokens, contact opt-out, HL7 parser that discards PID demographics
+and never persists raw payloads.
+
+**To build (small):**
+- `subject_code_hint` MRN guard: validate inbound PID-3 against the
+  study's subject-code pattern; quarantine/hash non-matching values
+- Verify + document encryption at rest for the clinical Postgres volume
+  (compose + EC2 tofu)
+- Document which subject-level fields may enter model prompts (Bedrock
+  is HIPAA-eligible under the customer's AWS BAA; the flows still need
+  to be written down)
+- Claims language: "supports HIPAA-aligned deployment in your AWS
+  account" — never a blanket "HIPAA compliant" (brochure already
+  conforms)
+
+**Deployer-owned (documented in the posture doc, not ours to build):**
+AWS BAA, IRB authorization/waiver or DUA for limited data sets, breach
+notification procedures, workforce training.
 
 ---
 
