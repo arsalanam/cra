@@ -66,6 +66,15 @@ _COLUMN_MIGRATIONS: dict[str, dict[str, str]] = {
         # work without a parent trial). Set when the thread is spawned from
         # the /accounts.html "Draft <kind>" CTA or inherited via _runHandoff.
         "trial_id": "TEXT REFERENCES clinical_trials(id) ON DELETE SET NULL",
+        # T1 spend quota: budget-attribution Account. Backfilled by
+        # init_db._backfill_thread_accounts (trial's account, else default).
+        "account_id": "TEXT REFERENCES accounts(id) ON DELETE SET NULL",
+    },
+    "accounts": {
+        # T1 spend quota (docs/t1-spend-quota.md). budget_usd 0 = disabled.
+        "budget_usd": "FLOAT DEFAULT 0",
+        "budget_start_at": "TIMESTAMPTZ",
+        "budget_warn_percent": "INTEGER DEFAULT 80",
     },
     "users": {
         # Phase B: Cognito identity binding. SQLite can't ADD COLUMN with a
@@ -218,6 +227,11 @@ async def init_db() -> None:
         # Sprint A1 account layer: seed a Default Account + wrap legacy
         # EcrfStudy rows in ClinicalTrial under it. Idempotent.
         await _backfill_account_layer(session)
+
+        # T1 spend quota: attribute pre-existing threads to accounts
+        # (trial-bound → the trial's account, everything else → the
+        # Default Account). Idempotent — only touches NULL account_id.
+        await _backfill_thread_accounts(session)
 
     logger.info("Database tables initialised")
 
@@ -381,3 +395,40 @@ async def _backfill_account_layer(session: AsyncSession) -> None:
     if wrapped:
         await session.commit()
         logger.info("Wrapped %d legacy EcrfStudy row(s) in ClinicalTrial", wrapped)
+
+
+async def _backfill_thread_accounts(session: AsyncSession) -> None:
+    """T1 spend quota: give every thread an `account_id`.
+
+    Trial-bound threads inherit their trial's account; everything else
+    (legacy / general Q&A / analysis threads) lands on the Default
+    Account. Idempotent — only rows with NULL account_id are touched,
+    so later account moves or deletions (SET NULL) are re-healed on the
+    next startup rather than overwritten.
+    """
+    from sqlalchemy import select
+
+    default_account = (
+        await session.scalars(select(Account).where(Account.name == DEFAULT_ACCOUNT_NAME))
+    ).first()
+    if default_account is None:  # pragma: no cover - _backfill_account_layer seeds it
+        return
+
+    trial_bound = await session.execute(
+        text(
+            "UPDATE threads SET account_id = ("
+            "  SELECT account_id FROM clinical_trials"
+            "  WHERE clinical_trials.id = threads.trial_id"
+            ") WHERE account_id IS NULL AND trial_id IS NOT NULL"
+        )
+    )
+    orphaned = await session.execute(
+        text("UPDATE threads SET account_id = :aid WHERE account_id IS NULL"),
+        {"aid": default_account.id},
+    )
+    await session.commit()
+    # session.execute is typed as the generic Result; UPDATEs actually
+    # return a CursorResult, which carries rowcount.
+    total = sum(getattr(r, "rowcount", 0) or 0 for r in (trial_bound, orphaned))
+    if total:
+        logger.info("Backfilled account_id on %d thread(s)", total)

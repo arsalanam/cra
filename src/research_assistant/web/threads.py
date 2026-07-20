@@ -140,12 +140,12 @@ def create_thread_router() -> APIRouter:
             # (not 403) hides existence — same posture as other account
             # endpoints. DEFAULT_USER_ID always passes for single-user
             # dev installs.
+            acct_repo = AccountRepository(session)
             if trial_id is not None:
                 trial = await session.get(ClinicalTrial, trial_id)
                 if trial is None:
                     raise HTTPException(404, "Trial not found")
                 if owner != DEFAULT_USER_ID:
-                    acct_repo = AccountRepository(session)
                     acct = await acct_repo.get_account(trial.account_id)
                     if acct is None or (
                         acct.owner_user_id != owner
@@ -153,8 +153,14 @@ def create_thread_router() -> APIRouter:
                         is None
                     ):
                         raise HTTPException(404, "Trial not found")
+                # T1 spend quota: trial-bound threads bill the trial's account.
+                account_id = trial.account_id
+            else:
+                account_id = await acct_repo.resolve_account_for_user(owner)
             repo = ThreadRepository(session)
-            thread = await repo.create_thread(title=title, user_id=owner, trial_id=trial_id)
+            thread = await repo.create_thread(
+                title=title, user_id=owner, trial_id=trial_id, account_id=account_id
+            )
             return _thread_out(thread, message_count=0)
 
     @router.get("", response_model=list[ThreadOut])

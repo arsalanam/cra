@@ -1,8 +1,7 @@
 # T1 — Per-account trial spend quota (design)
 
 *Design doc for trial-readiness item T1 (see [`trial-readiness.md`](trial-readiness.md)).
-Status: **design in review** — decisions D1–D3 locked by the user 2026-07-19;
-D4–D6 proposed below, awaiting confirmation before build.*
+Status: **building** — all decisions D1–D6 locked by the user 2026-07-19.*
 
 ## Goal
 
@@ -140,8 +139,10 @@ the same property.
   budget fields, gated `ACCOUNT_MANAGE` as today; new
   `GET /api/accounts/{id}/spend` → budget payload + per-category and
   per-trial breakdown + 7-day burn rate + projected exhaustion date.
-- **Portfolio** (`portfolio.html`) — budget card per account (admin org
-  view): consumed / remaining / burn rate.
+- **Budgets page** (new `budgets.html`, D6) — every account's budget in
+  one place: limit / consumed / remaining / burn rate / projected
+  exhaustion, per-category and per-trial breakdown; budget fields editable
+  inline (`ACCOUNT_MANAGE`). Sidebar link from `index.html`.
 - **Chat** — `TurnResponse.quota` gains a `budget` axis; the composer shows
   a banner at ≥ `budget_warn_percent`; a friendly error card on 429
   (also closes the "frontend error card" T6 side item for this path).
@@ -152,13 +153,13 @@ Per-user ceilings within an account (RBAC quota-tier follow-up),
 retroactive repricing, non-USD currencies, budget alert emails (rides T4
 SES later, warning stays in-app for the trial).
 
-## Remaining decisions (confirm before build)
+## Decisions D4–D6 (locked 2026-07-19)
 
-| # | Question | Proposal |
+| # | Question | Decision |
 |---|----------|----------|
 | D4 | Backfill rule for existing threads without a trial | trial-bound → trial's account; all others → default account |
 | D5 | Tavily per-search price default | `$0.008`, overridable via `TAVILY_PRICE_PER_SEARCH_USD` |
-| D6 | Where the budget admin UI lives | extend `portfolio.html` org section + `accounts.html` (no new page) |
+| D6 | Where the budget admin UI lives | **dedicated `budgets.html` page** (all accounts in one view, inline budget editing) |
 
 ## Build plan
 

@@ -446,6 +446,18 @@ class Thread(Base):
             "for analysis / Q&A threads that have no parent trial."
         ),
     )
+    account_id: Mapped[str | None] = mapped_column(
+        ForeignKey("accounts.id", ondelete="SET NULL"),
+        nullable=True,
+        default=None,
+        doc=(
+            "T1 spend quota: owning Account for budget attribution. Set at "
+            "creation — the trial's account for trial-bound threads, else "
+            "the creator's account membership, else the default account. "
+            "NULL only transiently (SET NULL on account delete; init_db "
+            "backfill reassigns)."
+        ),
+    )
     title: Mapped[str] = mapped_column(Text, default="New conversation")
     summary: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
@@ -1279,6 +1291,14 @@ class Account(Base):
         default=None,
         doc="Account owner. Implicit member with role='owner'.",
     )
+    # T1 spend quota (docs/t1-spend-quota.md). budget_usd == 0 disables
+    # enforcement; budget_start_at is the trial start date the cumulative
+    # spend window opens at (stamped when a budget is first set).
+    budget_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    budget_start_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
+    budget_warn_percent: Mapped[int] = mapped_column(Integer, default=80)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
@@ -1477,3 +1497,42 @@ class TrialSite(Base):
 
     trial: Mapped[ClinicalTrial] = relationship(back_populates="site_assignments")
     account_site: Mapped[AccountSite] = relationship(back_populates="trial_assignments")
+
+
+class SpendLedger(Base):
+    """Append-only USD spend ledger — the source of truth for T1 budget
+    enforcement (docs/t1-spend-quota.md).
+
+    One row per metered event, priced at write time via
+    `config/bedrock_pricing.py` (repricing the table later never rewrites
+    history). Turn-scoped rows carry thread/message ids; library-upload
+    embedding rows carry neither. The read side is an indexed
+    SUM(usd) WHERE account_id AND created_at >= budget_start_at.
+    """
+
+    __tablename__ = "spend_ledger"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    account_id: Mapped[str] = mapped_column(
+        ForeignKey("accounts.id", ondelete="CASCADE"), index=True
+    )
+    trial_id: Mapped[str | None] = mapped_column(
+        ForeignKey("clinical_trials.id", ondelete="SET NULL"), nullable=True, default=None
+    )
+    thread_id: Mapped[str | None] = mapped_column(
+        ForeignKey("threads.id", ondelete="SET NULL"), nullable=True, default=None
+    )
+    message_id: Mapped[str | None] = mapped_column(
+        ForeignKey("messages.id", ondelete="SET NULL"), nullable=True, default=None
+    )
+    category: Mapped[str] = mapped_column(Text, doc="turn | vision | embedding | search")
+    quantity: Mapped[int] = mapped_column(
+        Integer, default=0, doc="total tokens (turn/vision/embedding) or search count"
+    )
+    model_id: Mapped[str | None] = mapped_column(
+        Text, nullable=True, default=None, doc="pricing provenance; NULL for search rows"
+    )
+    usd: Mapped[float] = mapped_column(Float, default=0.0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, index=True
+    )

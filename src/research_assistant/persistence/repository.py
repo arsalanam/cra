@@ -41,6 +41,7 @@ class ThreadRepository:
         user_id: str | None = None,
         workflow: str | None = None,
         trial_id: str | None = None,
+        account_id: str | None = None,
     ) -> Thread:
         from .models import DEFAULT_USER_ID
 
@@ -49,6 +50,7 @@ class ThreadRepository:
             user_id=user_id or DEFAULT_USER_ID,
             workflow=workflow,
             trial_id=trial_id,
+            account_id=account_id,
         )
         self._s.add(thread)
         await self._s.flush()
@@ -789,6 +791,34 @@ class AccountRepository:
 
     async def get_account(self, account_id: str) -> Account | None:
         return await self._s.get(Account, account_id)
+
+    async def resolve_account_for_user(self, user_id: str) -> str:
+        """T1 spend quota: pick the budget-attribution account for a new
+        thread with no trial context.
+
+        Preference order: the user's oldest owner/admin membership, then
+        their oldest membership of any role, then the seeded Default
+        Account (guaranteed by init_db). Deterministic so a user's
+        untargeted threads always land on the same budget.
+        """
+        from .models import DEFAULT_ACCOUNT_NAME
+
+        memberships = (
+            await self._s.scalars(
+                select(AccountMember)
+                .where(AccountMember.user_id == user_id)
+                .order_by(AccountMember.joined_at)
+            )
+        ).all()
+        for member in memberships:
+            if member.role in ("owner", "admin"):
+                return member.account_id
+        if memberships:
+            return memberships[0].account_id
+        default = await self._s.scalar(select(Account).where(Account.name == DEFAULT_ACCOUNT_NAME))
+        if default is None:  # pragma: no cover - init_db seeds it
+            raise AccountError("Default account missing — run init_db.")
+        return default.id
 
     async def list_accounts_for_user(self, user_id: str) -> list[Account]:
         """Return every account where the user owns OR is a member."""
