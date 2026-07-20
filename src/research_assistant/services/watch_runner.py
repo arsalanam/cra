@@ -25,10 +25,11 @@ import logging
 from ..agent.specialists.watch_triage import triage_run
 from ..domain.meta_analysis import PicoTable
 from ..persistence.database import get_db_session
-from ..persistence.models import _utcnow
-from ..persistence.repository import WatchRepository
+from ..persistence.models import DEFAULT_USER_ID, _utcnow
+from ..persistence.repository import AccountError, AccountRepository, WatchRepository
 from ..tools.clinical.search_papers import _fan_out
 from .quota import DailyTokenQuotaExceeded, enforce_daily_token_quota
+from .spend import AccountBudgetExceeded, enforce_account_budget
 
 logger = logging.getLogger(__name__)
 
@@ -129,14 +130,22 @@ async def _execute_run(watch_id: str, run_id: str) -> None:
             )
         return
 
-    # Pre-flight the daily token quota before the Bedrock triage call.
-    # On exceeded, record `quota_exceeded` and skip — crucially do NOT
-    # bump the baseline, so the next run (after quota reset) re-discovers
-    # these same PMIDs and triages them then.
+    # Pre-flight the daily token quota + the watch owner's account budget
+    # before the Bedrock triage call. On exceeded, record `quota_exceeded`
+    # and skip — crucially do NOT bump the baseline, so the next run
+    # (after quota reset / budget raise) re-discovers these same PMIDs
+    # and triages them then.
     async with get_db_session() as session:
         try:
             await enforce_daily_token_quota(session)
-        except DailyTokenQuotaExceeded as quota_exc:
+            try:
+                owner_account = await AccountRepository(session).resolve_account_for_user(
+                    watch.user_id or DEFAULT_USER_ID
+                )
+            except AccountError:
+                owner_account = None  # account layer not seeded (tests) — skip
+            await enforce_account_budget(session, account_id=owner_account)
+        except (DailyTokenQuotaExceeded, AccountBudgetExceeded) as quota_exc:
             repo = WatchRepository(session)
             await repo.finish_run(
                 run_id,

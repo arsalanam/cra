@@ -13,9 +13,11 @@ not fail a turn that already succeeded.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import get_settings
@@ -23,6 +25,118 @@ from ..config.bedrock_pricing import compute_message_cost
 from ..persistence.models import DEFAULT_ACCOUNT_NAME, Account, SpendLedger
 
 logger = logging.getLogger(__name__)
+
+
+# ── Budget enforcement (D3: hard stop) ──────────────────────────────────
+
+
+@dataclass(frozen=True)
+class BudgetStatus:
+    """Snapshot of one account's budget window."""
+
+    account_id: str
+    account_name: str
+    limit_usd: float  # 0 = budget disabled
+    spent_usd: float
+    start_at: datetime | None
+    warn_percent: int
+
+    @property
+    def enabled(self) -> bool:
+        return self.limit_usd > 0
+
+    @property
+    def remaining_usd(self) -> float:
+        return max(0.0, self.limit_usd - self.spent_usd) if self.enabled else 0.0
+
+    @property
+    def percent_used(self) -> float:
+        if not self.enabled:
+            return 0.0
+        return min(999.0, round(self.spent_usd / self.limit_usd * 100.0, 1))
+
+    @property
+    def warning(self) -> bool:
+        return self.enabled and self.percent_used >= self.warn_percent
+
+
+class AccountBudgetExceeded(Exception):
+    """The account's trial budget is spent — hard 429 stop (D3)."""
+
+    def __init__(self, status: BudgetStatus) -> None:
+        self.status = status
+        super().__init__(
+            f"Account {status.account_name!r} budget exhausted: "
+            f"${status.spent_usd:.2f} of ${status.limit_usd:.2f}"
+        )
+
+
+async def get_account_spend(
+    session: AsyncSession, *, account_id: str, since: datetime | None = None
+) -> float:
+    """Cumulative ledger USD for one account (optionally windowed)."""
+    stmt = select(func.coalesce(func.sum(SpendLedger.usd), 0.0)).where(
+        SpendLedger.account_id == account_id
+    )
+    if since is not None:
+        stmt = stmt.where(SpendLedger.created_at >= since)
+    return float(await session.scalar(stmt) or 0.0)
+
+
+async def get_budget_status(session: AsyncSession, *, account_id: str) -> BudgetStatus | None:
+    """Budget snapshot for an account; None if the account doesn't exist."""
+    account = await session.get(Account, account_id)
+    if account is None:
+        return None
+    since = account.budget_start_at or account.created_at
+    spent = await get_account_spend(session, account_id=account_id, since=since)
+    return BudgetStatus(
+        account_id=account.id,
+        account_name=account.name,
+        limit_usd=float(account.budget_usd or 0.0),
+        spent_usd=spent,
+        start_at=since,
+        warn_percent=int(account.budget_warn_percent or 80),
+    )
+
+
+async def enforce_account_budget(
+    session: AsyncSession, *, account_id: str | None
+) -> BudgetStatus | None:
+    """Pre-flight hard stop: raise AccountBudgetExceeded when the account's
+    cumulative spend since its budget start date has reached the cap.
+
+    Mirrors `enforce_daily_token_quota`'s posture — checked before the
+    turn runs, so the final turn may overshoot by one turn's cost (see
+    docs/t1-spend-quota.md). None / unknown accounts and disabled budgets
+    (limit 0) pass through.
+    """
+    if account_id is None:
+        return None
+    status = await get_budget_status(session, account_id=account_id)
+    if status is None or not status.enabled:
+        return status
+    if status.spent_usd >= status.limit_usd:
+        raise AccountBudgetExceeded(status)
+    return status
+
+
+def build_budget_payload(status: BudgetStatus | None) -> dict[str, Any] | None:
+    """JSON-friendly budget axis for TurnResponse.quota / the budgets UI."""
+    if status is None:
+        return None
+    return {
+        "account_id": status.account_id,
+        "account_name": status.account_name,
+        "enabled": status.enabled,
+        "limit_usd": round(status.limit_usd, 2),
+        "spent_usd": round(status.spent_usd, 6),
+        "remaining_usd": round(status.remaining_usd, 6),
+        "percent_used": status.percent_used,
+        "warn_percent": status.warn_percent,
+        "warning": status.warning,
+        "start_at": status.start_at.isoformat() if status.start_at else None,
+    }
 
 
 def _tokens(usage: dict[str, Any], key: str) -> int:

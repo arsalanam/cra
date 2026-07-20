@@ -41,7 +41,11 @@ from ..services.quota import (
     enforce_daily_token_quota,
     get_today_token_totals,
 )
-from ..services.spend import record_turn_spend
+from ..services.spend import (
+    AccountBudgetExceeded,
+    enforce_account_budget,
+    record_turn_spend,
+)
 from .auth import CurrentUser
 from .threads import resolve_local_user_id
 
@@ -59,6 +63,21 @@ def _classify_agent_error(exc: Exception) -> tuple[int, str]:
       - Everything else (surface raw error for debugging)
     """
     settings = get_settings()
+
+    # T1 spend quota: the thread's account has spent its trial budget.
+    # Pre-flight refusal — no Bedrock call was made.
+    if isinstance(exc, AccountBudgetExceeded):
+        s = exc.status
+        since = f" since {s.start_at:%Y-%m-%d}" if s.start_at else ""
+        return (
+            429,
+            (
+                f"The trial budget for account '{s.account_name}' is exhausted "
+                f"(${s.spent_usd:.2f} of ${s.limit_usd:.2f} spent{since}). "
+                f"An account admin can raise or clear the budget on the "
+                f"Budgets page to resume work."
+            ),
+        )
 
     # Pre-flight daily-token quota refusal (not a Bedrock error — raised
     # by services.quota before any Bedrock call is made).
@@ -373,12 +392,13 @@ def create_dispatch_router() -> APIRouter:
             if thread is None or (thread.user_id or DEFAULT_USER_ID) != owner_id:
                 raise HTTPException(404, "Thread not found")
 
-            # Pre-flight daily-token quota — refuse before persisting the
-            # user message so a quota-blocked turn doesn't leave a dangling
-            # unanswered message in the thread.
+            # Pre-flight daily-token quota + account trial budget — refuse
+            # before persisting the user message so a blocked turn doesn't
+            # leave a dangling unanswered message in the thread.
             try:
                 await enforce_daily_token_quota(session)
-            except DailyTokenQuotaExceeded as quota_exc:
+                await enforce_account_budget(session, account_id=thread.account_id)
+            except (DailyTokenQuotaExceeded, AccountBudgetExceeded) as quota_exc:
                 status, detail = _classify_agent_error(quota_exc)
                 raise HTTPException(status, detail) from quota_exc
 
