@@ -11,7 +11,7 @@ checklist for ONE event — first external users.*
 
 | # | Item | Status | Depends on |
 |---|------|--------|-----------|
-| T1 | Trial-run spend quota (Bedrock + Tavily, from trial start date) | TODO | — |
+| T1 | Trial-run spend quota (per-account USD budget, all metered spend) | DESIGN in review — [t1-spend-quota.md](t1-spend-quota.md) | — |
 | T2 | Paywalled sources (Lancet/Elsevier…) + credential encryption | TODO | secrets encryption (part of this item) |
 | T3 | Cognito production posture (real-user invites) | TODO | T4 for invite deliverability |
 | T4 | SES domain email for invites | TODO | T5 (domain) |
@@ -26,6 +26,10 @@ encryption gate). T6 in parallel as small picks.
 ---
 
 ## T1 — Trial-run spend quota
+
+> **Design doc: [`t1-spend-quota.md`](t1-spend-quota.md)** (2026-07-19).
+> Decisions locked: per-Account budget, all metered spend counted
+> (Bedrock + Tavily + embeddings + vision), hard 429 stop.
 
 **Goal.** A hard USD budget for the trial period — e.g. $500 across Bedrock
 + Tavily — measured from a configured trial start date, enforced before
