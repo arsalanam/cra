@@ -71,6 +71,14 @@ _PRICING_BY_FAMILY: Final[dict[str, ModelPricing]] = {
         family="opus",
         label="Claude 3 Opus",
     ),
+    # T1 spend quota: Titan embeddings (library uploads / RAG). Input-only
+    # pricing — embedding calls have no output tokens.
+    "titan-embed-v2": ModelPricing(
+        input_per_1k_usd=0.00002,
+        output_per_1k_usd=0.0,
+        family="embedding",
+        label="Titan Text Embeddings v2",
+    ),
 }
 
 
@@ -94,6 +102,10 @@ def _normalise(model_id: str) -> str:
     if not model_id:
         return ""
     lower = model_id.lower()
+    # Titan embeddings carry a differently-shaped id
+    # ("amazon.titan-embed-text-v2:0") that no family key substring hits.
+    if "titan-embed" in lower:
+        return "titan-embed-v2"
     # Direct match against family keys.
     for key in _PRICING_BY_FAMILY:
         if key in lower:

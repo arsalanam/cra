@@ -69,12 +69,20 @@ async def embed_pending_passages(limit: int = _DEFAULT_BATCH) -> int:
             if not passages:
                 return 0
 
-            vectors = await get_embedder().embed_documents([p.text for p in passages])
+            embedder = get_embedder()
+            vectors = await embedder.embed_documents([p.text for p in passages])
             now = datetime.now(UTC)
             for passage, vector in zip(passages, vectors, strict=True):
                 passage.embedding = vector
                 passage.embedding_model = version
                 passage.embedded_at = now
+            # T1 spend quota: bill the batch's Titan tokens (shared cache →
+            # Default Account). Same transaction as the embedding writes.
+            tokens = getattr(embedder, "total_input_tokens", 0)
+            if tokens:
+                from ..services.spend import record_embedding_spend
+
+                await record_embedding_spend(session, tokens=tokens, model_id=embedder.model_id)
             logger.info("Embedded %d passage(s) with %s", len(passages), version)
             return len(passages)
     except Exception:

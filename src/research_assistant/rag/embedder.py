@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import threading
 from typing import Protocol, runtime_checkable
 
 import boto3
@@ -63,6 +64,12 @@ class BedrockEmbedder:
         self._region = s.aws_region
         self._max_concurrency = max(1, s.embedding_max_concurrency)
         self._client = None  # lazy — created on first use, reused thereafter
+        # T1 spend quota: Titan reports inputTextTokenCount per call; the
+        # instance accumulates so batch callers (embed_worker) can write one
+        # spend-ledger row per drain pass. Lock because _embed_sync runs in
+        # worker threads.
+        self.total_input_tokens = 0
+        self._token_lock = threading.Lock()
 
     def _client_(self) -> object:
         if self._client is None:
@@ -79,6 +86,10 @@ class BedrockEmbedder:
         )
         resp = self._client_().invoke_model(modelId=self.model_id, body=body)  # type: ignore[attr-defined]
         payload = json.loads(resp["body"].read())
+        tokens = int(payload.get("inputTextTokenCount", 0) or 0)
+        if tokens:
+            with self._token_lock:
+                self.total_input_tokens += tokens
         vector: list[float] = payload["embedding"]
         return vector
 

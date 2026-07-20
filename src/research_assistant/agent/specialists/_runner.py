@@ -106,7 +106,7 @@ async def run_agent_turn[OutputT](
 def turn_meta(result: AgentRunResult[Any], deps: AgentDeps) -> dict[str, Any]:
     """Build the standard per-turn meta dict from a finished run."""
     usage = result.usage()
-    return {
+    meta: dict[str, Any] = {
         "usage": {
             "input_tokens": usage.input_tokens,
             "output_tokens": usage.output_tokens,
@@ -116,3 +116,12 @@ def turn_meta(result: AgentRunResult[Any], deps: AgentDeps) -> dict[str, Any]:
         },
         "tool_usage": drain_tool_usage(deps),
     }
+    # T1 spend quota: describe_image's converse call is a separate Bedrock
+    # request the main usage() never sees — surface it so the spend ledger
+    # can price it against settings.vision_model_id.
+    if deps.vision_input_tokens or deps.vision_output_tokens:
+        meta["vision_usage"] = {
+            "input_tokens": deps.vision_input_tokens,
+            "output_tokens": deps.vision_output_tokens,
+        }
+    return meta

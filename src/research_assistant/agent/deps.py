@@ -106,3 +106,9 @@ class AgentDeps:
     # `prepare_tools` to gate pubmed_search / fetch_pmc_fulltext / sandbox_exec
     # behind the appropriate workflow stage.
     last_turn_kind: str | None = None
+    # T1 spend quota: vision-model tokens consumed by describe_image this
+    # turn. The main run's usage() doesn't see the tool's separate Bedrock
+    # converse call, so the tool accumulates here and turn_meta surfaces it
+    # for the spend ledger (priced with settings.vision_model_id).
+    vision_input_tokens: int = 0
+    vision_output_tokens: int = 0

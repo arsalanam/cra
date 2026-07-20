@@ -41,6 +41,7 @@ from ..services.quota import (
     enforce_daily_token_quota,
     get_today_token_totals,
 )
+from ..services.spend import record_turn_spend
 from .auth import CurrentUser
 from .threads import resolve_local_user_id
 
@@ -498,6 +499,20 @@ def create_dispatch_router() -> APIRouter:
                     "route_rule": route.rule,
                 },
                 sequence_num=0,
+            )
+            # T1 spend quota: price this turn into the append-only ledger
+            # (turn tokens + Tavily searches + vision tokens). Same
+            # transaction as the done event so accounting can't drift from
+            # the usage record. Never raises.
+            await record_turn_spend(
+                session,
+                account_id=thread.account_id,
+                trial_id=thread.trial_id,
+                thread_id=body.thread_id,
+                message_id=assistant_msg_id,
+                usage=usage_with_model,
+                tool_usage=meta.get("tool_usage", {}),
+                vision_usage=meta.get("vision_usage"),
             )
             # Pin the thread only for sticky routes — a definitional detour
             # to general_qa answers the question without stealing the thread

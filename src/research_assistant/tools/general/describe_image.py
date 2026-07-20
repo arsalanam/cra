@@ -43,8 +43,18 @@ def format_from_media_type(media_type: str | None) -> str | None:
     return SUPPORTED_MEDIA_TYPES.get(media_type.lower().split(";")[0].strip())
 
 
-async def _impl(image_bytes: bytes, media_type: str | None, question: str) -> str:
-    """Send the attached image to the vision model for a description."""
+async def _impl(
+    image_bytes: bytes,
+    media_type: str | None,
+    question: str,
+    deps: AgentDeps | None = None,
+) -> str:
+    """Send the attached image to the vision model for a description.
+
+    When ``deps`` is supplied, the converse call's token usage is
+    accumulated onto it so the turn's spend ledger can price vision
+    separately from the main model (T1 spend quota).
+    """
     import boto3
 
     fmt = format_from_media_type(media_type)
@@ -85,6 +95,10 @@ async def _impl(image_bytes: bytes, media_type: str | None, question: str) -> st
             ],
             inferenceConfig={"maxTokens": 1024, "temperature": 0.2},
         )
+        if deps is not None:
+            usage = response.get("usage", {})
+            deps.vision_input_tokens += int(usage.get("inputTokens", 0) or 0)
+            deps.vision_output_tokens += int(usage.get("outputTokens", 0) or 0)
         output_parts = response.get("output", {}).get("message", {}).get("content", [])
         description = " ".join(part["text"] for part in output_parts if "text" in part)
         logger.info(
@@ -118,5 +132,5 @@ def register(agent: Agent[AgentDeps]) -> None:
             icon="I",
             args={"question": question, "bytes": len(image)},
             description="Analyzing the attached image…",
-            impl=lambda: _impl(image, ctx.deps.image_media_type, question),
+            impl=lambda: _impl(image, ctx.deps.image_media_type, question, deps=ctx.deps),
         )

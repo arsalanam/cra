@@ -78,6 +78,10 @@ class Settings(BaseSettings):
 
     # Tavily web search
     tavily_api_key: str = ""
+    # T1 spend quota: USD charged per web_search call in the spend ledger
+    # (Tavily meters by credits ≈ one per basic search; D5 in
+    # docs/t1-spend-quota.md).
+    tavily_price_per_search_usd: float = 0.008
 
     # NCBI E-utilities. With a key NCBI raises the rate limit from 3 req/s to
     # 10 req/s; chained mesh_lookup → pubmed_search → fetch_pmc_fulltext calls
