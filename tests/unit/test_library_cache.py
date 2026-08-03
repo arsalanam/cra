@@ -73,7 +73,8 @@ async def test_upsert_persists_metadata_and_abstract_passage(db_session: AsyncSe
     ).all()
     assert len(passages) == 1
     assert passages[0].section == "abstract"
-    assert passages[0].token_count and passages[0].token_count > 0
+    assert passages[0].token_count
+    assert passages[0].token_count > 0
 
 
 @pytest.mark.asyncio
@@ -82,7 +83,8 @@ async def test_upsert_is_idempotent_and_backfills(db_session: AsyncSession) -> N
     pid = await upsert_publication(db_session, _study(abstract=None, mesh_headings=[]))
     await store_abstract_passage(db_session, pid, None)
     first = await db_session.get(Publication, pid)
-    assert first is not None and first.abstract is None
+    assert first is not None
+    assert first.abstract is None
     cached_at = first.first_cached_at
 
     # Second hit (same PMID) now carries an abstract + MeSH → back-filled.

@@ -31,10 +31,10 @@ from pathlib import Path
 
 import matplotlib
 
-matplotlib.use("Agg")  # noqa: E402
-import matplotlib.pyplot as plt  # noqa: E402
-import numpy as np  # noqa: E402
-import pandas as pd  # noqa: E402
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
 
 _INPUT = Path("/home/sandbox/input/data.json")
 _OUTPUT_DIR = Path("/home/sandbox/output")
@@ -208,7 +208,7 @@ def main() -> None:
     subgroups = sorted(s for s in df[subgroup_variable].dropna().unique() if str(s) != "")
     for sg in subgroups:
         slice_ = df[df[subgroup_variable] == sg]
-        n = int(len(slice_))
+        n = len(slice_)
         n_events = int((slice_["CNSR"] == 0).sum())
         cox = _cox_hr(slice_, arms_param)
         rows_out.append(

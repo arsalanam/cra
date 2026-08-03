@@ -73,7 +73,8 @@ async def test_deploy_capture_and_audit(client: AsyncClient) -> None:
     dep_id = dep.json()["id"]
 
     forms = (await client.get(f"/api/edc/deployments/{dep_id}/forms")).json()
-    assert len(forms) == 1 and forms[0]["form_name"] == "demographics"
+    assert len(forms) == 1
+    assert forms[0]["form_name"] == "demographics"
     deployed_form_id = forms[0]["id"]
 
     # Site + subject.
@@ -217,7 +218,8 @@ async def test_soft_check_opens_auto_query_via_api(client: AsyncClient) -> None:
     assert ok.status_code == 200
     queries = (await client.get(f"/api/edc/form-instances/{fi_id}/queries")).json()
     assert len(queries) == 1
-    assert queries[0]["query_type"] == "auto" and queries[0]["status"] == "open"
+    assert queries[0]["query_type"] == "auto"
+    assert queries[0]["status"] == "open"
 
 
 async def test_deployed_form_definition_and_subject_forms(client: AsyncClient) -> None:
@@ -240,7 +242,8 @@ async def test_deployed_form_definition_and_subject_forms(client: AsyncClient) -
     assert (await client.get(f"/api/edc/subjects/{subj}/forms")).json() == []
     await client.post(f"/api/edc/subjects/{subj}/forms", json={"deployed_form_id": form["id"]})
     instances = (await client.get(f"/api/edc/subjects/{subj}/forms")).json()
-    assert len(instances) == 1 and instances[0]["deployed_form_id"] == form["id"]
+    assert len(instances) == 1
+    assert instances[0]["deployed_form_id"] == form["id"]
 
 
 async def test_sign_lock_and_unlock(client: AsyncClient) -> None:
@@ -255,7 +258,8 @@ async def test_sign_lock_and_unlock(client: AsyncClient) -> None:
     sig = await client.post(
         f"/api/edc/form-instances/{fi_id}/sign", json={"meaning": "PI sign-off"}
     )
-    assert sig.status_code == 200 and sig.json()["voided"] is False
+    assert sig.status_code == 200
+    assert sig.json()["voided"] is False
 
     # Editing a signed form is blocked.
     blocked = await client.put(
@@ -267,7 +271,8 @@ async def test_sign_lock_and_unlock(client: AsyncClient) -> None:
     un = await client.post(
         f"/api/edc/form-instances/{fi_id}/unlock", json={"reason": "correction needed"}
     )
-    assert un.status_code == 200 and un.json()["status"] == "in_progress"
+    assert un.status_code == 200
+    assert un.json()["status"] == "in_progress"
     sigs = (await client.get(f"/api/edc/form-instances/{fi_id}/signatures")).json()
     assert sigs[0]["voided"] is True
 

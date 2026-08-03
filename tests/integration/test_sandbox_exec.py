@@ -14,7 +14,7 @@ def _sandbox_image_exists() -> bool:
         return False
     try:
         result = subprocess.run(
-            ["docker", "image", "inspect", "research-assistant-sandbox:latest"],
+            ["docker", "image", "inspect", "research-assistant-sandbox:latest"],  # noqa: S607 — invoking docker from PATH is intended
             capture_output=True,
             timeout=10,
         )

@@ -70,7 +70,8 @@ async def test_full_authoring_lifecycle(client: AsyncClient) -> None:
     assert r.status_code == 201, r.text
     form = r.json()
     fid = form["id"]
-    assert form["version"] == 1 and form["status"] == "draft"
+    assert form["version"] == 1
+    assert form["status"] == "draft"
 
     # Duplicate name -> 409.
     assert (
@@ -98,7 +99,8 @@ async def test_full_authoring_lifecycle(client: AsyncClient) -> None:
 
     # New version -> v2 draft.
     v2 = (await client.post(f"/api/ecrf/forms/{fid}/new-version")).json()
-    assert v2["version"] == 2 and v2["status"] == "draft"
+    assert v2["version"] == 2
+    assert v2["status"] == "draft"
 
     # Two versions listed.
     forms = (await client.get(f"/api/ecrf/studies/{sid}/forms")).json()

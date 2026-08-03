@@ -18,6 +18,7 @@ import xml.etree.ElementTree as ET
 from typing import Any
 
 import httpx
+from defusedxml import ElementTree as DET
 
 from ....config import get_settings
 from ....config.auth import NoAuth, QueryParamAuth
@@ -244,7 +245,7 @@ class PubmedSource:
 
 def _parse_pubmed_xml(xml_text: str) -> list[dict[str, Any]]:
     """Pull the fields we care about out of a PubmedArticleSet XML payload."""
-    root = ET.fromstring(xml_text)
+    root = DET.fromstring(xml_text)
     studies: list[dict[str, Any]] = []
 
     for art in root.iter("PubmedArticle"):
@@ -363,7 +364,7 @@ def _extract_pmc_id(elink_json: dict[str, Any]) -> str | None:
 def _extract_pmc_text(xml_text: str) -> str:
     """Walk JATS XML body and concatenate paragraph text + section headings."""
     try:
-        root = ET.fromstring(xml_text)
+        root = DET.fromstring(xml_text)
     except ET.ParseError as e:
         return f"[Could not parse PMC XML: {e}]"
 

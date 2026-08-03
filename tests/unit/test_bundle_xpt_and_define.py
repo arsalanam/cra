@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import io
 import zipfile
-from xml.etree import ElementTree as ET
+
+from defusedxml import ElementTree as ET
 
 from research_assistant.cdisc.exporter import build_submission_bundle
 

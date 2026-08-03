@@ -49,8 +49,8 @@ def _two_by_two(
     reference, treatment = arms[0], arms[1]
     df_t = df[df["TRT01A"] == treatment]
     df_c = df[df["TRT01A"] == reference]
-    n_t = int(len(df_t))
-    n_c = int(len(df_c))
+    n_t = len(df_t)
+    n_c = len(df_c)
     e_t = int((df_t["AVALC"] == event_value).sum())
     e_c = int((df_c["AVALC"] == event_value).sum())
     return {

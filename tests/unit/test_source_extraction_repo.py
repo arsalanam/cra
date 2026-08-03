@@ -144,7 +144,8 @@ async def test_create_mapping_bumps_version_and_deactivates_prior(
     assert m1.version == 1
     assert m2.version == 2
     refreshed_m1 = await clinical_session.get(type(m1), m1.id)
-    assert refreshed_m1 is not None and refreshed_m1.is_active is False
+    assert refreshed_m1 is not None
+    assert refreshed_m1.is_active is False
     assert m2.is_active is True
 
 
@@ -152,7 +153,7 @@ async def test_create_mapping_rejects_cross_deployment_form(
     clinical_session: AsyncSession,
 ) -> None:
     dep1, _, _ = await _seed(clinical_session)
-    dep2, _, form2 = await _seed(clinical_session)
+    _dep2, _, form2 = await _seed(clinical_session)
     repo = ClinicalRepository(clinical_session)
     with pytest.raises(ClinicalError, match="not found in this deployment"):
         await repo.create_extraction_mapping(
@@ -181,7 +182,8 @@ async def test_get_active_returns_latest_active(
         mapping={"a": "b"},
     )
     active = await repo.get_active_mapping(dep.id, form.id)
-    assert active is not None and active.id == m2.id
+    assert active is not None
+    assert active.id == m2.id
 
 
 # ── dry-run vs apply ───────────────────────────────────────────────────
@@ -394,4 +396,5 @@ async def test_list_fills_filtered_by_target(
     assert len(fills) == 1
     target_id = fills[0].target_id
     by_target = await repo.list_extraction_fills(target_id=target_id)
-    assert len(by_target) == 1 and by_target[0].id == fills[0].id
+    assert len(by_target) == 1
+    assert by_target[0].id == fills[0].id

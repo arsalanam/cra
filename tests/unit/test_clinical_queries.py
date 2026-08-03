@@ -116,7 +116,8 @@ async def test_soft_check_opens_and_auto_closes_query(clinical_session: AsyncSes
     # Correcting the value auto-closes the query (no duplicate opened).
     await repo.submit_item_data(fi_id, {"sbp": "180"}, actor_sub="u1", reason="typo")
     queries = await repo.list_queries(fi_id)
-    assert len(queries) == 1 and queries[0].status == "closed"
+    assert len(queries) == 1
+    assert queries[0].status == "closed"
 
 
 async def test_manual_query_lifecycle(clinical_session: AsyncSession) -> None:
@@ -127,7 +128,8 @@ async def test_manual_query_lifecycle(clinical_session: AsyncSession) -> None:
     q = await repo.create_manual_query(
         fi_id, item_id="age", text="Please verify against source", actor_sub="dm"
     )
-    assert q.status == "open" and q.query_type == "manual"
+    assert q.status == "open"
+    assert q.query_type == "manual"
 
     await repo.respond_query(q.id, text="Verified, correct", author_sub="crc")
     await repo.close_query(q.id, actor_sub="dm")

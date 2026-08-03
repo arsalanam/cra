@@ -40,7 +40,7 @@ def test_lookup_full_inference_profile_id() -> None:
 
 
 @pytest.mark.parametrize(
-    "model_id, expected_family",
+    ("model_id", "expected_family"),
     [
         ("claude-haiku-4-5", "haiku"),
         ("claude-sonnet-4-6", "sonnet"),

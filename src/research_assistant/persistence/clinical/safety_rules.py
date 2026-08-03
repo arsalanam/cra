@@ -123,8 +123,8 @@ def compute_reporting_deadline(
 
 
 __all__ = [
-    "AeOutcome",
     "GRADE_AUTO_SERIOUS_THRESHOLD",
+    "AeOutcome",
     "SeriousReason",
     "auto_classify_serious",
     "compute_reporting_deadline",

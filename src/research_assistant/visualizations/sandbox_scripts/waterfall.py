@@ -31,9 +31,9 @@ from pathlib import Path
 
 import matplotlib
 
-matplotlib.use("Agg")  # noqa: E402
-import matplotlib.pyplot as plt  # noqa: E402
-import numpy as np  # noqa: E402
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import numpy as np
 
 _INPUT = Path("/home/sandbox/input/data.json")
 _OUTPUT_DIR = Path("/home/sandbox/output")
@@ -137,7 +137,7 @@ def main() -> None:
         plt.Line2D([0], [0], color="#2A9D8F", linestyle="--", linewidth=1),
         plt.Line2D([0], [0], color="#E76F51", linestyle="--", linewidth=1),
     ]
-    legend_labels = list(treatments) + ["−30% (PR threshold)", "+20% (PD threshold)"]
+    legend_labels = [*list(treatments), "−30% (PR threshold)", "+20% (PD threshold)"]
     ax.legend(handles, legend_labels, loc="upper right", fontsize=8)
     fig.tight_layout()
     out = _OUTPUT_DIR / "waterfall.png"

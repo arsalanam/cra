@@ -131,9 +131,11 @@ def test_strategy_result_full_round_trip() -> None:
     assert revived.kind == "strategy_result"
     assert len(revived.query_plans) == 4
     pubmed = next(p for p in revived.query_plans if p.database == "pubmed")
-    assert pubmed.executable and pubmed.estimated_hits == 247
+    assert pubmed.executable
+    assert pubmed.estimated_hits == 247
     embase = next(p for p in revived.query_plans if p.database == "embase")
-    assert not embase.executable and embase.estimated_hits is None
+    assert not embase.executable
+    assert embase.estimated_hits is None
     assert any("Emtree" in c for c in embase.caveats)
     assert revived.band_status == "in_band"
 

@@ -138,7 +138,7 @@ def _league_pdf(results: NmaResults, styles: dict[str, ParagraphStyle]) -> Table
     by_pair: dict[tuple[str, str], Any] = {}
     for league_row in results.league_table.rows:
         by_pair[(league_row.row_intervention, league_row.col_intervention)] = league_row
-    header = [Paragraph(f"<b>{c}</b>", styles["Cell"]) for c in [""] + list(interventions)]
+    header = [Paragraph(f"<b>{c}</b>", styles["Cell"]) for c in ["", *list(interventions)]]
     rows: list[list[Paragraph]] = [header]
     chip_cells: list[tuple[int, int, colors.Color]] = []
     for i, row_name in enumerate(interventions, start=1):
@@ -382,7 +382,7 @@ def build_docx(data: NmaReportData, images_dir: Path | None = None) -> bytes:
     docx.add_heading("League table", level=1)
     interventions = results.pico.interventions
     by_pair = {(r.row_intervention, r.col_intervention): r for r in results.league_table.rows}
-    cols = [""] + list(interventions)
+    cols = ["", *list(interventions)]
     t = docx.add_table(rows=1 + len(interventions), cols=len(cols))
     t.style = "Light Grid Accent 1"
     for j, c in enumerate(cols):

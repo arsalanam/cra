@@ -147,7 +147,7 @@ def _per_trial_tte(
         z = float(norm.ppf(0.975))
         return {
             "trial_id": trial_id,
-            "n_subjects": int(len(sub)),
+            "n_subjects": len(sub),
             "effect": float(math.exp(coef)),
             "ci_lower": float(math.exp(coef - z * se)),
             "ci_upper": float(math.exp(coef + z * se)),

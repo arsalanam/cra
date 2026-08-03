@@ -42,9 +42,9 @@ from pathlib import Path
 
 import matplotlib
 
-matplotlib.use("Agg")  # noqa: E402
-import matplotlib.pyplot as plt  # noqa: E402
-import numpy as np  # noqa: E402
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import numpy as np
 
 _INPUT = Path("/home/sandbox/input/data.json")
 _OUTPUT_DIR = Path("/home/sandbox/output")
@@ -80,7 +80,7 @@ def _eggers_test(effects: np.ndarray, ses: np.ndarray) -> dict:
             "intercept_se": intercept_se,
             "intercept_p_value": intercept_p,
             "slope": float(fit.params[1]),
-            "n_studies": int(len(effects)),
+            "n_studies": len(effects),
         }
     except Exception as e:
         return {
@@ -206,11 +206,7 @@ def main() -> None:
                 "n_studies": len(studies),
                 "eggers": eggers,
                 "interpretation": interpretation,
-                "pooled_effect_log": (
-                    float(np.average(effects, weights=1.0 / ses**2))
-                    if log_scale
-                    else float(np.average(effects, weights=1.0 / ses**2))
-                ),
+                "pooled_effect_log": float(np.average(effects, weights=1.0 / ses**2)),
             },
             indent=2,
             default=lambda x: None if isinstance(x, float) and math.isnan(x) else x,

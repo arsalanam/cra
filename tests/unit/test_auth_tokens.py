@@ -137,7 +137,7 @@ async def test_wrong_issuer_rejected() -> None:
 
 
 async def test_signed_with_unknown_key_rejected() -> None:
-    real_pem, real_pub_jwk = _make_keypair()
+    _real_pem, real_pub_jwk = _make_keypair()
     rogue_pem, _ = _make_keypair()
     # Cache the REAL pub key only; sign with the ROGUE private key but
     # claim the same kid.

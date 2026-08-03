@@ -262,7 +262,7 @@ async def test_safety_open_aes_count_per_site(
 async def test_safety_open_deviations_and_capas_per_site(
     clinical_session: AsyncSession,
 ) -> None:
-    dep, site_a, site_b, subj_a, subj_b = await _seed_two_sites(clinical_session)
+    dep, site_a, site_b, subj_a, _subj_b = await _seed_two_sites(clinical_session)
     # Site A: 1 open deviation with 1 open CAPA + 1 closed deviation.
     dev_open = ProtocolDeviation(
         deployment_id=dep.id,
@@ -379,8 +379,8 @@ async def test_operational_low_ip_lots_surface_on_totals(
 async def test_org_rollup_aggregates_across_deployments(
     clinical_session: AsyncSession,
 ) -> None:
-    dep1, _, _, _, _ = await _seed_two_sites(clinical_session, deployment_name="Trial A")
-    dep2, _, _, _, _ = await _seed_two_sites(clinical_session, deployment_name="Trial B")
+    _dep1, _, _, _, _ = await _seed_two_sites(clinical_session, deployment_name="Trial A")
+    _dep2, _, _, _, _ = await _seed_two_sites(clinical_session, deployment_name="Trial B")
     rollup = await org_rollup(clinical_session)
     assert rollup["n_deployments"] == 2
     # 2 deployments × 2 subjects each.

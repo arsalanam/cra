@@ -33,10 +33,10 @@ from pathlib import Path
 
 import matplotlib
 
-matplotlib.use("Agg")  # noqa: E402  — must precede pyplot import
-import matplotlib.pyplot as plt  # noqa: E402
-import numpy as np  # noqa: E402
-import pandas as pd  # noqa: E402
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
 
 _INPUT = Path("/home/sandbox/input/data.json")
 _OUTPUT_DIR = Path("/home/sandbox/output")
@@ -179,7 +179,7 @@ def _cox_one(df: pd.DataFrame, paramcd: str, param_label: str) -> dict | None:
         "fitted": True,
         "reference": reference,
         "n_events": n_events,
-        "n_subjects": int(len(df)),
+        "n_subjects": len(df),
         "rows": [
             {
                 "comparison": f"{arm} vs {reference}",

@@ -32,9 +32,9 @@ from pathlib import Path
 
 import matplotlib
 
-matplotlib.use("Agg")  # noqa: E402
-import matplotlib.pyplot as plt  # noqa: E402
-import numpy as np  # noqa: E402
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import numpy as np
 
 _INPUT = Path("/home/sandbox/input/data.json")
 _OUTPUT_DIR = Path("/home/sandbox/output")

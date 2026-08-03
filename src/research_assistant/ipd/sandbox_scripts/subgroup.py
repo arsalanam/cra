@@ -77,7 +77,7 @@ def _level_effect_continuous(df: pd.DataFrame, outcome_col: str, level: str) -> 
     return {
         "level_label": level,
         "n_trials": int(sub["__trial_id__"].nunique()),
-        "n_subjects": int(len(sub)),
+        "n_subjects": len(sub),
         "effect": diff,
         "ci_lower": diff - z * se,
         "ci_upper": diff + z * se,
@@ -100,7 +100,7 @@ def _level_effect_binary(df: pd.DataFrame, outcome_col: str, level: str) -> dict
     return {
         "level_label": level,
         "n_trials": int(sub["__trial_id__"].nunique()),
-        "n_subjects": int(len(sub)),
+        "n_subjects": len(sub),
         "effect": float(math.exp(log_or)),
         "ci_lower": float(math.exp(log_or - z * se)),
         "ci_upper": float(math.exp(log_or + z * se)),
@@ -132,7 +132,7 @@ def _level_effect_tte(
         return {
             "level_label": level,
             "n_trials": int(df.loc[df["__subgroup__"] == level, "__trial_id__"].nunique()),
-            "n_subjects": int(len(sub)),
+            "n_subjects": len(sub),
             "effect": float(math.exp(coef)),
             "ci_lower": float(math.exp(coef - z * se)),
             "ci_upper": float(math.exp(coef + z * se)),

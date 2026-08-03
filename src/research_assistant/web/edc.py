@@ -3099,7 +3099,7 @@ def create_edc_router() -> APIRouter:
     )
     async def upload_source_document(
         deployment_id: str,
-        file: UploadFile = File(...),  # noqa: B008
+        file: UploadFile = File(...),
         subject_code_field: str | None = Form(default=None),
         notes: str = Form(default=""),
         user: SessionPayload = require_permission_scoped(
@@ -3521,7 +3521,7 @@ def create_edc_router() -> APIRouter:
     )
     async def upload_lab_batch(
         deployment_id: str,
-        file: UploadFile = File(...),  # noqa: B008
+        file: UploadFile = File(...),
         source_format: str = Form(...),
         notes: str = Form(default=""),
         user: SessionPayload = require_permission_scoped(

@@ -107,7 +107,8 @@ async def test_create_publish_and_immutability(db_session: AsyncSession) -> None
     study = await repo.create_study(name="SGLT2 trial")
 
     form = await repo.create_form(study.id, _form(), created_by="u1")
-    assert form.version == 1 and form.status == "draft"
+    assert form.version == 1
+    assert form.status == "draft"
 
     # Editing a draft is fine.
     edited = _form()
@@ -120,7 +121,8 @@ async def test_create_publish_and_immutability(db_session: AsyncSession) -> None
 
     # Publish → immutable.
     published = await repo.publish_form(form.id)
-    assert published.status == "published" and published.published_at is not None
+    assert published.status == "published"
+    assert published.published_at is not None
     with pytest.raises(EcrfError, match="not editable"):
         await repo.update_form_draft(form.id, _form())
     with pytest.raises(EcrfError, match="already published"):
@@ -134,11 +136,13 @@ async def test_new_version_supersedes_prior(db_session: AsyncSession) -> None:
     await repo.publish_form(v1.id)
 
     v2 = await repo.new_version(v1.id)
-    assert v2.version == 2 and v2.status == "draft"
+    assert v2.version == 2
+    assert v2.status == "draft"
 
     await repo.publish_form(v2.id)
     refreshed_v1 = await repo.get_form(v1.id)
-    assert refreshed_v1 is not None and refreshed_v1.status == "superseded"
+    assert refreshed_v1 is not None
+    assert refreshed_v1.status == "superseded"
 
     forms = await repo.list_forms(study.id)
     assert [(f.version, f.status) for f in forms] == [(1, "superseded"), (2, "published")]

@@ -38,11 +38,11 @@ from pathlib import Path
 
 import matplotlib
 
-matplotlib.use("Agg")  # noqa: E402
-import matplotlib.pyplot as plt  # noqa: E402
-import numpy as np  # noqa: E402
-import pandas as pd  # noqa: E402
-from scipy.stats import chi2  # noqa: E402
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+from scipy.stats import chi2
 
 _INPUT = Path("/home/sandbox/input/data.json")
 _OUTPUT_DIR = Path("/home/sandbox/output")
@@ -215,7 +215,7 @@ def _cox_one(df: pd.DataFrame, paramcd: str, param_label: str, reference: str | 
         "fitted": True,
         "reference": reference,
         "n_events": n_events,
-        "n_subjects": int(len(df)),
+        "n_subjects": len(df),
         "rows": [
             {
                 "comparison": f"{arm} vs {reference}",
@@ -276,7 +276,7 @@ def main() -> None:
             {
                 "paramcd": str(paramcd),
                 "param_label": param_label,
-                "n_subjects": int(len(group)),
+                "n_subjects": len(group),
                 "n_events": int((group["CNSR"] == 0).sum()),
                 "median_event_time": _km_median(km_pooled),
                 "log_rank_p_value": log_rank_p,

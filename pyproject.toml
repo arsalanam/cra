@@ -27,6 +27,7 @@ dependencies = [
     "apscheduler>=3.11",
     "pgvector>=0.3",         # pgvector SQLAlchemy type + asyncpg codec (RAG embeddings)
     "scipy>=1.13",           # sample_size tool needs scipy.stats.norm/t inverse CDFs
+    "defusedxml>=0.7",       # hardened XML parsing for external API responses (PubMed)
 ]
 
 [project.optional-dependencies]
@@ -54,7 +55,24 @@ line-length = 100
 target-version = "py313"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM"]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "I",   # isort
+    "UP",  # pyupgrade
+    "B",   # bugbear
+    "SIM", # simplify
+    "S",   # bandit security checks
+    "RUF", # ruff-native rules
+    "PT",  # pytest style
+]
+ignore = [
+    # Type-narrowing asserts are the mypy-strict idiom throughout src/ and
+    # the app never runs under `python -O`; pytest asserts dominate tests/.
+    "S101",
+    # Clinical text legitimately uses en/em dashes, ×, µ, Greek letters.
+    "RUF001", "RUF002", "RUF003",
+]
 
 [tool.ruff.lint.flake8-bugbear]
 # RBAC-2 dependency factories return `Depends(...)` and are the standard
@@ -70,7 +88,9 @@ extend-immutable-calls = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = ["E501"]
+# S105/S106: hardcoded test credentials are fixtures, not secrets.
+# S108: sandbox tests reference fixed in-container /tmp paths by design.
+"tests/**/*.py" = ["E501", "S105", "S106", "S108"]
 # Long prompt strings and sample-question text are intentionally verbose.
 "src/research_assistant/agent/prompts.py" = ["E501"]
 "src/research_assistant/data/sample_questions.py" = ["E501"]
@@ -98,9 +118,22 @@ exclude = [
 ]
 
 [[tool.mypy.overrides]]
-module = ["wikipediaapi", "tavily", "fitz", "docx", "docx.*", "pptx", "docker", "docker.*", "jose", "jose.*", "itsdangerous", "boto3", "botocore", "botocore.*", "pgvector", "pgvector.*", "apscheduler", "apscheduler.*", "reportlab", "reportlab.*"]
+module = ["wikipediaapi", "tavily", "fitz", "docx", "docx.*", "pptx", "docker", "docker.*", "jose", "jose.*", "itsdangerous", "boto3", "botocore", "botocore.*", "pgvector", "pgvector.*", "apscheduler", "apscheduler.*", "reportlab", "reportlab.*", "defusedxml", "defusedxml.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+
+[tool.coverage.run]
+source = ["research_assistant"]
+# Sandbox scripts execute inside the Docker sandbox, never on the host —
+# host-side coverage would report a misleading 0% for them.
+omit = ["*/sandbox_scripts/*"]
+
+[tool.coverage.report]
+skip_empty = true
+# Ratchet: set just below measured coverage (71% on 2026-08-03) so it can
+# only go up. Raise deliberately; never lower without discussion.
+fail_under = 70

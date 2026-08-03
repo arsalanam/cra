@@ -93,7 +93,8 @@ async def test_consent_gate_then_capture(client: AsyncClient) -> None:
     # Session shows the ePRO form and that consent is required.
     s = (await client.get(f"/api/epro/session?token={token}")).json()
     assert s["consent_required"] is True
-    assert len(s["forms"]) == 1 and s["forms"][0]["title"] == "Symptom Diary"
+    assert len(s["forms"]) == 1
+    assert s["forms"][0]["title"] == "Symptom Diary"
 
     # Opening a form before consent is blocked.
     pre = await client.post(f"/api/epro/forms?token={token}&deployed_form_id={deployed}")
@@ -110,7 +111,8 @@ async def test_consent_gate_then_capture(client: AsyncClient) -> None:
         f"/api/epro/form-instances/{fi['id']}/data?token={token}",
         json={"values": {"pain": "4"}, "mark_complete": True},
     )
-    assert ok.status_code == 200 and ok.json()["status"] == "complete"
+    assert ok.status_code == 200
+    assert ok.json()["status"] == "complete"
 
     # A hard edit-check still applies to participant entry.
     bad = await client.put(
