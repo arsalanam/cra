@@ -6,7 +6,7 @@ Python workflows, FastAPI/SQLAlchemy conventions, security, and regulatory
 compliance. Forward-looking items are marked **TODO** and tracked in
 [`trial-readiness.md`](trial-readiness.md) / `roadmap.md`.*
 
-*Companion docs: [`../architecture.md`](../architecture.md) (target system
+*Companion docs: [`design/architecture.md`](design/architecture.md) (target system
 topology), [`agent-loop-review.md`](agent-loop-review.md) (the review that
 produced the current loop design).*
 

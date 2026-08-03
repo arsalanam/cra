@@ -28,7 +28,6 @@ from reportlab.lib.units import inch
 from reportlab.platypus import (
     BaseDocTemplate,
     Frame,
-    PageBreak,
     PageTemplate,
     Paragraph,
     Preformatted,
@@ -38,8 +37,8 @@ from reportlab.platypus import (
 )
 
 ROOT = Path(__file__).resolve().parent.parent
-SOURCE_MD = ROOT / "demoguide.md"
-OUT_PATH = ROOT / "demo-guide.pdf"
+SOURCE_MD = ROOT / "docs" / "guides" / "demoguide.md"
+OUT_PATH = ROOT / "docs" / "guides" / "demo-guide.pdf"
 
 
 # ── Styles (plain) ─────────────────────────────────────────────────────────
@@ -188,6 +187,7 @@ def _inline(s: str) -> str:
         ),
         s,
     )
+
     def _link_repl(m: re.Match[str]) -> str:
         label, target = m.group(1), m.group(2)
         # Anchor-only links (#foo) don't resolve in the PDF — render the
@@ -195,8 +195,7 @@ def _inline(s: str) -> str:
         if target.startswith("#"):
             return _stash(f"<b>{html.escape(label)}</b>")
         return _stash(
-            f'<link href="{html.escape(target)}" color="#1E6E8C">'
-            f"{html.escape(label)}</link>"
+            f'<link href="{html.escape(target)}" color="#1E6E8C">{html.escape(label)}</link>'
         )
 
     s = _LINK_RE.sub(_link_repl, s)
@@ -318,9 +317,7 @@ def parse_markdown(md: str) -> list[Block]:
                 break
             blocks.append(Block("ol", items=items_o))
             continue
-        if stripped.startswith("|") and i + 1 < n and re.match(
-            r"^\s*\|?\s*:?-+", lines[i + 1]
-        ):
+        if stripped.startswith("|") and i + 1 < n and re.match(r"^\s*\|?\s*:?-+", lines[i + 1]):
             header = [c.strip() for c in stripped.strip("|").split("|")]
             i += 2
             rows: list[list[str]] = []
@@ -328,7 +325,7 @@ def parse_markdown(md: str) -> list[Block]:
                 row_cells = [c.strip() for c in lines[i].strip().strip("|").split("|")]
                 rows.append(row_cells)
                 i += 1
-            blocks.append(Block("table", rows=[header] + rows))
+            blocks.append(Block("table", rows=[header, *rows]))
             continue
         # Paragraph
         para_lines = [stripped]
@@ -337,10 +334,10 @@ def parse_markdown(md: str) -> list[Block]:
             ln = lines[i].rstrip()
             if not ln.strip():
                 break
-            if ln.lstrip().startswith(
-                ("#", "- ", "* ", "|", "> ", "```")
-            ) or re.match(r"^\s*\d+\.\s+", ln) or (
-                ln.strip().startswith("---") and set(ln.strip()) == {"-"}
+            if (
+                ln.lstrip().startswith(("#", "- ", "* ", "|", "> ", "```"))
+                or re.match(r"^\s*\d+\.\s+", ln)
+                or (ln.strip().startswith("---") and set(ln.strip()) == {"-"})
             ):
                 break
             para_lines.append(ln.strip())
@@ -352,10 +349,7 @@ def parse_markdown(md: str) -> list[Block]:
 def md_table(rows: list[list[str]]) -> Table:
     n_cols = max(len(r) for r in rows)
     avail = LETTER[0] - 1.4 * inch
-    if n_cols == 2:
-        col_widths = [avail * 0.32, avail * 0.68]
-    else:
-        col_widths = [avail / n_cols] * n_cols
+    col_widths = [avail * 0.32, avail * 0.68] if n_cols == 2 else [avail / n_cols] * n_cols
     data: list[list[Paragraph]] = []
     for ri, row in enumerate(rows):
         cells = []
@@ -405,9 +399,7 @@ def render_blocks(blocks: list[Block]) -> list:
             flow.append(Paragraph(_inline(b.text), styles["Quote"]))
         elif b.kind == "bullet":
             for item in b.items or []:
-                flow.append(
-                    Paragraph(f"<bullet>•</bullet> {_inline(item)}", styles["Bullet"])
-                )
+                flow.append(Paragraph(f"<bullet>•</bullet> {_inline(item)}", styles["Bullet"]))
             flow.append(Spacer(1, 3))
         elif b.kind == "ol":
             for item in b.items or []:
@@ -451,9 +443,7 @@ def build_pdf() -> None:
         id="content",
         showBoundary=0,
     )
-    doc.addPageTemplates(
-        [PageTemplate(id="content", frames=[frame], onPage=page_decorations)]
-    )
+    doc.addPageTemplates([PageTemplate(id="content", frames=[frame], onPage=page_decorations)])
     doc.build(render_blocks(blocks))
     print(f"Wrote {OUT_PATH.relative_to(ROOT)}")
 
