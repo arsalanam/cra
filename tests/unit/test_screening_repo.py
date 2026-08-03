@@ -71,7 +71,7 @@ async def test_record_rejects_cross_deployment_site(
     clinical_session: AsyncSession,
 ) -> None:
     dep1, _ = await _seed_deployment(clinical_session)
-    dep2, site2 = await _seed_deployment(clinical_session)
+    _dep2, site2 = await _seed_deployment(clinical_session)
     repo = ClinicalRepository(clinical_session)
     with pytest.raises(ClinicalError, match="not found in deployment"):
         await repo.record_screening(

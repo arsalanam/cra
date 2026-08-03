@@ -469,7 +469,7 @@ Cross-cutting infrastructure (auth, RBAC, library, budget tracking, portfolio da
 
 ## What's next
 
-The platform's strategic + tactical pickable backlog lives in **[roadmap.md](roadmap.md)**, organised in the same two-part shape:
+The platform's strategic + tactical pickable backlog lives in **[roadmap.md](../roadmap.md)**, organised in the same two-part shape:
 
 1. **Strategic initiatives** — large next steps that each open a new customer segment (EHR / FHIR / OMOP integration for real-world evidence; Pharmacovigilance / post-market AE tracking; HTA / payer-grade dossier generation; Central imaging upload + adjudicated review; DSMB / DMC charter + blinded views; Research-gap analysis specialist; Press-release / institutional-comms drafter).
 2. **Pickable follow-ups by subsystem** — concrete one-engineer slices we deliberately deferred during the P0 / P1 / P2 sweep, organised so a team member can scan their area and pick.

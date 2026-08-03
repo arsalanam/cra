@@ -9,4 +9,4 @@ class wired into `sources/registry.py` and seeded as a `SourceConfig` row.
 
 from . import fetch_pmc_fulltext, mesh_lookup, search_papers
 
-__all__ = ["search_papers", "mesh_lookup", "fetch_pmc_fulltext"]
+__all__ = ["fetch_pmc_fulltext", "mesh_lookup", "search_papers"]

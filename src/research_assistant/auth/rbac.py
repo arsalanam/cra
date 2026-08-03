@@ -713,10 +713,10 @@ SKILL_PERMISSION: Final[dict[str, Permission]] = {
 
 
 __all__ = [
-    "Permission",
-    "Role",
     "ROLE_PERMISSIONS",
     "SKILL_PERMISSION",
+    "Permission",
+    "Role",
     "ScopeType",
     "assignment_applies",
     "effective_permissions",

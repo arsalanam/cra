@@ -92,7 +92,7 @@ async def test_close_blocked_while_capa_open(
         actor_sub="coord",
     )
     capa = await repo.add_capa(dev.id, action_text="do thing", actor_sub="dm")
-    with pytest.raises(ClinicalError, match="CAPA action.*open"):
+    with pytest.raises(ClinicalError, match=r"CAPA action.*open"):
         await repo.close_deviation(dev.id, actor_sub="pi")
     # Complete the CAPA, then close should succeed.
     await repo.complete_capa(capa.id, actor_sub="dm")

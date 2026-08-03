@@ -87,7 +87,7 @@ def create_citations_router() -> APIRouter:
 
     @router.post("/parse", response_model=ParseResultOut)
     async def parse_upload(
-        file: UploadFile = File(...),  # noqa: B008
+        file: UploadFile = File(...),
         format: str | None = Form(default=None),
     ) -> ParseResultOut:
         """Parse a BibTeX or RIS file. When `format` is omitted, the

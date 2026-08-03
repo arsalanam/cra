@@ -80,7 +80,8 @@ async def test_set_trial_status_no_regression(
     changed = await _set_trial_status(t.id, target="draft", session=db_session)
     assert changed is False
     refreshed = await repo.get_trial(t.id)
-    assert refreshed is not None and refreshed.status == "deployed"
+    assert refreshed is not None
+    assert refreshed.status == "deployed"
 
 
 async def test_set_trial_status_advances_when_eligible(
@@ -93,7 +94,8 @@ async def test_set_trial_status_advances_when_eligible(
     changed = await _set_trial_status(t.id, target="draft", session=db_session)
     assert changed is True
     refreshed = await repo.get_trial(t.id)
-    assert refreshed is not None and refreshed.status == "draft"
+    assert refreshed is not None
+    assert refreshed.status == "draft"
 
 
 async def test_set_trial_status_archived_untouched(
@@ -107,7 +109,8 @@ async def test_set_trial_status_archived_untouched(
         changed = await _set_trial_status(t.id, target=target, session=db_session)
         assert changed is False
     refreshed = await repo.get_trial(t.id)
-    assert refreshed is not None and refreshed.status == "archived"
+    assert refreshed is not None
+    assert refreshed.status == "archived"
 
 
 # ── Ownership transfer ───────────────────────────────────────────────

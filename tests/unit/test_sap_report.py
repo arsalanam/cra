@@ -107,8 +107,10 @@ def test_assembler_picks_up_each_stage() -> None:
     ]
     data = assemble_report_data("thread-2", messages)
     assert data is not None
-    assert data.picot is not None and data.picot.intervention == "drug X"
-    assert data.sample_size is not None and data.sample_size.n_total == 128
+    assert data.picot is not None
+    assert data.picot.intervention == "drug X"
+    assert data.sample_size is not None
+    assert data.sample_size.n_total == 128
     assert data.analysis_plan is not None
     assert data.sap_document is None  # never finalized
     assert "Statistical Analysis Plan" in data.title or "drug X" in data.title

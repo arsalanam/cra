@@ -143,7 +143,8 @@ def test_tte_rejects_both_hr_and_skip_reason() -> None:
 def test_tte_skip_reason_alone_is_valid() -> None:
     result = _tte(hr=None, skip="Single arm — Cox PH requires ≥2 arms.")
     assert result.hazard_ratio is None
-    assert result.skip_reason and "Single arm" in result.skip_reason
+    assert result.skip_reason
+    assert "Single arm" in result.skip_reason
 
 
 def test_tte_rejects_inverted_ci_bounds() -> None:

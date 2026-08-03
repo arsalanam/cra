@@ -25,7 +25,7 @@ class _FakeClient:
     def __init__(self) -> None:
         self.requests: list[dict] = []
 
-    def invoke_model(self, *, modelId: str, body: str) -> dict:  # noqa: N803 (boto3 kwarg name)
+    def invoke_model(self, *, modelId: str, body: str) -> dict:
         req = json.loads(body)
         self.requests.append(req)
         dims = req["dimensions"]

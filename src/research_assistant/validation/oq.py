@@ -116,7 +116,7 @@ def run_oq(
     cmd = list(pytest_executable or [sys.executable, "-m", "pytest"])
     cmd += ["-v", "--tb=no", "--no-header", "-q", *node_ids]
     started = datetime.now(UTC)
-    completed = subprocess.run(
+    completed = subprocess.run(  # noqa: S603 — fixed argv running pytest with internal node IDs
         cmd,
         cwd=str(cwd) if cwd is not None else None,
         capture_output=True,

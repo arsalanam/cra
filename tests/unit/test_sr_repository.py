@@ -76,7 +76,7 @@ async def _seed_project_with_candidate(
 async def test_both_include_promotes_to_included_after_abstract(
     db_session: AsyncSession,
 ) -> None:
-    project, cand, users = await _seed_project_with_candidate(db_session)
+    _project, cand, users = await _seed_project_with_candidate(db_session)
     _, r1, r2, _ = users
     repo = SrReviewRepository(db_session)
 
@@ -109,7 +109,7 @@ async def test_both_include_promotes_to_included_after_abstract(
 async def test_both_exclude_promotes_to_excluded_at_abstract(
     db_session: AsyncSession,
 ) -> None:
-    project, cand, users = await _seed_project_with_candidate(db_session)
+    _project, cand, users = await _seed_project_with_candidate(db_session)
     _, r1, r2, _ = users
     repo = SrReviewRepository(db_session)
 
@@ -139,7 +139,7 @@ async def test_both_exclude_promotes_to_excluded_at_abstract(
 async def test_disagreement_raises_pending_adjudication(
     db_session: AsyncSession,
 ) -> None:
-    project, cand, users = await _seed_project_with_candidate(db_session)
+    _project, cand, users = await _seed_project_with_candidate(db_session)
     _, r1, r2, _ = users
     repo = SrReviewRepository(db_session)
 
@@ -168,7 +168,7 @@ async def test_disagreement_raises_pending_adjudication(
 async def test_adjudicator_decision_locks_phase(db_session: AsyncSession) -> None:
     """When R1/R2 disagree and adjudicator decides, the adjudicator's vote
     overrides — no further R1/R2 churn matters."""
-    project, cand, users = await _seed_project_with_candidate(db_session)
+    _project, cand, users = await _seed_project_with_candidate(db_session)
     _, r1, r2, adj = users
     repo = SrReviewRepository(db_session)
 
@@ -209,7 +209,7 @@ async def test_fulltext_phase_blocked_before_abstract_passes(
     """A reviewer can't write a full-text decision before the abstract
     phase moves the candidate to included_after_abstract — guards against
     out-of-order screening."""
-    project, cand, users = await _seed_project_with_candidate(db_session)
+    _project, cand, users = await _seed_project_with_candidate(db_session)
     _, r1, _, _ = users
     repo = SrReviewRepository(db_session)
     with pytest.raises(SrError, match="finish the abstract phase first"):
@@ -227,7 +227,7 @@ async def test_fulltext_phase_blocked_before_abstract_passes(
 async def test_fulltext_phase_passes_after_abstract_inclusion(
     db_session: AsyncSession,
 ) -> None:
-    project, cand, users = await _seed_project_with_candidate(db_session)
+    _project, cand, users = await _seed_project_with_candidate(db_session)
     _, r1, r2, _ = users
     repo = SrReviewRepository(db_session)
 

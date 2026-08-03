@@ -40,7 +40,7 @@ async def _seed_subject(session: AsyncSession) -> tuple[StudyDeployment, Subject
 async def test_record_grade_3_auto_serious_and_sets_deadline(
     clinical_session: AsyncSession,
 ) -> None:
-    dep, subj = await _seed_subject(clinical_session)
+    _dep, subj = await _seed_subject(clinical_session)
     repo = ClinicalRepository(clinical_session)
     ae = await repo.record_adverse_event(
         subj.id,
@@ -61,7 +61,7 @@ async def test_record_grade_3_auto_serious_and_sets_deadline(
 async def test_record_grade_1_not_serious_no_deadline(
     clinical_session: AsyncSession,
 ) -> None:
-    dep, subj = await _seed_subject(clinical_session)
+    _dep, subj = await _seed_subject(clinical_session)
     repo = ClinicalRepository(clinical_session)
     ae = await repo.record_adverse_event(
         subj.id,
@@ -80,7 +80,7 @@ async def test_record_grade_1_not_serious_no_deadline(
 async def test_hospitalisation_flag_promotes_to_serious(
     clinical_session: AsyncSession,
 ) -> None:
-    dep, subj = await _seed_subject(clinical_session)
+    _dep, subj = await _seed_subject(clinical_session)
     repo = ClinicalRepository(clinical_session)
     ae = await repo.record_adverse_event(
         subj.id,
@@ -101,7 +101,7 @@ async def test_pi_override_to_not_serious_clears_deadline(
 ) -> None:
     """PI can downgrade an auto-classified SAE to not-serious — clearing
     the 24h deadline so the overdue endpoint stops surfacing it."""
-    dep, subj = await _seed_subject(clinical_session)
+    _dep, subj = await _seed_subject(clinical_session)
     repo = ClinicalRepository(clinical_session)
     ae = await repo.record_adverse_event(
         subj.id,
@@ -173,9 +173,9 @@ async def test_list_overdue_serious_aes_filters_correctly(
 async def test_invalid_severity_grade_rejected(
     clinical_session: AsyncSession,
 ) -> None:
-    dep, subj = await _seed_subject(clinical_session)
+    _dep, subj = await _seed_subject(clinical_session)
     repo = ClinicalRepository(clinical_session)
-    with pytest.raises(ClinicalError, match="1.5"):
+    with pytest.raises(ClinicalError, match="1–5"):
         await repo.record_adverse_event(
             subj.id,
             term_text="bad grade",
@@ -189,7 +189,7 @@ async def test_invalid_severity_grade_rejected(
 async def test_mark_reported_clears_deadline_and_is_idempotent(
     clinical_session: AsyncSession,
 ) -> None:
-    dep, subj = await _seed_subject(clinical_session)
+    _dep, subj = await _seed_subject(clinical_session)
     repo = ClinicalRepository(clinical_session)
     ae = await repo.record_adverse_event(
         subj.id,

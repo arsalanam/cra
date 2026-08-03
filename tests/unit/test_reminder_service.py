@@ -166,5 +166,6 @@ async def test_fire_skips_sms_until_twilio_wired(
     assert result.skipped >= 1
     sent_rows = await repo.list_sent_reminders(deployment_id=dep.id)
     sms_rows = [r for r in sent_rows if r.channel == "sms"]
-    assert sms_rows and sms_rows[0].status == "skipped"
+    assert sms_rows
+    assert sms_rows[0].status == "skipped"
     assert "SMS provider not configured" in (sms_rows[0].error or "")

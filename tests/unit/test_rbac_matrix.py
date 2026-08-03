@@ -774,7 +774,7 @@ def test_normalize_unknown_role_returns_none() -> None:
 
 
 @pytest.mark.parametrize(
-    "assignments,expected_subset",
+    ("assignments", "expected_subset"),
     [
         # Single global admin grant
         ([("admin", "global", None)], frozenset(Permission)),

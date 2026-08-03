@@ -40,7 +40,8 @@ async def test_deploy_snapshots_forms_and_audits(clinical_session: AsyncSession)
     )
     forms = await repo.list_deployed_forms(dep.id)
     assert len(forms) == 1
-    assert forms[0].form_name == "demographics" and forms[0].version == 1
+    assert forms[0].form_name == "demographics"
+    assert forms[0].version == 1
     assert '"name": "demographics"' in forms[0].definition_json  # snapshot stored
 
     audit = (

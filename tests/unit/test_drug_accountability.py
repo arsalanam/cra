@@ -197,7 +197,7 @@ async def test_dispense_rejects_exceeding_inventory(
 async def test_dispense_rejects_cross_deployment_subject(
     clinical_session: AsyncSession,
 ) -> None:
-    dep_a, _, subj_a = await _seed_deployment(clinical_session)
+    _dep_a, _, subj_a = await _seed_deployment(clinical_session)
     dep_b = StudyDeployment(research_study_id="rs-2", name="Trial B")
     clinical_session.add(dep_b)
     await clinical_session.flush()

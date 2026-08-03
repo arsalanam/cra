@@ -1,0 +1,38 @@
+# CI: the same quality gates as local development, via the same justfile.
+# `just qa` = tests → coverage (fail_under ratchet) → ruff lint →
+#             format check → mypy strict → security scan (pip-audit over uv.lock).
+# Docker-dependent sandbox tests skip automatically when the image is absent.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv (with cache)
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install just
+        uses: extractions/setup-just@v2
+
+      - name: Sync locked environment
+        run: uv sync --all-extras
+
+      - name: Run all quality gates
+        run: just qa

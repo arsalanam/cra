@@ -23,7 +23,7 @@ def main() -> None:
 
     uvicorn.run(
         "research_assistant.web.app:app",
-        host="0.0.0.0",
+        host="0.0.0.0",  # noqa: S104 — container binds all interfaces by design (compose)
         port=settings.app_port,
         reload=True,
         log_level=settings.log_level,

@@ -73,7 +73,7 @@ def test_kind_to_artefact_slot_covers_5_slots() -> None:
 
 
 @pytest.mark.parametrize(
-    "kind,column",
+    ("kind", "column"),
     [
         ("registration_document", "registration_thread_id"),
         ("irb_document", "irb_thread_id"),

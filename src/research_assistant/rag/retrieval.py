@@ -133,7 +133,7 @@ async def hybrid_search(
 
             dense_result = await session.execute(
                 text(
-                    f"SELECT {_SELECT_COLUMNS} "
+                    f"SELECT {_SELECT_COLUMNS} "  # noqa: S608 — interpolates only the module-level column constant; user input is bound params
                     "FROM passages p JOIN publications pub ON pub.id = p.publication_id "
                     "WHERE p.embedding IS NOT NULL AND p.embedding_model = :ver "
                     "ORDER BY p.embedding <=> (:q)::vector LIMIT :k"
@@ -144,7 +144,7 @@ async def hybrid_search(
 
             sparse_result = await session.execute(
                 text(
-                    f"SELECT {_SELECT_COLUMNS} "
+                    f"SELECT {_SELECT_COLUMNS} "  # noqa: S608 — interpolates only the module-level column constant; user input is bound params
                     "FROM passages p JOIN publications pub ON pub.id = p.publication_id "
                     "WHERE to_tsvector('english', p.text) "
                     "@@ websearch_to_tsquery('english', :q) "

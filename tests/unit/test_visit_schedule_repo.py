@@ -73,8 +73,10 @@ async def test_set_active_deactivates_siblings(
     await repo.set_active_visit_schedule(b.id)
     fetched_a = await clinical_session.get(type(a), a.id)
     fetched_b = await clinical_session.get(type(b), b.id)
-    assert fetched_a is not None and fetched_a.is_active is False
-    assert fetched_b is not None and fetched_b.is_active is True
+    assert fetched_a is not None
+    assert fetched_a.is_active is False
+    assert fetched_b is not None
+    assert fetched_b.is_active is True
 
 
 async def test_get_active_returns_none_when_no_active(
@@ -190,7 +192,8 @@ async def test_generate_uses_baseline_override(
     created = await repo.generate_planned_visits(subj.id, baseline_date=new_baseline)
     assert created[0].planned_date == new_baseline + timedelta(days=14)
     refreshed = await clinical_session.get(Subject, subj.id)
-    assert refreshed is not None and refreshed.baseline_date == new_baseline
+    assert refreshed is not None
+    assert refreshed.baseline_date == new_baseline
 
 
 # ── update_planned_visit ────────────────────────────────────────────────

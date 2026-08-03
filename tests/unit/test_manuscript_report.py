@@ -140,8 +140,10 @@ def test_assembler_picks_up_intake_and_draft() -> None:
     ]
     data = assemble_report_data("thread-2", messages)
     assert data is not None
-    assert data.draft is not None and data.draft.is_final
-    assert data.intake is not None and data.intake.journal_target == "nejm"
+    assert data.draft is not None
+    assert data.draft.is_final
+    assert data.intake is not None
+    assert data.intake.journal_target == "nejm"
     # Title flows from the draft
     assert "Proton pump inhibitors" in data.title
 

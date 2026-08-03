@@ -100,7 +100,8 @@ async def test_archive_account_flips_status(
     assert a.status == "active"
     assert await repo.archive_account(a.id) is True
     reloaded = await repo.get_account(a.id)
-    assert reloaded is not None and reloaded.status == "archived"
+    assert reloaded is not None
+    assert reloaded.status == "archived"
 
 
 # ── Members ─────────────────────────────────────────────────────────────
@@ -222,7 +223,8 @@ async def test_update_trial_status_lifecycle(
     t = await repo.create_trial(a.id, title="x")
     for s in ("draft", "deployed", "locked", "archived"):
         updated = await repo.update_trial(t.id, status=s)
-        assert updated is not None and updated.status == s
+        assert updated is not None
+        assert updated.status == s
 
 
 async def test_list_trials_filters_by_status(
@@ -303,7 +305,8 @@ async def test_resolve_trial_for_ecrf_study_returns_trial(
     db_session.add(study)
     await db_session.flush()
     resolved = await repo.resolve_trial_for_ecrf_study(study.id)
-    assert resolved is not None and resolved.id == t.id
+    assert resolved is not None
+    assert resolved.id == t.id
 
 
 async def test_resolve_trial_for_ecrf_study_returns_none_legacy(

@@ -38,7 +38,7 @@ def test_deployment_ref_view_round_trip() -> None:
 
 
 def test_deployment_ref_view_rejects_extra_fields() -> None:
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="Extra inputs are not permitted"):
         DeploymentRefView.model_validate(
             {"deployment_id": "d", "name": "n", "is_locked": False, "extra": 1}
         )

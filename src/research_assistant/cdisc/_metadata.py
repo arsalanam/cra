@@ -333,9 +333,9 @@ DOMAIN_METADATA: dict[str, DatasetMeta] = {d.name: d for d in DATASETS}
 
 
 __all__ = [
-    "CL_AESEV",
     "CL_AEOUT",
     "CL_AEREL",
+    "CL_AESEV",
     "CL_AVALU",
     "CL_CNSR",
     "CL_EXROUTE",
@@ -348,8 +348,6 @@ __all__ = [
     "CL_VSTESTCD",
     "DATASETS",
     "DOMAIN_METADATA",
-    "DatasetMeta",
-    "ColumnMeta",
     "M_ADTTE_AVAL",
     "M_ADTTE_CNSR",
     "M_AGEGR1",
@@ -357,4 +355,6 @@ __all__ = [
     "M_LBNRIND",
     "M_MHONGO",
     "M_SAFFL",
+    "ColumnMeta",
+    "DatasetMeta",
 ]

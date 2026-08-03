@@ -44,8 +44,8 @@ OutcomeType = Literal["two_proportions", "two_means", "time_to_event", "paired"]
 def _inflate_for_dropout(n: float, dropout_rate: float) -> int:
     """Inflate a per-arm N by the anticipated attrition rate."""
     if dropout_rate <= 0:
-        return int(math.ceil(n))
-    return int(math.ceil(n / (1.0 - dropout_rate)))
+        return math.ceil(n)
+    return math.ceil(n / (1.0 - dropout_rate))
 
 
 def _z(alpha: float, power: float, one_sided: bool) -> tuple[float, float]:
@@ -245,7 +245,7 @@ def sample_size_time_to_event(
         "outcome_type": "time_to_event",
         "n_per_arm_control": _inflate_for_dropout(n_control_raw, dropout_rate),
         "n_per_arm_intervention": _inflate_for_dropout(n_intervention_raw, dropout_rate),
-        "events_required": int(math.ceil(events)),
+        "events_required": math.ceil(events),
         "formula_name": "Schoenfeld events + Freedman N (proportional hazards)",
         "formula_reference": (
             "Schoenfeld DA. Sample-size formula for the proportional-hazards "

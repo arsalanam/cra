@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from xml.etree import ElementTree as ET
 
+from defusedxml import ElementTree as DET
+
 from research_assistant.cdisc.define_xml import build_define_xml
 
 _NS_ODM = "http://www.cdisc.org/ns/odm/v1.3"
@@ -11,13 +13,13 @@ _NS_DEF = "http://www.cdisc.org/ns/def/v2.1"
 
 
 def _doc() -> ET.Element:
-    return ET.fromstring(build_define_xml(study_id="RS-1"))
+    return DET.fromstring(build_define_xml(study_id="RS-1"))
 
 
 def test_xml_is_well_formed() -> None:
     bytes_out = build_define_xml(study_id="RS-1")
     assert bytes_out.startswith(b"<?xml")
-    ET.fromstring(bytes_out)  # raises if not well-formed
+    DET.fromstring(bytes_out)  # raises if not well-formed
 
 
 def test_root_is_odm_element_with_correct_namespaces() -> None:
@@ -55,7 +57,8 @@ def test_dm_itemgroupdef_has_key_variables() -> None:
     assert dm is not None
     item_refs = dm.findall(f"./{{{_NS_ODM}}}ItemRef")
     key_seqs = {ref.get("KeySequence") for ref in item_refs if ref.get("KeySequence")}
-    assert "1" in key_seqs and "2" in key_seqs  # STUDYID + USUBJID
+    assert "1" in key_seqs  # STUDYID
+    assert "2" in key_seqs  # USUBJID
 
 
 def test_itemdef_count_matches_total_columns() -> None:

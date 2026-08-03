@@ -91,7 +91,7 @@ def generate_simple(
     ratio_l = _validated_ratio(arms_l, ratio)
     if n < 0:
         raise ValueError(f"n must be >= 0; got {n}.")
-    rng = random.Random(seed)
+    rng = random.Random(seed)  # noqa: S311 — seeded reproducible treatment allocation, not cryptographic
     weighted_arms = _expand_ratio_to_arms(arms_l, ratio_l)
     return [rng.choice(weighted_arms) for _ in range(n)]
 
@@ -152,7 +152,7 @@ def generate_permuted_block(
     if n < 0:
         raise ValueError(f"n must be >= 0; got {n}.")
 
-    rng = random.Random(seed)
+    rng = random.Random(seed)  # noqa: S311 — seeded reproducible treatment allocation, not cryptographic
     out: list[str] = []
     while len(out) < n:
         bs = rng.choice(block_sizes_l)
@@ -265,7 +265,7 @@ def pocock_simon_choose_arm(
     min_score = min(s for _, s in scores)
     minimisers = [a for a, s in scores if s == min_score]
 
-    rng = random.Random(seed)
+    rng = random.Random(seed)  # noqa: S311 — seeded reproducible treatment allocation, not cryptographic
     if probabilistic_p < 1.0 and rng.random() > probabilistic_p:
         # Fall back to a uniform random arm.
         chosen = rng.choice(arms_l)

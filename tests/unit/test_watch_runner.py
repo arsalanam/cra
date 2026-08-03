@@ -139,7 +139,8 @@ async def test_no_change_when_no_new_pmids(
         assert runs[0].status == "no_change"
         assert runs[0].total_hits == 2
         fresh = await repo.get_watch(watch_id)
-        assert fresh is not None and fresh.last_run_status == "no_change"
+        assert fresh is not None
+        assert fresh.last_run_status == "no_change"
 
 
 @pytest.mark.asyncio

@@ -90,13 +90,17 @@ docker compose -f deploy/compose/docker-compose.yml down
 
 # Tests + tooling (no Docker needed)
 uv run pytest                    # in-memory SQLite, async-mode auto
-uv run ruff check src tests
-uv run ruff format src tests
+uv run ruff check src tests scripts
+uv run ruff format src tests scripts
 uv run mypy src                  # strict mode
 
 # Migrate the legacy SQLite threads.db into the compose Postgres (one-shot)
 uv run python scripts/migrate_sqlite_to_postgres.py
 ```
+
+**Quality gates:** the `justfile` is the source of truth — `just qa` = tests → coverage (`fail_under` ratchet in pyproject) → ruff lint → format check → mypy strict → pip-audit. CI (`.github/workflows/ci.yml`) runs exactly `just qa`; keep them in lockstep by only ever editing the justfile. `just up/logs/down` wrap the compose commands above.
+
+**Docs layout:** `docs/README.md` is the index. Design docs live in `docs/design/` (architecture, rbac, ecrf), user guides in `docs/guides/`, trackers at `docs/trial-readiness.md` + `docs/roadmap.md` (moved from repo root 2026-08-03).
 
 `tests/conftest.py` sets env defaults for AWS, model id, in-memory SQLite, Tavily key. `db_session` fixture gives each test a fresh in-memory DB. The runtime app uses Postgres — `DATABASE_URL` defaults to the compose-network hostname.
 

@@ -24,14 +24,14 @@ import matplotlib
 
 matplotlib.use("Agg")
 
-import matplotlib.pyplot as plt  # noqa: E402
-import numpy as np  # noqa: E402
-from reportlab.lib import colors  # noqa: E402
-from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY, TA_LEFT  # noqa: E402
-from reportlab.lib.pagesizes import LETTER  # noqa: E402
-from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet  # noqa: E402
-from reportlab.lib.units import inch  # noqa: E402
-from reportlab.platypus import (  # noqa: E402
+import matplotlib.pyplot as plt
+import numpy as np
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY, TA_LEFT
+from reportlab.lib.pagesizes import LETTER
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.units import inch
+from reportlab.platypus import (
     BaseDocTemplate,
     Frame,
     Image,
@@ -46,8 +46,8 @@ from reportlab.platypus import (  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 HERO_PATH = ROOT / "scripts" / "_hero.png"
-SOURCE_MD = ROOT / "feature-guide.md"
-OUT_PATH = ROOT / "feature-guide.pdf"
+SOURCE_MD = ROOT / "docs" / "guides" / "feature-guide.md"
+OUT_PATH = ROOT / "docs" / "guides" / "feature-guide.pdf"
 
 # ── Brand palette ──────────────────────────────────────────────────────────
 NAVY = colors.HexColor("#0F2A47")
@@ -365,9 +365,7 @@ def _inline(s: str) -> str:
     s = _BOLD_RE.sub(lambda m: _stash(f"<b>{m.group(1)}</b>"), s)
     s = _ITALIC_RE.sub(lambda m: _stash(f"<i>{m.group(1)}</i>"), s)
     s = _CODE_RE.sub(
-        lambda m: _stash(
-            f'<font name="Courier" color="#1E6E8C">{html.escape(m.group(1))}</font>'
-        ),
+        lambda m: _stash(f'<font name="Courier" color="#1E6E8C">{html.escape(m.group(1))}</font>'),
         s,
     )
     s = _LINK_RE.sub(
@@ -449,8 +447,10 @@ def parse_markdown(md: str) -> list[Block]:
                 i += 1
             blocks.append(Block("bullet", items=items))
             continue
-        if stripped.startswith("|") and i + 1 < len(lines) and re.match(
-            r"^\s*\|?\s*:?-+", lines[i + 1]
+        if (
+            stripped.startswith("|")
+            and i + 1 < len(lines)
+            and re.match(r"^\s*\|?\s*:?-+", lines[i + 1])
         ):
             header = [c.strip() for c in stripped.strip("|").split("|")]
             i += 2  # skip header + separator
@@ -459,7 +459,7 @@ def parse_markdown(md: str) -> list[Block]:
                 row_cells = [c.strip() for c in lines[i].strip().strip("|").split("|")]
                 rows.append(row_cells)
                 i += 1
-            blocks.append(Block("table", rows=[header] + rows))
+            blocks.append(Block("table", rows=[header, *rows]))
             continue
         # Paragraph — collect contiguous non-empty non-special lines
         para_lines = [stripped]
@@ -468,9 +468,9 @@ def parse_markdown(md: str) -> list[Block]:
             ln = lines[i].rstrip()
             if not ln.strip():
                 break
-            if ln.lstrip().startswith(
-                ("#", "- ", "* ", "|", "> ", "---")
-            ) or (ln.strip().startswith("---") and set(ln.strip()) == {"-"}):
+            if ln.lstrip().startswith(("#", "- ", "* ", "|", "> ", "---")) or (
+                ln.strip().startswith("---") and set(ln.strip()) == {"-"}
+            ):
                 break
             para_lines.append(ln.strip())
             i += 1
@@ -484,10 +484,7 @@ def md_table(rows: list[list[str]]) -> Table:
     avail = LETTER[0] - 1.2 * inch
     # First column gets a bit more weight when there are 2 columns
     # (matches the "Differentiator | Why it matters" pattern).
-    if n_cols == 2:
-        col_widths = [avail * 0.35, avail * 0.65]
-    else:
-        col_widths = [avail / n_cols] * n_cols
+    col_widths = [avail * 0.35, avail * 0.65] if n_cols == 2 else [avail / n_cols] * n_cols
     data: list[list[Paragraph]] = []
     for ri, row in enumerate(rows):
         cells = []

@@ -155,7 +155,7 @@ def test_site_check_honours_global_only_in_rbac1() -> None:
 
 
 @pytest.mark.parametrize(
-    "scope_type,scope_id,check_study,check_site,expected",
+    ("scope_type", "scope_id", "check_study", "check_site", "expected"),
     [
         # global always applies
         (ScopeType.GLOBAL.value, None, None, None, True),

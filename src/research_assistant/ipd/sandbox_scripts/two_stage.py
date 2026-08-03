@@ -105,7 +105,7 @@ def _per_trial_tte(
         se = float(fit.bse[0])
         return {
             "trial_id": trial_id,
-            "n_subjects": int(len(sub)),
+            "n_subjects": len(sub),
             "log_effect": coef,
             "var": se**2,
         }

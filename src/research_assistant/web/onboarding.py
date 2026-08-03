@@ -262,8 +262,7 @@ def create_onboarding_router() -> APIRouter:
             holds_role = any(
                 a.scope_type == "global"
                 or (a.scope_type == "study" and a.scope_id in study_ids)
-                or a.scope_type == "trial"
-                and a.scope_id == body.trial_id
+                or (a.scope_type == "trial" and a.scope_id == body.trial_id)
                 for a in assignments
             )
             if not holds_role:
