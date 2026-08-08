@@ -24,6 +24,7 @@ workflow.
 from __future__ import annotations
 
 import asyncio
+import itertools
 import json
 import logging
 import math
@@ -458,6 +459,72 @@ def sample_size_paired(
 # ── Agent tool registration ──────────────────────────────────────────────
 
 
+def sample_size_sensitivity(
+    *,
+    outcome_type: str,
+    base_params: dict[str, Any],
+    vary: dict[str, list[Any]],
+    max_combinations: int = 100,
+) -> dict[str, Any]:
+    """Sample-size grid over combinations of varied design parameters.
+
+    `base_params` are the fixed inputs for `outcome_type` (same shape as
+    the sample_size tool's `params`); `vary` maps a parameter name to the
+    list of values to sweep (e.g. {"alpha": [0.05, 0.025], "power": [0.8,
+    0.9], "dropout_rate": [0.0, 0.1, 0.2]}). Every element of the Cartesian
+    product is evaluated through the SAME closed-form dispatcher as a
+    single-point run, so the grid is exactly consistent with the scalar
+    tool — reviewers (IRB / sponsor) get the α/β/dropout/effect
+    sensitivity table they routinely ask for without a re-run cycle.
+
+    Returns {outcome_type, varied, rows, truncated}. Each row carries the
+    swept `params` plus n_per_arm_control / n_per_arm_intervention /
+    n_total / events_required — or an `error` string when that cell is
+    infeasible (e.g. a non-inferiority effect outside the margin), so one
+    bad combination never sinks the whole grid. `truncated` is True when
+    the product exceeded `max_combinations` (the tail is dropped, not
+    silently — callers should surface it).
+    """
+    if not vary:
+        raise ValueError("`vary` must map at least one parameter to a non-empty list.")
+    keys = sorted(vary)
+    if any(not vary[k] for k in keys):
+        raise ValueError("every `vary` entry must be a non-empty list of values.")
+    combos = list(itertools.product(*(vary[k] for k in keys)))
+    truncated = len(combos) > max_combinations
+    combos = combos[:max_combinations]
+
+    rows: list[dict[str, Any]] = []
+    for combo in combos:
+        overrides = dict(zip(keys, combo, strict=True))
+        row: dict[str, Any] = {"params": overrides}
+        try:
+            result = _dispatch(outcome_type, {**base_params, **overrides})
+        except KeyError as e:
+            row["error"] = f"Missing required parameter: {e}"
+            rows.append(row)
+            continue
+        except ValueError as e:
+            row["error"] = str(e)
+            rows.append(row)
+            continue
+        if "error" in result:
+            row["error"] = result["error"]
+        else:
+            row["n_per_arm_control"] = result["n_per_arm_control"]
+            row["n_per_arm_intervention"] = result["n_per_arm_intervention"]
+            row["n_total"] = result["n_total"]
+            row["events_required"] = result.get("events_required")
+        rows.append(row)
+
+    return {
+        "outcome_type": outcome_type,
+        "varied": keys,
+        "rows": rows,
+        "truncated": truncated,
+    }
+
+
 def _dispatch(outcome_type: str, params: dict[str, Any]) -> dict[str, Any]:
     """Dispatch on outcome_type to the right closed-form helper."""
     if outcome_type == "two_proportions":
@@ -566,12 +633,59 @@ def register(agent: Agent[AgentDeps]) -> None:
             impl=_impl,
         )
 
+    @agent.tool
+    async def sample_size_grid(
+        ctx: RunContext[AgentDeps],
+        outcome_type: OutcomeType,
+        base_params: dict[str, Any],
+        vary: dict[str, list[Any]],
+    ) -> str:
+        """
+        Sensitivity table: sample size across combinations of design inputs.
+
+        Same `outcome_type` + `base_params` as the `sample_size` tool, plus
+        `vary` — a map of parameter name → list of values to sweep. The
+        Cartesian product is evaluated (capped at 100 cells) with the same
+        closed forms, so the grid is exactly consistent with a single-point
+        run. Use this for the α / β / dropout / effect sensitivity table
+        that IRBs and sponsors ask for.
+
+        Example vary: {"alpha": [0.05, 0.025], "power": [0.8, 0.9],
+        "dropout_rate": [0.0, 0.1, 0.2]}.
+
+        Returns JSON {outcome_type, varied, rows[], truncated}; a cell that
+        is infeasible carries an `error` instead of counts.
+        """
+
+        async def _impl() -> str:
+            try:
+                result = await asyncio.to_thread(
+                    lambda: sample_size_sensitivity(
+                        outcome_type=outcome_type,
+                        base_params=base_params,
+                        vary=vary,
+                    )
+                )
+            except ValueError as e:
+                return json.dumps({"error": str(e)})
+            return json.dumps(result, ensure_ascii=False)
+
+        return await emit_run(
+            ctx,
+            tool="sample_size_grid",
+            icon="🧮",
+            args={"outcome_type": outcome_type, "varied": sorted(vary)},
+            description=f"Sample-size sensitivity grid for {outcome_type}",
+            impl=_impl,
+        )
+
 
 __all__ = [
     "Hypothesis",
     "OutcomeType",
     "register",
     "sample_size_paired",
+    "sample_size_sensitivity",
     "sample_size_time_to_event",
     "sample_size_two_means",
     "sample_size_two_proportions",

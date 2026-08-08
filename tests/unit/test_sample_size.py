@@ -12,6 +12,7 @@ import pytest
 
 from research_assistant.tools.data_science.sample_size import (
     sample_size_paired,
+    sample_size_sensitivity,
     sample_size_time_to_event,
     sample_size_two_means,
     sample_size_two_proportions,
@@ -296,3 +297,83 @@ def test_equivalence_two_means_more_than_ni() -> None:
         margin=0.5,
     )
     assert equiv["n_per_arm_control"] > ni["n_per_arm_control"]
+
+
+# ── Sensitivity grid ─────────────────────────────────────────────────────
+
+
+def test_sensitivity_grid_covers_full_product() -> None:
+    grid = sample_size_sensitivity(
+        outcome_type="two_proportions",
+        base_params={"p_control": 0.10, "p_intervention": 0.05},
+        vary={"power": [0.80, 0.90], "dropout_rate": [0.0, 0.20]},
+    )
+    assert grid["varied"] == ["dropout_rate", "power"]  # sorted
+    assert grid["truncated"] is False
+    assert len(grid["rows"]) == 4  # 2 x 2
+    # Every row echoes its swept params + a total.
+    for row in grid["rows"]:
+        assert set(row["params"]) == {"power", "dropout_rate"}
+        assert row["n_total"] >= 2
+
+
+def test_sensitivity_grid_matches_single_point_run() -> None:
+    """A grid cell must equal the scalar tool for the same inputs — the
+    whole point is one consistent closed form."""
+    base = {"p_control": 0.10, "p_intervention": 0.05}
+    grid = sample_size_sensitivity(
+        outcome_type="two_proportions",
+        base_params=base,
+        vary={"power": [0.90]},
+    )
+    scalar = sample_size_two_proportions(**base, power=0.90)  # type: ignore[arg-type]
+    assert grid["rows"][0]["n_total"] == scalar["n_total"]
+
+
+def test_sensitivity_grid_monotonic_in_power() -> None:
+    grid = sample_size_sensitivity(
+        outcome_type="two_means",
+        base_params={"mean_control": 0.0, "mean_intervention": 0.5, "standard_deviation": 1.0},
+        vary={"power": [0.80, 0.90, 0.95]},
+    )
+    totals = [r["n_total"] for r in grid["rows"]]
+    assert totals == sorted(totals)  # more power → more N
+
+
+def test_sensitivity_grid_infeasible_cell_carries_error_not_crash() -> None:
+    """A non-inferiority sweep where some margins are smaller than the
+    assumed true gap must mark only those cells as errors."""
+    grid = sample_size_sensitivity(
+        outcome_type="two_proportions",
+        base_params={
+            "p_control": 0.10,
+            "p_intervention": 0.15,  # true gap 0.05
+            "hypothesis": "non_inferiority",
+            "alpha": 0.025,
+        },
+        vary={"margin": [0.04, 0.10]},  # 0.04 < gap → infeasible; 0.10 ok
+    )
+    by_margin = {row["params"]["margin"]: row for row in grid["rows"]}
+    assert "error" in by_margin[0.04]
+    assert "Infeasible" in by_margin[0.04]["error"]
+    assert by_margin[0.10]["n_total"] >= 2
+
+
+def test_sensitivity_grid_truncates_and_flags() -> None:
+    grid = sample_size_sensitivity(
+        outcome_type="two_proportions",
+        base_params={"p_control": 0.10, "p_intervention": 0.05},
+        vary={"power": [0.80, 0.85, 0.90]},
+        max_combinations=2,
+    )
+    assert grid["truncated"] is True
+    assert len(grid["rows"]) == 2
+
+
+def test_sensitivity_grid_rejects_empty_vary() -> None:
+    with pytest.raises(ValueError, match="at least one parameter"):
+        sample_size_sensitivity(
+            outcome_type="two_proportions",
+            base_params={"p_control": 0.10, "p_intervention": 0.05},
+            vary={},
+        )
