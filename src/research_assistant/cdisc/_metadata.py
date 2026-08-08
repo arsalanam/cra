@@ -252,6 +252,29 @@ _MH = DatasetMeta(
     ),
 )
 
+_DA = DatasetMeta(
+    name="DA",
+    label="Drug Accountability",
+    structure="One record per accountability finding per subject",
+    purpose="Tabulation",
+    klass="FINDINGS",
+    key_vars=("STUDYID", "USUBJID", "DASEQ"),
+    columns=(
+        ColumnMeta("STUDYID", "CHAR", 20, "Study Identifier", mandatory=True),
+        ColumnMeta("DOMAIN", "CHAR", 2, "Domain Abbreviation", mandatory=True),
+        ColumnMeta("USUBJID", "CHAR", 40, "Unique Subject Identifier", mandatory=True),
+        ColumnMeta("DASEQ", "NUM", 8, "Sequence Number", mandatory=True),
+        ColumnMeta("DAREFID", "CHAR", 40, "Reference ID"),
+        ColumnMeta("DATESTCD", "CHAR", 8, "Drug Accountability Test Short Name"),
+        ColumnMeta("DATEST", "CHAR", 40, "Drug Accountability Test Name"),
+        ColumnMeta("DAORRES", "CHAR", 20, "Result or Finding as Collected"),
+        ColumnMeta("DAORRESU", "CHAR", 20, "Original Units"),
+        ColumnMeta("DASTRESN", "NUM", 8, "Numeric Result/Finding in Standard Units"),
+        ColumnMeta("DASTRESU", "CHAR", 20, "Standard Units"),
+        ColumnMeta("DADTC", "CHAR", 30, "Date/Time of Collection"),
+    ),
+)
+
 _ADSL = DatasetMeta(
     name="ADSL",
     label="Subject-Level Analysis Dataset",
@@ -328,7 +351,7 @@ _ADTTE = DatasetMeta(
 )
 
 
-DATASETS: tuple[DatasetMeta, ...] = (_DM, _AE, _VS, _LB, _EX, _CM, _MH, _ADSL, _ADTTE)
+DATASETS: tuple[DatasetMeta, ...] = (_DM, _AE, _VS, _LB, _EX, _CM, _MH, _DA, _ADSL, _ADTTE)
 DOMAIN_METADATA: dict[str, DatasetMeta] = {d.name: d for d in DATASETS}
 
 

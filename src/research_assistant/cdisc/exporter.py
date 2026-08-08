@@ -40,6 +40,7 @@ from ..persistence.clinical.models import (
     AdamAdtte,
     SdtmAe,
     SdtmCm,
+    SdtmDa,
     SdtmDm,
     SdtmEx,
     SdtmLb,
@@ -174,6 +175,20 @@ _MH_COLUMNS = [
     "MHENDTC",
     "MHONGO",
 ]
+_DA_COLUMNS = [
+    "STUDYID",
+    "DOMAIN",
+    "USUBJID",
+    "DASEQ",
+    "DAREFID",
+    "DATESTCD",
+    "DATEST",
+    "DAORRES",
+    "DAORRESU",
+    "DASTRESN",
+    "DASTRESU",
+    "DADTC",
+]
 _ADTTE_COLUMNS = [
     "STUDYID",
     "USUBJID",
@@ -234,6 +249,10 @@ def mh_to_csv(records: Iterable[SdtmMh]) -> bytes:
     return _records_to_csv(_MH_COLUMNS, records)
 
 
+def da_to_csv(records: Iterable[SdtmDa]) -> bytes:
+    return _records_to_csv(_DA_COLUMNS, records)
+
+
 def adtte_to_csv(records: Iterable[AdamAdtte]) -> bytes:
     return _records_to_csv(_ADTTE_COLUMNS, records)
 
@@ -267,6 +286,10 @@ def cm_to_xpt(records: Iterable[SdtmCm]) -> bytes:
 
 def mh_to_xpt(records: Iterable[SdtmMh]) -> bytes:
     return write_xpt(DOMAIN_METADATA["MH"], records)
+
+
+def da_to_xpt(records: Iterable[SdtmDa]) -> bytes:
+    return write_xpt(DOMAIN_METADATA["DA"], records)
 
 
 def adsl_to_xpt(records: Iterable[AdamAdsl]) -> bytes:
@@ -305,6 +328,7 @@ def build_submission_bundle(
     ex: list[SdtmEx] | None = None,
     cm: list[SdtmCm] | None = None,
     mh: list[SdtmMh] | None = None,
+    da: list[SdtmDa] | None = None,
     adtte: list[AdamAdtte] | None = None,
 ) -> bytes:
     """Build the deployment's submission bundle as a ZIP bytes payload.
@@ -317,6 +341,7 @@ def build_submission_bundle(
     ex_records = ex or []
     cm_records = cm or []
     mh_records = mh or []
+    da_records = da or []
     adtte_records = adtte or []
     ts = (triggered_at or datetime.now(UTC)).strftime("%Y-%m-%dT%H:%M:%SZ")
     manifest_lines = [
@@ -332,6 +357,7 @@ def build_submission_bundle(
         f"  SDTM EX:  {len(ex_records)}",
         f"  SDTM CM:  {len(cm_records)}",
         f"  SDTM MH:  {len(mh_records)}",
+        f"  SDTM DA:  {len(da_records)}",
         f"  ADaM ADSL: {len(adsl)}",
         f"  ADaM ADTTE: {len(adtte_records)}",
         f"  TLF artefacts: {len(tlfs)}",
@@ -370,6 +396,7 @@ def build_submission_bundle(
         z.writestr("sdtm/ex.csv", ex_to_csv(ex_records))
         z.writestr("sdtm/cm.csv", cm_to_csv(cm_records))
         z.writestr("sdtm/mh.csv", mh_to_csv(mh_records))
+        z.writestr("sdtm/da.csv", da_to_csv(da_records))
         z.writestr("adam/adsl.csv", adsl_to_csv(adsl))
         z.writestr("adam/adtte.csv", adtte_to_csv(adtte_records))
 
@@ -381,6 +408,7 @@ def build_submission_bundle(
         z.writestr("sdtm/ex.xpt", ex_to_xpt(ex_records))
         z.writestr("sdtm/cm.xpt", cm_to_xpt(cm_records))
         z.writestr("sdtm/mh.xpt", mh_to_xpt(mh_records))
+        z.writestr("sdtm/da.xpt", da_to_xpt(da_records))
         z.writestr("adam/adsl.xpt", adsl_to_xpt(adsl))
         z.writestr("adam/adtte.xpt", adtte_to_xpt(adtte_records))
 
@@ -405,6 +433,8 @@ __all__ = [
     "build_submission_bundle",
     "cm_to_csv",
     "cm_to_xpt",
+    "da_to_csv",
+    "da_to_xpt",
     "dm_to_csv",
     "dm_to_xpt",
     "ex_to_csv",

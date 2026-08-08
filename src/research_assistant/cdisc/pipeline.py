@@ -24,10 +24,14 @@ from ..persistence.clinical.models import (
     Allocation,
     CdiscDerivation,
     DeployedForm,
+    DrugDispensation,
+    DrugReturn,
     FormInstance,
+    InvestigationalProduct,
     ItemData,
     SdtmAe,
     SdtmCm,
+    SdtmDa,
     SdtmDm,
     SdtmEx,
     SdtmLb,
@@ -200,6 +204,33 @@ async def run_derivation(
     )
     item_data_by_subject = await _gather_item_data(session, subjects)
 
+    # Drug accountability (SDTM DA) source rows: dispensations + returns +
+    # the IP catalogue for units.
+    dispensations: list[DrugDispensation] = list(
+        (
+            await session.scalars(
+                select(DrugDispensation).where(DrugDispensation.deployment_id == deployment_id)
+            )
+        ).all()
+    )
+    drug_returns: list[DrugReturn] = list(
+        (
+            await session.scalars(
+                select(DrugReturn).where(DrugReturn.deployment_id == deployment_id)
+            )
+        ).all()
+    )
+    units_by_ip_id: dict[str, str] = {
+        ip.id: ip.units
+        for ip in (
+            await session.scalars(
+                select(InvestigationalProduct).where(
+                    InvestigationalProduct.deployment_id == deployment_id
+                )
+            )
+        ).all()
+    }
+
     # IRT (E8): pull Allocation rows so ADSL/ADTTE can populate
     # TRT01P / TRT01A from the audited randomisation assignment rather
     # than the "TBD" placeholder. Map subject_id → Allocation.
@@ -239,6 +270,7 @@ async def run_derivation(
         SdtmEx,
         SdtmCm,
         SdtmMh,
+        SdtmDa,
         AdamAdsl,
         AdamAdtte,
         TlfArtefact,
@@ -328,6 +360,14 @@ async def run_derivation(
         form_instances=form_instances_by_domain.get("MH", []),
         config=cfg,
     )
+    da = mapper.derive_da(
+        deployment_id=deployment_id,
+        study_id=study_id,
+        dispensations=dispensations,
+        returns=drug_returns,
+        subjects_by_id=subjects_by_id,
+        units_by_ip_id=units_by_ip_id,
+    )
     adsl = derive_adsl(
         deployment_id=deployment_id,
         study_id=study_id,
@@ -356,6 +396,7 @@ async def run_derivation(
     session.add_all(ex)
     session.add_all(cm)
     session.add_all(mh)
+    session.add_all(da)
     session.add_all(adsl)
     session.add_all(adtte)
     session.add_all(tlfs)
@@ -368,6 +409,7 @@ async def run_derivation(
         "ex": len(ex),
         "cm": len(cm),
         "mh": len(mh),
+        "da": len(da),
         "adsl": len(adsl),
         "adtte": len(adtte),
         "tlf": len(tlfs),
@@ -558,12 +600,27 @@ async def fetch_mh(session: AsyncSession, deployment_id: str) -> list[SdtmMh]:
     )
 
 
+async def fetch_da(session: AsyncSession, deployment_id: str) -> list[SdtmDa]:
+    return list(
+        (
+            await session.execute(
+                select(SdtmDa)
+                .where(SdtmDa.deployment_id == deployment_id)
+                .order_by(SdtmDa.USUBJID, SdtmDa.DASEQ)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
 __all__ = [
     "DerivationResult",
     "fetch_adsl",
     "fetch_adtte",
     "fetch_ae",
     "fetch_cm",
+    "fetch_da",
     "fetch_dm",
     "fetch_ex",
     "fetch_lb",

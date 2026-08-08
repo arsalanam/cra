@@ -2095,6 +2095,7 @@ def create_edc_router() -> APIRouter:
             fetch_adtte,
             fetch_ae,
             fetch_cm,
+            fetch_da,
             fetch_dm,
             fetch_ex,
             fetch_lb,
@@ -2121,6 +2122,8 @@ def create_edc_router() -> APIRouter:
                 rows = list(await fetch_cm(s, deployment_id))
             elif domain_upper == "MH":
                 rows = list(await fetch_mh(s, deployment_id))
+            elif domain_upper == "DA":
+                rows = list(await fetch_da(s, deployment_id))
             elif domain_upper == "ADSL":
                 rows = list(await fetch_adsl(s, deployment_id))
             elif domain_upper == "ADTTE":
@@ -2129,7 +2132,7 @@ def create_edc_router() -> APIRouter:
                 raise HTTPException(
                     400,
                     f"Unknown domain {domain!r}. Choose one of: "
-                    "DM, AE, VS, LB, EX, CM, MH, ADSL, ADTTE.",
+                    "DM, AE, VS, LB, EX, CM, MH, DA, ADSL, ADTTE.",
                 )
         return {
             "domain": domain_upper,
@@ -2157,6 +2160,7 @@ def create_edc_router() -> APIRouter:
             adtte_to_csv,
             ae_to_csv,
             cm_to_csv,
+            da_to_csv,
             dm_to_csv,
             ex_to_csv,
             lb_to_csv,
@@ -2168,6 +2172,7 @@ def create_edc_router() -> APIRouter:
             fetch_adtte,
             fetch_ae,
             fetch_cm,
+            fetch_da,
             fetch_dm,
             fetch_ex,
             fetch_lb,
@@ -2191,6 +2196,8 @@ def create_edc_router() -> APIRouter:
                 payload = cm_to_csv(await fetch_cm(s, deployment_id))
             elif domain_upper == "MH":
                 payload = mh_to_csv(await fetch_mh(s, deployment_id))
+            elif domain_upper == "DA":
+                payload = da_to_csv(await fetch_da(s, deployment_id))
             elif domain_upper == "ADSL":
                 payload = adsl_to_csv(await fetch_adsl(s, deployment_id))
             elif domain_upper == "ADTTE":
@@ -2199,7 +2206,7 @@ def create_edc_router() -> APIRouter:
                 raise HTTPException(
                     400,
                     f"Unknown domain {domain!r}. Choose one of: "
-                    "DM, AE, VS, LB, EX, CM, MH, ADSL, ADTTE.",
+                    "DM, AE, VS, LB, EX, CM, MH, DA, ADSL, ADTTE.",
                 )
         return Response(
             content=payload,
@@ -2245,6 +2252,7 @@ def create_edc_router() -> APIRouter:
             fetch_adtte,
             fetch_ae,
             fetch_cm,
+            fetch_da,
             fetch_dm,
             fetch_ex,
             fetch_lb,
@@ -2269,6 +2277,7 @@ def create_edc_router() -> APIRouter:
             ex = await fetch_ex(s, deployment_id)
             cm = await fetch_cm(s, deployment_id)
             mh = await fetch_mh(s, deployment_id)
+            da = await fetch_da(s, deployment_id)
             adsl = await fetch_adsl(s, deployment_id)
             adtte = await fetch_adtte(s, deployment_id)
             tlfs = await fetch_tlfs(s, deployment_id)
@@ -2289,6 +2298,7 @@ def create_edc_router() -> APIRouter:
             ex=ex,
             cm=cm,
             mh=mh,
+            da=da,
             adsl=adsl,
             adtte=adtte,
             tlfs=tlfs,

@@ -875,6 +875,48 @@ class SdtmMh(ClinicalBase):
     derived_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
+class SdtmDa(ClinicalBase):
+    """SDTM Drug Accountability row — one per accountability measurement.
+
+    A Findings-class domain derived from the IP dispense / return records
+    (not from a form). Each DrugDispensation becomes a DISPAMT (Dispensed
+    Amount) row and each DrugReturn a RETURNED (Returned Amount) row, keyed
+    by `DAREFID` = the kit id so a dispense and its return cross-reference.
+    `DATESTCD` values should be validated against the DA test-code CT at
+    deploy — the MVP emits the two amounts that drive reconciliation.
+    """
+
+    __tablename__ = "sdtm_da"
+    __table_args__ = (
+        UniqueConstraint("deployment_id", "USUBJID", "DASEQ", name="uq_sdtm_da_daseq"),
+    )
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    deployment_id: Mapped[str] = mapped_column(Text, index=True)
+    STUDYID: Mapped[str] = mapped_column(Text)
+    DOMAIN: Mapped[str] = mapped_column(Text, default="DA")
+    USUBJID: Mapped[str] = mapped_column(Text, index=True)
+    DASEQ: Mapped[int] = mapped_column(Integer, doc="Sequence number within subject.")
+    DAREFID: Mapped[str | None] = mapped_column(
+        Text, nullable=True, default=None, doc="Reference ID — the kit id."
+    )
+    DATESTCD: Mapped[str] = mapped_column(Text, doc="DISPAMT | RETURNED (DA test code).")
+    DATEST: Mapped[str] = mapped_column(Text, doc="Human-readable test name.")
+    DAORRES: Mapped[str | None] = mapped_column(
+        Text, nullable=True, default=None, doc="Result as collected (character)."
+    )
+    DAORRESU: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    DASTRESN: Mapped[float | None] = mapped_column(
+        Float, nullable=True, default=None, doc="Standardised numeric result."
+    )
+    DASTRESU: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    DADTC: Mapped[str | None] = mapped_column(
+        Text, nullable=True, default=None, doc="Date/time of collection (ISO 8601)."
+    )
+
+    derived_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
 class AdamAdsl(ClinicalBase):
     """ADaM Subject-Level Analysis Dataset — one row per subject.
 

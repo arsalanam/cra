@@ -232,3 +232,108 @@ def test_derive_vs_skips_items_with_no_value() -> None:
         config=ItemMappingConfig(),
     )
     assert rows == []
+
+
+# ── DA (Drug Accountability) ─────────────────────────────────────────────
+
+
+def _disp(**overrides: object) -> Any:
+    base = dict(
+        id="disp-1",
+        subject_id="subj-1",
+        ip_id="ip-1",
+        lot_number="LOT-A",
+        kit_id="KIT-0001",
+        quantity_dispensed=30,
+        dispensed_at=datetime(2026, 2, 1, 9, 0, tzinfo=UTC),
+    )
+    base.update(overrides)
+    return SimpleNamespace(**base)
+
+
+def _ret(**overrides: object) -> Any:
+    base = dict(
+        subject_id="subj-1",
+        dispensation_id="disp-1",
+        kit_id="KIT-0001",
+        quantity_returned=10,
+        returned_at=datetime(2026, 2, 15, 9, 0, tzinfo=UTC),
+    )
+    base.update(overrides)
+    return SimpleNamespace(**base)
+
+
+def test_derive_da_emits_dispensed_and_returned_rows() -> None:
+    mapper = BuiltinPythonMapper()
+    rows = mapper.derive_da(
+        deployment_id="dep-1",
+        study_id="RS-1",
+        dispensations=[_disp()],
+        returns=[_ret()],
+        subjects_by_id={"subj-1": _subject()},
+        units_by_ip_id={"ip-1": "tablet"},
+    )
+    assert len(rows) == 2
+    by_test = {r.DATESTCD: r for r in rows}
+    disp = by_test["DISPAMT"]
+    assert disp.DATEST == "Dispensed Amount"
+    assert disp.USUBJID == "RS-1-S-001"
+    assert disp.DAORRES == "30"
+    assert disp.DASTRESN == 30.0
+    assert disp.DAORRESU == "tablet"
+    assert disp.DASTRESU == "tablet"
+    assert disp.DAREFID == "KIT-0001"
+    ret = by_test["RETURNED"]
+    assert ret.DATEST == "Returned Amount"
+    assert ret.DAORRES == "10"
+    assert ret.DAREFID == "KIT-0001"
+    # Return borrows the units of its parent dispensation's IP.
+    assert ret.DAORRESU == "tablet"
+
+
+def test_derive_da_seq_is_per_subject_ordered_by_date() -> None:
+    mapper = BuiltinPythonMapper()
+    # Two dispensations for one subject; the later-dated one must get DASEQ 2.
+    early = _disp(id="disp-1", kit_id="KIT-0001", dispensed_at=datetime(2026, 2, 1, tzinfo=UTC))
+    late = _disp(id="disp-2", kit_id="KIT-0002", dispensed_at=datetime(2026, 3, 1, tzinfo=UTC))
+    rows = mapper.derive_da(
+        deployment_id="dep-1",
+        study_id="RS-1",
+        dispensations=[late, early],  # unsorted input
+        returns=[],
+        subjects_by_id={"subj-1": _subject()},
+        units_by_ip_id={"ip-1": "tablet"},
+    )
+    seq_by_kit = {r.DAREFID: r.DASEQ for r in rows}
+    assert seq_by_kit["KIT-0001"] == 1
+    assert seq_by_kit["KIT-0002"] == 2
+
+
+def test_derive_da_return_without_known_parent_has_no_units() -> None:
+    """A return whose dispensation isn't in the batch still maps (units None)."""
+    mapper = BuiltinPythonMapper()
+    rows = mapper.derive_da(
+        deployment_id="dep-1",
+        study_id="RS-1",
+        dispensations=[],
+        returns=[_ret(dispensation_id="missing")],
+        subjects_by_id={"subj-1": _subject()},
+        units_by_ip_id={"ip-1": "tablet"},
+    )
+    assert len(rows) == 1
+    assert rows[0].DATESTCD == "RETURNED"
+    assert rows[0].DAORRESU is None
+
+
+def test_derive_da_empty_when_no_accountability() -> None:
+    mapper = BuiltinPythonMapper()
+    assert (
+        mapper.derive_da(
+            deployment_id="dep-1",
+            study_id="RS-1",
+            dispensations=[],
+            returns=[],
+            subjects_by_id={"subj-1": _subject()},
+        )
+        == []
+    )

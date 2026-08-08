@@ -21,10 +21,13 @@ from typing import Any, Protocol
 
 from ..persistence.clinical.models import (
     AdverseEvent,
+    DrugDispensation,
+    DrugReturn,
     FormInstance,
     ItemData,
     SdtmAe,
     SdtmCm,
+    SdtmDa,
     SdtmDm,
     SdtmEx,
     SdtmLb,
@@ -745,6 +748,93 @@ class BuiltinPythonMapper:
                     MHSTDTC=_to_iso8601(values.get(m["__start"])),
                     MHENDTC=end_dtc,
                     MHONGO="Y" if not end_dtc else "N",
+                )
+            )
+        return out
+
+    def derive_da(
+        self,
+        *,
+        deployment_id: str,
+        study_id: str,
+        dispensations: Iterable[DrugDispensation],
+        returns: Iterable[DrugReturn],
+        subjects_by_id: dict[str, Subject] | None = None,
+        units_by_ip_id: dict[str, str] | None = None,
+    ) -> list[SdtmDa]:
+        """SDTM Drug Accountability from the IP dispense / return records.
+
+        Each dispensation → a DISPAMT (Dispensed Amount) row; each return →
+        a RETURNED (Returned Amount) row. Units come from the dispensation's
+        InvestigationalProduct (`units_by_ip_id`); a return borrows the units
+        of its parent dispensation. Rows are ordered by (subject, date) so
+        DASEQ is stable across re-runs. `DAREFID` = kit id so a dispense and
+        its return cross-reference.
+        """
+        subjects_by_id = subjects_by_id or {}
+        units_by_ip_id = units_by_ip_id or {}
+        disp_list = list(dispensations)
+        disp_by_id = {d.id: d for d in disp_list}
+
+        # (subject_id, when, fields) tuples, sorted for stable sequencing.
+        events: list[tuple[str, datetime, dict[str, Any]]] = []
+        for d in disp_list:
+            events.append(
+                (
+                    d.subject_id,
+                    d.dispensed_at,
+                    {
+                        "testcd": "DISPAMT",
+                        "test": "Dispensed Amount",
+                        "qty": d.quantity_dispensed,
+                        "units": units_by_ip_id.get(d.ip_id),
+                        "dtc": d.dispensed_at,
+                        "refid": d.kit_id,
+                    },
+                )
+            )
+        for r in returns:
+            parent = disp_by_id.get(r.dispensation_id)
+            units = units_by_ip_id.get(parent.ip_id) if parent is not None else None
+            events.append(
+                (
+                    r.subject_id,
+                    r.returned_at,
+                    {
+                        "testcd": "RETURNED",
+                        "test": "Returned Amount",
+                        "qty": r.quantity_returned,
+                        "units": units,
+                        "dtc": r.returned_at,
+                        "refid": r.kit_id,
+                    },
+                )
+            )
+
+        _floor = datetime.min.replace(tzinfo=UTC)
+        events.sort(key=lambda e: (e[0], e[1] or _floor))
+
+        out: list[SdtmDa] = []
+        per_subject_seq: dict[str, int] = {}
+        for subject_id, _when, f in events:
+            subject = subjects_by_id.get(subject_id)
+            subj_code = subject.subject_code if subject is not None else subject_id
+            per_subject_seq[subject_id] = per_subject_seq.get(subject_id, 0) + 1
+            out.append(
+                SdtmDa(
+                    deployment_id=deployment_id,
+                    STUDYID=study_id,
+                    DOMAIN="DA",
+                    USUBJID=_usubjid(study_id, subj_code),
+                    DASEQ=per_subject_seq[subject_id],
+                    DAREFID=f["refid"],
+                    DATESTCD=f["testcd"],
+                    DATEST=f["test"],
+                    DAORRES=str(f["qty"]),
+                    DAORRESU=f["units"],
+                    DASTRESN=float(f["qty"]),
+                    DASTRESU=f["units"],
+                    DADTC=_to_iso8601(f["dtc"]),
                 )
             )
         return out

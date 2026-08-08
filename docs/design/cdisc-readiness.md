@@ -4,7 +4,7 @@
 CRA, can someone generate the CDISC submission datasets and reports end-to-end?
 
 **Bottom line — yes for the core, not a turnkey full submission.** From captured
-eCRF data, one derive run produces a genuine, reviewable CDISC package: 7 SDTM
+eCRF data, one derive run produces a genuine, reviewable CDISC package: 8 SDTM
 domains, the subject-level (ADSL) and time-to-event (ADTTE) ADaM datasets, a
 Define-XML v2.1 metadata file, SAS Transport (XPT v5) datasets, a starter
 table/figure set, and an ICH E3 clinical study report — assembled into one
@@ -48,7 +48,7 @@ Study Data Tabulation Model — the standardized raw-data tables.
 | 🟡 | `LB` | Laboratory | Results + normal-range indicator. `LBSTRESN = LBORRES` until a unit-conversion table is wired in. |
 | ✅ | `VS` | Vital Signs | Height, weight, BP, pulse, temperature. |
 | 🟡 | `MH` | Medical History | Captured & mapped. SOC placeholder until MedDRA. |
-| ⬜ | `DA` | Drug Accountability | **Data already exists** (IP receipt / dispense / return subsystem) — no SDTM DA mapper yet. |
+| ✅ | `DA` | Drug Accountability | Dispense/return amounts as `DISPAMT`/`RETURNED` findings, kit id as `DAREFID`; derived from the IP dispense/return records. In Define-XML + XPT + the bundle. |
 | ⬜ | `DS` | Disposition | Completion / discontinuation events. Derivable from screening + visit state. |
 | ⬜ | `SV` / `SE` | Subject Visits / Elements | Visit-schedule data exists; needs the SV/SE mappers. |
 | ⬜ | `QS` | Questionnaires | ePRO subsystem could feed QS; mapper not built. |
@@ -118,9 +118,8 @@ that is inherently an operator step.
 
 Suggested build sequence (cheapest-given-existing-data first):
 
-1. **SDTM `DA`** — drug-accountability subsystem already holds receipt / dispense /
-   return rows; add the DA mapper. Also closes the roadmap's "CDISC EX from
-   dispensations" follow-up.
+1. ~~**SDTM `DA`**~~ — ✅ **shipped.** Drug-accountability dispense/return records
+   now derive to the SDTM DA domain (Define-XML + XPT + bundle).
 2. **SDTM `DS`** — disposition from screening-log + visit state (both captured).
 3. **SDTM `SV`** — subject visits from the visit-schedule subsystem.
 4. **ADaM `ADAE`** — the deferred 6-file slice; highest analysis value.
