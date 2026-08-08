@@ -183,3 +183,116 @@ def test_allocation_imbalance_changes_arm_sizes() -> None:
     # Intervention arm should be ~2x the control (within rounding)
     ratio = r["n_per_arm_intervention"] / r["n_per_arm_control"]
     assert 1.8 <= ratio <= 2.2
+
+
+# ── Non-inferiority + equivalence ────────────────────────────────────────
+
+
+def test_non_inferiority_proportions_textbook_magnitude() -> None:
+    """Assumed-equal 10% event rates, NI margin 0.05, one-sided
+    alpha=0.025, power=0.80, balanced → ~566/arm by the Chow closed form
+    (7.849 * 0.18 / 0.05²)."""
+    r = sample_size_two_proportions(
+        p_control=0.10,
+        p_intervention=0.10,
+        alpha=0.025,
+        power=0.80,
+        hypothesis="non_inferiority",
+        margin=0.05,
+    )
+    assert 555 <= r["n_per_arm_control"] <= 575
+    assert r["hypothesis"] == "non_inferiority"
+    assert r["inputs"]["margin"] == 0.05
+    assert r["inputs"]["one_sided"] is True  # NI is always one-sided
+    assert "non-inferiority" in r["formula_name"]
+    assert "Chow" in r["formula_reference"]
+
+
+def test_non_inferiority_allows_equal_rates() -> None:
+    """Equal assumed rates are the norm for NI (treatments truly
+    equivalent) — must NOT raise the superiority 'cannot be equal' error."""
+    r = sample_size_two_proportions(
+        p_control=0.20,
+        p_intervention=0.20,
+        hypothesis="non_inferiority",
+        margin=0.10,
+    )
+    assert r["n_per_arm_control"] >= 1
+
+
+def test_non_inferiority_requires_positive_margin() -> None:
+    with pytest.raises(ValueError, match="requires a positive `margin`"):
+        sample_size_two_proportions(
+            p_control=0.10, p_intervention=0.10, hypothesis="non_inferiority"
+        )
+
+
+def test_smaller_margin_needs_more_participants() -> None:
+    """A stricter (smaller) NI margin is harder to establish → larger N."""
+    wide = sample_size_two_proportions(
+        p_control=0.10, p_intervention=0.10, hypothesis="non_inferiority", margin=0.08
+    )
+    tight = sample_size_two_proportions(
+        p_control=0.10, p_intervention=0.10, hypothesis="non_inferiority", margin=0.04
+    )
+    assert tight["n_per_arm_control"] > wide["n_per_arm_control"]
+
+
+def test_equivalence_needs_more_than_non_inferiority() -> None:
+    """Equivalence uses the TOST β/2 split (z_{1-β/2} > z_{1-β}), so for
+    the same margin it always needs at least as many participants as the
+    one-sided NI test."""
+    ni = sample_size_two_proportions(
+        p_control=0.10, p_intervention=0.10, hypothesis="non_inferiority", margin=0.05
+    )
+    equiv = sample_size_two_proportions(
+        p_control=0.10, p_intervention=0.10, hypothesis="equivalence", margin=0.05
+    )
+    assert equiv["n_per_arm_control"] > ni["n_per_arm_control"]
+    assert "equivalence" in equiv["formula_name"]
+
+
+def test_infeasible_when_assumed_effect_exceeds_margin() -> None:
+    """If the assumed true difference is outside the margin, no finite N
+    powers the test — reject rather than emit a garbage number."""
+    with pytest.raises(ValueError, match="Infeasible"):
+        sample_size_two_proportions(
+            p_control=0.10,
+            p_intervention=0.20,  # true gap 0.10 >= margin 0.05
+            hypothesis="non_inferiority",
+            margin=0.05,
+        )
+
+
+def test_non_inferiority_two_means_equal_means_ok() -> None:
+    """NI on a continuous outcome: assumed-equal means, margin half an SD,
+    one-sided alpha=0.025, power=0.80 → ~64/arm."""
+    r = sample_size_two_means(
+        mean_control=0.0,
+        mean_intervention=0.0,
+        standard_deviation=1.0,
+        alpha=0.025,
+        power=0.80,
+        hypothesis="non_inferiority",
+        margin=0.5,
+    )
+    assert 58 <= r["n_per_arm_control"] <= 72
+    assert r["hypothesis"] == "non_inferiority"
+
+
+def test_equivalence_two_means_more_than_ni() -> None:
+    ni = sample_size_two_means(
+        mean_control=0.0,
+        mean_intervention=0.0,
+        standard_deviation=1.0,
+        hypothesis="non_inferiority",
+        margin=0.5,
+    )
+    equiv = sample_size_two_means(
+        mean_control=0.0,
+        mean_intervention=0.0,
+        standard_deviation=1.0,
+        hypothesis="equivalence",
+        margin=0.5,
+    )
+    assert equiv["n_per_arm_control"] > ni["n_per_arm_control"]

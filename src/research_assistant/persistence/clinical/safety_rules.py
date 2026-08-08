@@ -47,6 +47,22 @@ AeOutcome = Literal[
     "unknown",
 ]
 
+# Expectedness assessed against the Reference Safety Information (the
+# Investigator's Brochure list of expected events). Captured on the AE
+# form; `unexpected` is the SUSAR trigger. `unknown` never fires SUSAR —
+# the platform does not infer an unexpectedness the PI hasn't asserted.
+Expectedness = Literal["expected", "unexpected", "unknown"]
+
+# Relationship-to-intervention levels that make an AE a *suspected adverse
+# reaction* for SUSAR detection: `probable` and `definite`. A weaker
+# `possible` link is intentionally NOT flagged — this keeps the SUSAR
+# signal specific (fewer false positives for the safety physician to
+# triage). Regulatory "adverse reaction" definitions (ICH E2A §II.B, EU CT
+# Reg (EU) No 536/2014 Art. 2(2)(30)) turn on a "reasonable possibility" of
+# causation; where a deployment wants to include `possible`, widen this
+# single set.
+SUSAR_RELATIONSHIP_LEVELS = frozenset({"probable", "definite"})
+
 
 # Severity-grade-5 maps to a fatal AE per the standard NCI CTCAE scale
 # (Grade 1 = mild, 5 = death related to AE). We treat grade 5 as always
@@ -122,10 +138,41 @@ def compute_reporting_deadline(
     return reported_at + timedelta(hours=24)
 
 
+def is_susar(
+    *,
+    is_serious: bool,
+    relationship_to_intervention: str,
+    expectedness: str,
+) -> bool:
+    """Return True when an AE meets the SUSAR criteria.
+
+    SUSAR = **S**uspected **U**nexpected **S**erious **A**dverse
+    **R**eaction: the event is serious, it is a suspected reaction
+    (relationship `probable` or `definite` — see
+    `SUSAR_RELATIONSHIP_LEVELS`), and it is unexpected against the
+    Reference Safety Information.
+
+    SUSARs carry the tightest regulatory clock — expedited reporting
+    within 7 calendar days for fatal / life-threatening events and 15 days
+    otherwise (ICH E2A §III.C, 21 CFR §312.32, EU CT Reg Art. 42) — so the
+    platform surfaces them for review. This is a SCREENING signal, not a
+    regulatory determination: the sponsor's safety physician makes the
+    final SUSAR call and owns the submission.
+    """
+    return (
+        is_serious
+        and relationship_to_intervention in SUSAR_RELATIONSHIP_LEVELS
+        and expectedness == "unexpected"
+    )
+
+
 __all__ = [
     "GRADE_AUTO_SERIOUS_THRESHOLD",
+    "SUSAR_RELATIONSHIP_LEVELS",
     "AeOutcome",
+    "Expectedness",
     "SeriousReason",
     "auto_classify_serious",
     "compute_reporting_deadline",
+    "is_susar",
 ]

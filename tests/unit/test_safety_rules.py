@@ -14,6 +14,7 @@ import pytest
 from research_assistant.persistence.clinical.safety_rules import (
     auto_classify_serious,
     compute_reporting_deadline,
+    is_susar,
 )
 
 
@@ -126,3 +127,69 @@ def test_serious_returns_24h_deadline() -> None:
     now = datetime(2026, 5, 29, 12, 0, tzinfo=UTC)
     deadline = compute_reporting_deadline(is_serious=True, reported_at=now)
     assert deadline == now + timedelta(hours=24)
+
+
+# ── is_susar ─────────────────────────────────────────────────────────────
+# SUSAR = Serious + suspected reaction (relationship >= possible) +
+# Unexpected. All three must hold. When the threshold set changes, update
+# the helper AND these tests (every clinical deployment depends on it).
+
+
+def test_susar_all_three_criteria_met() -> None:
+    assert (
+        is_susar(
+            is_serious=True,
+            relationship_to_intervention="probable",
+            expectedness="unexpected",
+        )
+        is True
+    )
+
+
+@pytest.mark.parametrize("relationship", ["probable", "definite"])
+def test_susar_fires_for_every_suspected_reaction_level(relationship: str) -> None:
+    """`probable` and `definite` count as a suspected reaction for SUSAR."""
+    assert is_susar(
+        is_serious=True,
+        relationship_to_intervention=relationship,
+        expectedness="unexpected",
+    )
+
+
+@pytest.mark.parametrize("relationship", ["unrelated", "unlikely", "possible", "unknown"])
+def test_susar_excluded_when_relationship_below_probable(relationship: str) -> None:
+    """`possible` is deliberately NOT flagged — the SUSAR signal keys on
+    `probable`+ to stay specific."""
+    assert (
+        is_susar(
+            is_serious=True,
+            relationship_to_intervention=relationship,
+            expectedness="unexpected",
+        )
+        is False
+    )
+
+
+def test_susar_excluded_when_not_serious() -> None:
+    assert (
+        is_susar(
+            is_serious=False,
+            relationship_to_intervention="definite",
+            expectedness="unexpected",
+        )
+        is False
+    )
+
+
+@pytest.mark.parametrize("expectedness", ["expected", "unknown"])
+def test_susar_excluded_unless_unexpected(expectedness: str) -> None:
+    """`unknown` never fires — the platform does not infer an
+    unexpectedness the PI hasn't asserted."""
+    assert (
+        is_susar(
+            is_serious=True,
+            relationship_to_intervention="probable",
+            expectedness=expectedness,
+        )
+        is False
+    )

@@ -38,6 +38,7 @@ from ..persistence.clinical.repository import (
     HardCheckError,
     LockedError,
 )
+from ..persistence.clinical.safety_rules import is_susar
 from ..persistence.database import get_db_session
 from ..persistence.ecrf_repository import EcrfRepository
 from .auth import CurrentUser
@@ -384,6 +385,7 @@ class AdverseEventIn(BaseModel):
     severity_grade: int = Field(ge=1, le=5)
     outcome: str = "unknown"
     relationship_to_intervention: str = "unknown"
+    expectedness: str = "unknown"  # expected | unexpected | unknown (SUSAR trigger)
     start_date: datetime
     end_date: datetime | None = None
     hospitalisation_flag: bool = False
@@ -403,6 +405,7 @@ class AdverseEventClassifyIn(BaseModel):
     serious_reasons: list[str] | None = None
     outcome: str | None = None
     severity_grade: int | None = Field(default=None, ge=1, le=5)
+    expectedness: str | None = None  # override the RSI assessment (can flip SUSAR)
     narrative: str | None = None
 
 
@@ -430,7 +433,9 @@ class AdverseEventOut(BaseModel):
     severity_grade: int
     outcome: str
     relationship_to_intervention: str
+    expectedness: str
     is_serious: bool
+    is_susar: bool
     serious_reasons: list[str]
     reported_at: datetime
     reportable_deadline: datetime | None
@@ -455,7 +460,13 @@ class AdverseEventOut(BaseModel):
             severity_grade=ae.severity_grade,
             outcome=ae.outcome,
             relationship_to_intervention=ae.relationship_to_intervention,
+            expectedness=ae.expectedness,
             is_serious=ae.is_serious,
+            is_susar=is_susar(
+                is_serious=ae.is_serious,
+                relationship_to_intervention=ae.relationship_to_intervention,
+                expectedness=ae.expectedness,
+            ),
             serious_reasons=json.loads(ae.serious_reasons_json or "[]"),
             reported_at=ae.reported_at,
             reportable_deadline=ae.reportable_deadline,
@@ -878,6 +889,14 @@ class DrugReconciliationOut(BaseModel):
     deployment_id: str
     totals: dict[str, int]
     by_lot: dict[str, dict[str, int]]
+
+
+class SubjectComplianceOut(BaseModel):
+    """Per-subject drug-accountability compliance (used / dispensed)."""
+
+    deployment_id: str
+    # subject_id -> {subject_code, dispensed, used, returned, lost, compliance}
+    by_subject: dict[str, dict[str, object]]
 
 
 class MultiSiteRollupOut(BaseModel):
@@ -1477,6 +1496,7 @@ def create_edc_router() -> APIRouter:
                     severity_grade=body.severity_grade,
                     outcome=body.outcome,
                     relationship_to_intervention=body.relationship_to_intervention,
+                    expectedness=body.expectedness,
                     start_date=body.start_date,
                     end_date=body.end_date,
                     hospitalisation_flag=body.hospitalisation_flag,
@@ -1531,6 +1551,7 @@ def create_edc_router() -> APIRouter:
                     serious_reasons=body.serious_reasons,  # type: ignore[arg-type]
                     outcome=body.outcome,
                     severity_grade=body.severity_grade,
+                    expectedness=body.expectedness,
                     narrative=body.narrative,
                     actor_sub=user.sub,
                 )
@@ -1575,6 +1596,23 @@ def create_edc_router() -> APIRouter:
     ) -> list[AdverseEventOut]:
         async with get_clinical_session() as s:
             aes = await ClinicalRepository(s).list_overdue_serious_aes(deployment_id)
+            return [AdverseEventOut.from_orm_ae(a) for a in aes]
+
+    @router.get(
+        "/deployments/{deployment_id}/sae/susars",
+        response_model=list[AdverseEventOut],
+    )
+    async def list_susars(
+        deployment_id: str,
+        user: SessionPayload = require_permission_scoped(
+            Permission.SAE_REPORT, resource_param="deployment_id"
+        ),
+    ) -> list[AdverseEventOut]:
+        """Suspected Unexpected Serious Adverse Reactions — the subset on
+        the tightest (7 / 15-day) expedited-reporting clock. Screening
+        signal for the safety physician, not a regulatory determination."""
+        async with get_clinical_session() as s:
+            aes = await ClinicalRepository(s).list_susars(deployment_id)
             return [AdverseEventOut.from_orm_ae(a) for a in aes]
 
     @router.post("/ae/{ae_id}/mark-reported", response_model=AdverseEventOut)
@@ -3497,6 +3535,26 @@ def create_edc_router() -> APIRouter:
         async with get_clinical_session() as s:
             rollup = await ClinicalRepository(s).drug_reconciliation(deployment_id)
             return DrugReconciliationOut.model_validate(rollup)
+
+    @router.get(
+        "/deployments/{deployment_id}/drug-compliance",
+        response_model=SubjectComplianceOut,
+    )
+    async def subject_drug_compliance(
+        deployment_id: str,
+        subject_id: str | None = None,
+        user: SessionPayload = require_permission_scoped(
+            Permission.IP_RECONCILE, resource_param="deployment_id"
+        ),
+    ) -> SubjectComplianceOut:
+        """Per-subject compliance = used / dispensed. Same ip.reconcile
+        gate as the inventory rollup. Optional ?subject_id= scopes to one
+        subject. A lower bound while drug is still out (see repository)."""
+        async with get_clinical_session() as s:
+            rollup = await ClinicalRepository(s).subject_drug_compliance(
+                deployment_id, subject_id=subject_id
+            )
+            return SubjectComplianceOut.model_validate(rollup)
 
     # ── Lab-data feeds (P2 #6) ─────────────────────────────────────────
 

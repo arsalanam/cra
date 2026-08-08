@@ -231,6 +231,47 @@ async def test_data_manager_authors_capa_pi_closes_deviation(
     assert pi_close.json()["status"] == "closed"
 
 
+async def test_susar_surfaced_via_endpoint_and_response_flag(
+    client: AsyncClient,
+) -> None:
+    """A serious + suspected + unexpected AE is flagged is_susar on the
+    record response and surfaces on the deployment SUSAR endpoint; an
+    expected serious AE does not."""
+    ids = await _setup_subject(client)
+    await _seed("sub-c", "c@example.com", "coordinator")
+    _login(client, "sub-c", "c@example.com")
+    # The SUSAR: grade-4 (serious), probable, unexpected.
+    susar_body = {
+        "term_text": "anaphylaxis",
+        "severity_grade": 4,
+        "outcome": "not_recovered",
+        "relationship_to_intervention": "probable",
+        "expectedness": "unexpected",
+        "start_date": "2026-05-29T10:00:00+00:00",
+    }
+    rec = await client.post(f"/api/edc/subjects/{ids['subject']}/adverse-events", json=susar_body)
+    assert rec.status_code == 201, rec.text
+    body = rec.json()
+    assert body["is_susar"] is True
+    assert body["expectedness"] == "unexpected"
+    susar_id = body["id"]
+
+    # A serious-but-expected AE — not a SUSAR.
+    expected_body = {**susar_body, "term_text": "expected nausea", "expectedness": "expected"}
+    exp = await client.post(
+        f"/api/edc/subjects/{ids['subject']}/adverse-events", json=expected_body
+    )
+    assert exp.json()["is_susar"] is False
+
+    # PI (has sae.report) reads the SUSAR list for the deployment.
+    await _seed("sub-pi", "pi@example.com", "principal_investigator")
+    _login(client, "sub-pi", "pi@example.com")
+    listing = await client.get(f"/api/edc/deployments/{ids['dep']}/sae/susars")
+    assert listing.status_code == 200, listing.text
+    rows = listing.json()
+    assert [r["id"] for r in rows] == [susar_id]
+
+
 async def test_student_blocked_from_all_safety_endpoints(client: AsyncClient) -> None:
     ids = await _setup_subject(client)
     await _seed("sub-s", "s@example.com", "student")

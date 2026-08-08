@@ -186,6 +186,138 @@ async def test_invalid_severity_grade_rejected(
         )
 
 
+async def test_expectedness_defaults_to_unknown(
+    clinical_session: AsyncSession,
+) -> None:
+    _dep, subj = await _seed_subject(clinical_session)
+    repo = ClinicalRepository(clinical_session)
+    ae = await repo.record_adverse_event(
+        subj.id,
+        term_text="headache",
+        severity_grade=3,
+        outcome="recovering",
+        relationship_to_intervention="possible",
+        start_date=datetime.now(UTC),
+        actor_sub="coord",
+    )
+    assert ae.expectedness == "unknown"
+
+
+async def test_record_rejects_invalid_expectedness(
+    clinical_session: AsyncSession,
+) -> None:
+    _dep, subj = await _seed_subject(clinical_session)
+    repo = ClinicalRepository(clinical_session)
+    with pytest.raises(ClinicalError, match="Invalid expectedness"):
+        await repo.record_adverse_event(
+            subj.id,
+            term_text="rash",
+            severity_grade=2,
+            outcome="recovering",
+            relationship_to_intervention="possible",
+            expectedness="maybe",
+            start_date=datetime.now(UTC),
+        )
+
+
+async def test_list_susars_filters_on_all_three_criteria(
+    clinical_session: AsyncSession,
+) -> None:
+    """Only serious + suspected-reaction + unexpected AEs surface. A
+    serious-but-expected AE, a serious-but-unrelated AE, and a
+    non-serious unexpected AE are all excluded."""
+    dep, subj = await _seed_subject(clinical_session)
+    repo = ClinicalRepository(clinical_session)
+    # The one true SUSAR: serious (grade 4), probable, unexpected.
+    susar = await repo.record_adverse_event(
+        subj.id,
+        term_text="anaphylaxis",
+        severity_grade=4,
+        outcome="not_recovered",
+        relationship_to_intervention="probable",
+        expectedness="unexpected",
+        start_date=datetime.now(UTC),
+        actor_sub="coord",
+    )
+    # Serious + probable but EXPECTED per the IB → not a SUSAR.
+    await repo.record_adverse_event(
+        subj.id,
+        term_text="expected nausea",
+        severity_grade=3,
+        outcome="recovering",
+        relationship_to_intervention="probable",
+        expectedness="expected",
+        start_date=datetime.now(UTC),
+        actor_sub="coord",
+    )
+    # Serious + unexpected but UNRELATED → not a suspected reaction.
+    await repo.record_adverse_event(
+        subj.id,
+        term_text="car accident",
+        severity_grade=3,
+        outcome="recovering",
+        relationship_to_intervention="unrelated",
+        expectedness="unexpected",
+        start_date=datetime.now(UTC),
+        actor_sub="coord",
+    )
+    # Non-serious (grade 1) + probable + unexpected → not serious.
+    await repo.record_adverse_event(
+        subj.id,
+        term_text="minor unexpected itch",
+        severity_grade=1,
+        outcome="recovered",
+        relationship_to_intervention="probable",
+        expectedness="unexpected",
+        start_date=datetime.now(UTC),
+        actor_sub="coord",
+    )
+
+    susars = await repo.list_susars(dep.id)
+    assert [s.id for s in susars] == [susar.id]
+
+
+async def test_reclassify_expectedness_flips_susar_status(
+    clinical_session: AsyncSession,
+) -> None:
+    """A PI marking a previously-expected serious reaction as unexpected
+    should make it appear in the SUSAR list."""
+    dep, subj = await _seed_subject(clinical_session)
+    repo = ClinicalRepository(clinical_session)
+    ae = await repo.record_adverse_event(
+        subj.id,
+        term_text="hepatotoxicity",
+        severity_grade=4,
+        outcome="not_recovered",
+        relationship_to_intervention="probable",
+        expectedness="expected",
+        start_date=datetime.now(UTC),
+        actor_sub="coord",
+    )
+    assert await repo.list_susars(dep.id) == []
+    await repo.reclassify_adverse_event(ae.id, expectedness="unexpected", actor_sub="pi")
+    susars = await repo.list_susars(dep.id)
+    assert [s.id for s in susars] == [ae.id]
+
+
+async def test_reclassify_rejects_invalid_expectedness(
+    clinical_session: AsyncSession,
+) -> None:
+    _dep, subj = await _seed_subject(clinical_session)
+    repo = ClinicalRepository(clinical_session)
+    ae = await repo.record_adverse_event(
+        subj.id,
+        term_text="SAE",
+        severity_grade=3,
+        outcome="recovering",
+        relationship_to_intervention="possible",
+        start_date=datetime.now(UTC),
+        actor_sub="coord",
+    )
+    with pytest.raises(ClinicalError, match="Invalid expectedness"):
+        await repo.reclassify_adverse_event(ae.id, expectedness="nope", actor_sub="pi")
+
+
 async def test_mark_reported_clears_deadline_and_is_idempotent(
     clinical_session: AsyncSession,
 ) -> None:

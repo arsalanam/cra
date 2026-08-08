@@ -443,6 +443,16 @@ class AdverseEvent(ClinicalBase):
         default="unknown",
         doc="unrelated | unlikely | possible | probable | definite | unknown",
     )
+    expectedness: Mapped[str] = mapped_column(
+        Text,
+        default="unknown",
+        server_default="unknown",
+        doc=(
+            "expected | unexpected | unknown — assessed against the "
+            "Reference Safety Information (Investigator's Brochure). "
+            "'unexpected' is the SUSAR trigger (safety_rules.is_susar)."
+        ),
+    )
 
     is_serious: Mapped[bool] = mapped_column(Boolean, default=False)
     serious_reasons_json: Mapped[str] = mapped_column(
@@ -1770,7 +1780,8 @@ class InvestigationalProduct(ClinicalBase):
         default=None,
         doc=(
             "Optional regex pattern that kit_ids for this IP must match "
-            "(e.g. 'KIT-[0-9]{4}'). Documented; not enforced this slice."
+            "(e.g. 'KIT-[0-9]{4}'). Validated as a compilable regex at "
+            "registration and enforced (re.fullmatch) at dispense time."
         ),
     )
     status: Mapped[str] = mapped_column(Text, default="active")

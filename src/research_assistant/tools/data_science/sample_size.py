@@ -40,6 +40,31 @@ logger = logging.getLogger(__name__)
 
 OutcomeType = Literal["two_proportions", "two_means", "time_to_event", "paired"]
 
+# Superiority is the default; non-inferiority and equivalence are the two
+# extra hypotheses supported for `two_proportions` and `two_means`. Both
+# are inherently one-sided at alpha and driven by a `margin` rather than a
+# point effect (see `_hypothesis_z_and_effect`).
+Hypothesis = Literal["superiority", "non_inferiority", "equivalence"]
+
+
+# Shared citation appended to the base formula reference for the
+# non-inferiority / equivalence variants.
+_NI_EQUIV_REFERENCE = (
+    " Non-inferiority / equivalence margin per Chow S-C, Shao J, Wang H, "
+    "Lokhnygina Y. Sample Size Calculations in Clinical Research, 3rd ed. "
+    "CRC Press, 2018, §§4.2-5.3."
+)
+
+
+def _formula_label(base: str, hypothesis: str) -> str:
+    """Suffix the base formula name with the hypothesis when it isn't the
+    default superiority test."""
+    if hypothesis == "non_inferiority":
+        return f"{base} — non-inferiority (one-sided, margin)"
+    if hypothesis == "equivalence":
+        return f"{base} — equivalence (TOST, margin)"
+    return base
+
 
 def _inflate_for_dropout(n: float, dropout_rate: float) -> int:
     """Inflate a per-arm N by the anticipated attrition rate."""
@@ -56,6 +81,56 @@ def _z(alpha: float, power: float, one_sided: bool) -> tuple[float, float]:
     return z_a, z_b
 
 
+def _hypothesis_z_and_effect(
+    *,
+    hypothesis: str,
+    alpha: float,
+    power: float,
+    raw_effect: float,
+    margin: float | None,
+    one_sided: bool,
+) -> tuple[float, float, float]:
+    """Resolve (z_alpha, z_beta, denominator_effect) for a hypothesis.
+
+    - **superiority** — the classic test: the denominator effect is the
+      raw difference (intervention − control) and z's come from `_z`
+      (two-sided unless `one_sided`).
+    - **non_inferiority** — one-sided at `alpha`; the denominator effect is
+      `margin − |raw_effect|`, where `raw_effect` is the *assumed true*
+      difference (often 0). z_beta = Φ⁻¹(power).
+    - **equivalence** — two one-sided tests (TOST); one-sided at `alpha`
+      but z_beta = Φ⁻¹(1 − (1−power)/2) (the β/2 split), denominator
+      effect `margin − |raw_effect|`.
+
+    Non-inferiority / equivalence margins follow Chow, Shao, Wang &
+    Lokhnygina, *Sample Size Calculations in Clinical Research*, 3rd ed.
+    (CRC, 2018), §§4.2–5.3.
+    """
+    if hypothesis == "superiority":
+        z_a, z_b = _z(alpha, power, one_sided)
+        return z_a, z_b, raw_effect
+    if margin is None or margin <= 0:
+        raise ValueError(f"{hypothesis!r} requires a positive `margin`.")
+    effect = margin - abs(raw_effect)
+    if effect <= 0:
+        raise ValueError(
+            "Infeasible design: the assumed true difference must be strictly "
+            "inside the margin (|effect| < margin) for a non-inferiority / "
+            "equivalence test."
+        )
+    # Both NI and equivalence test one-sided at alpha.
+    z_a = float(norm.ppf(1.0 - alpha))
+    if hypothesis == "non_inferiority":
+        z_b = float(norm.ppf(power))
+    elif hypothesis == "equivalence":
+        z_b = float(norm.ppf(1.0 - (1.0 - power) / 2.0))
+    else:
+        raise ValueError(
+            f"Unknown hypothesis {hypothesis!r}. Use superiority | non_inferiority | equivalence."
+        )
+    return z_a, z_b, effect
+
+
 # ── Two proportions ──────────────────────────────────────────────────────
 
 
@@ -68,6 +143,8 @@ def sample_size_two_proportions(
     allocation_ratio: float = 1.0,
     dropout_rate: float = 0.0,
     one_sided: bool = False,
+    hypothesis: str = "superiority",
+    margin: float | None = None,
 ) -> dict[str, Any]:
     """Closed-form Z-test sample size for two independent proportions.
 
@@ -75,31 +152,48 @@ def sample_size_two_proportions(
     using the variance under the alternative. Without continuity
     correction — adequate for N≥30 per arm, which any trial-grade design
     will clear.
+
+    `hypothesis` selects the test:
+      • "superiority" (default) — detect the p_intervention − p_control gap.
+      • "non_inferiority" / "equivalence" — supply `margin` (>0). Here
+        p_control / p_intervention are the *assumed true* rates (equal is
+        the usual assumption); the design powers against the margin, not
+        the gap. See `_hypothesis_z_and_effect`.
     """
     if not (0 < p_control < 1) or not (0 < p_intervention < 1):
         raise ValueError("p_control and p_intervention must be in (0, 1).")
-    if p_control == p_intervention:
+    if hypothesis == "superiority" and p_control == p_intervention:
         raise ValueError("p_control and p_intervention cannot be equal — no detectable effect.")
     if allocation_ratio <= 0:
         raise ValueError("allocation_ratio must be positive.")
 
-    z_a, z_b = _z(alpha, power, one_sided)
+    raw_effect = p_intervention - p_control
+    z_a, z_b, effect = _hypothesis_z_and_effect(
+        hypothesis=hypothesis,
+        alpha=alpha,
+        power=power,
+        raw_effect=raw_effect,
+        margin=margin,
+        one_sided=one_sided,
+    )
     k = allocation_ratio  # intervention-to-control
     p1 = p_control
     p2 = p_intervention
     var = p1 * (1 - p1) / 1.0 + p2 * (1 - p2) / k
-    n_control = (z_a + z_b) ** 2 * var / (p1 - p2) ** 2
+    n_control = (z_a + z_b) ** 2 * var / effect**2
     n_intervention = n_control * k
 
     out: dict[str, Any] = {
         "outcome_type": "two_proportions",
+        "hypothesis": hypothesis,
         "n_per_arm_control": _inflate_for_dropout(n_control, dropout_rate),
         "n_per_arm_intervention": _inflate_for_dropout(n_intervention, dropout_rate),
         "events_required": None,
-        "formula_name": "Two-proportions Z-test (uncorrected, variance under H1)",
+        "formula_name": _formula_label("Two-proportions Z-test", hypothesis),
         "formula_reference": (
             "Fleiss JL, Levin B, Paik MC. Statistical Methods for Rates and "
             "Proportions, 3rd ed. Wiley, 2003. §4.3."
+            + (_NI_EQUIV_REFERENCE if hypothesis != "superiority" else "")
         ),
         "inputs": {
             "p_control": p_control,
@@ -108,7 +202,9 @@ def sample_size_two_proportions(
             "power": power,
             "allocation_ratio": allocation_ratio,
             "dropout_rate": dropout_rate,
-            "one_sided": one_sided,
+            "one_sided": one_sided if hypothesis == "superiority" else True,
+            "hypothesis": hypothesis,
+            "margin": margin,
         },
     }
     out["n_total"] = out["n_per_arm_control"] + out["n_per_arm_intervention"]
@@ -128,6 +224,8 @@ def sample_size_two_means(
     allocation_ratio: float = 1.0,
     dropout_rate: float = 0.0,
     one_sided: bool = False,
+    hypothesis: str = "superiority",
+    margin: float | None = None,
 ) -> dict[str, Any]:
     """Two-sample t-test sample size with a common SD assumption.
 
@@ -135,31 +233,52 @@ def sample_size_two_means(
     exact t-distribution to tighten the rounding for small N (typical
     statsmodels behaviour). Cohen's d standardised effect is reported in
     the inputs for transparency.
+
+    `hypothesis` selects the test (see `sample_size_two_proportions`); for
+    "non_inferiority" / "equivalence" supply `margin` (>0) on the mean
+    scale and treat mean_control / mean_intervention as the assumed true
+    means (equal is the usual assumption).
     """
     if standard_deviation <= 0:
         raise ValueError("standard_deviation must be positive.")
-    if mean_control == mean_intervention:
+    if hypothesis == "superiority" and mean_control == mean_intervention:
         raise ValueError(
             "mean_control and mean_intervention cannot be equal — no detectable effect."
         )
     if allocation_ratio <= 0:
         raise ValueError("allocation_ratio must be positive.")
 
-    d = (mean_intervention - mean_control) / standard_deviation
-    z_a, z_b = _z(alpha, power, one_sided)
+    raw_diff = mean_intervention - mean_control
+    d = raw_diff / standard_deviation
+    z_a, z_b, effect = _hypothesis_z_and_effect(
+        hypothesis=hypothesis,
+        alpha=alpha,
+        power=power,
+        raw_effect=raw_diff,
+        margin=margin,
+        one_sided=one_sided,
+    )
+    # Standardised denominator effect (Cohen's d on the effect that the
+    # test actually powers against — the raw gap for superiority, the
+    # margin-adjusted distance for NI / equivalence).
+    d_effect = effect / standard_deviation
     k = allocation_ratio
     # Closed-form Z approximation (Cohen 1988, eqn 2.4.1).
-    n_control_z = (z_a + z_b) ** 2 * (1.0 + 1.0 / k) / d**2
-    # One Newton-style refinement using the exact t critical values.
+    n_control_z = (z_a + z_b) ** 2 * (1.0 + 1.0 / k) / d_effect**2
+    # One Newton-style refinement using the exact t critical values. For
+    # NI / equivalence the test is one-sided at alpha; equivalence keeps
+    # the Normal z_beta (the β/2 split has no simple t analogue) and only
+    # refines the alpha critical value.
+    ni_equiv = hypothesis != "superiority"
     n_control = n_control_z
     for _ in range(8):  # converges in ~3 iterations; cap is just safety
         df = n_control * (1.0 + k) - 2
         if df <= 1:
             break
-        t_a_q = alpha if one_sided else alpha / 2.0
+        t_a_q = alpha if (one_sided or ni_equiv) else alpha / 2.0
         t_a = float(t.ppf(1.0 - t_a_q, df))
-        t_b = float(t.ppf(power, df))
-        n_new = (t_a + t_b) ** 2 * (1.0 + 1.0 / k) / d**2
+        t_b = float(t.ppf(power, df)) if hypothesis != "equivalence" else z_b
+        n_new = (t_a + t_b) ** 2 * (1.0 + 1.0 / k) / d_effect**2
         if abs(n_new - n_control) < 0.1:
             n_control = n_new
             break
@@ -168,13 +287,14 @@ def sample_size_two_means(
 
     out: dict[str, Any] = {
         "outcome_type": "two_means",
+        "hypothesis": hypothesis,
         "n_per_arm_control": _inflate_for_dropout(n_control, dropout_rate),
         "n_per_arm_intervention": _inflate_for_dropout(n_intervention, dropout_rate),
         "events_required": None,
-        "formula_name": "Two-sample t-test (Cohen, common SD)",
+        "formula_name": _formula_label("Two-sample t-test (Cohen, common SD)", hypothesis),
         "formula_reference": (
             "Cohen J. Statistical Power Analysis for the Behavioral Sciences, "
-            "2nd ed. Erlbaum, 1988. §2.4."
+            "2nd ed. Erlbaum, 1988. §2.4." + (_NI_EQUIV_REFERENCE if ni_equiv else "")
         ),
         "inputs": {
             "mean_control": mean_control,
@@ -185,7 +305,9 @@ def sample_size_two_means(
             "power": power,
             "allocation_ratio": allocation_ratio,
             "dropout_rate": dropout_rate,
-            "one_sided": one_sided,
+            "one_sided": one_sided if hypothesis == "superiority" else True,
+            "hypothesis": hypothesis,
+            "margin": margin,
         },
     }
     out["n_total"] = out["n_per_arm_control"] + out["n_per_arm_intervention"]
@@ -347,6 +469,8 @@ def _dispatch(outcome_type: str, params: dict[str, Any]) -> dict[str, Any]:
             allocation_ratio=float(params.get("allocation_ratio", 1.0)),
             dropout_rate=float(params.get("dropout_rate", 0.0)),
             one_sided=bool(params.get("one_sided", False)),
+            hypothesis=str(params.get("hypothesis", "superiority")),
+            margin=(None if params.get("margin") is None else float(params["margin"])),
         )
     if outcome_type == "two_means":
         return sample_size_two_means(
@@ -358,6 +482,8 @@ def _dispatch(outcome_type: str, params: dict[str, Any]) -> dict[str, Any]:
             allocation_ratio=float(params.get("allocation_ratio", 1.0)),
             dropout_rate=float(params.get("dropout_rate", 0.0)),
             one_sided=bool(params.get("one_sided", False)),
+            hypothesis=str(params.get("hypothesis", "superiority")),
+            margin=(None if params.get("margin") is None else float(params["margin"])),
         )
     if outcome_type == "time_to_event":
         return sample_size_time_to_event(
@@ -409,6 +535,13 @@ def register(agent: Agent[AgentDeps]) -> None:
           dropout_rate (0.0), one_sided (False). `allocation_ratio` does
           not apply to paired.
 
+        Non-inferiority / equivalence (two_proportions + two_means only):
+          set `hypothesis` to "non_inferiority" or "equivalence" and
+          supply `margin` (>0, on the outcome's natural scale). The
+          control / intervention values are then the ASSUMED TRUE effect
+          (usually equal — the design powers against the margin). Both
+          are one-sided at alpha; equivalence uses the TOST β/2 split.
+
         Returns JSON shaped like `domain.sap.SampleSizeResult` so the SAP
         specialist's STEP 2 can ingest it without translation.
         """
@@ -435,6 +568,7 @@ def register(agent: Agent[AgentDeps]) -> None:
 
 
 __all__ = [
+    "Hypothesis",
     "OutcomeType",
     "register",
     "sample_size_paired",
