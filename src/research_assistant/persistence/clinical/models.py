@@ -542,7 +542,8 @@ class ProtocolDeviation(ClinicalBase):
         Text,
         doc=(
             "consent | eligibility | procedure | visit_window | "
-            "drug_compliance | ae_not_reported | data_capture | other"
+            "drug_compliance | temp_excursion | ae_not_reported | "
+            "data_capture | other"
         ),
     )
     description: Mapped[str] = mapped_column(Text)
@@ -1492,6 +1493,16 @@ class PlannedVisit(ClinicalBase):
         DateTime(timezone=True), nullable=True, default=None
     )
     override_reason: Mapped[str] = mapped_column(Text, default="")
+    window_deviation_id: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        default=None,
+        doc=(
+            "Id of the visit_window ProtocolDeviation auto-created when this "
+            "visit aged past its window (see sweep_overdue_visits). Guards "
+            "against duplicate deviations on re-sweeps; NULL until violated."
+        ),
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow

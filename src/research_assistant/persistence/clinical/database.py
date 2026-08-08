@@ -76,6 +76,10 @@ _CLINICAL_COLUMN_MIGRATIONS: dict[str, dict[str, str]] = {
         # SUSAR detection — expectedness vs the Reference Safety Information.
         "expectedness": "TEXT NOT NULL DEFAULT 'unknown'",
     },
+    "planned_visits": {
+        # Visit-window-violation auto-deviation dedupe guard.
+        "window_deviation_id": "TEXT",
+    },
 }
 
 

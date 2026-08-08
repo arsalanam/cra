@@ -125,6 +125,18 @@ ignore_missing_imports = true
 asyncio_mode = "auto"
 testpaths = ["tests"]
 addopts = "-ra --strict-markers"
+# aiosqlite runs each connection on a background worker thread. On Windows +
+# Python 3.13, when the per-test event loop tears down, an in-flight worker
+# op can land on the already-closed loop and surface as a benign
+# PytestUnhandledThreadExceptionWarning ("Event loop is closed"). It is
+# non-deterministic (count swings run-to-run), never fails a test, and comes
+# from the driver's teardown — not app code. Disposing engines in-test
+# doesn't reliably clear it, so we suppress this one thread-exception class
+# to keep the signal readable. Scoped to the exact category; real assertion
+# failures are unaffected.
+filterwarnings = [
+    "ignore::pytest.PytestUnhandledThreadExceptionWarning",
+]
 
 [tool.coverage.run]
 source = ["research_assistant"]

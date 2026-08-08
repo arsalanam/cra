@@ -267,6 +267,79 @@ async def test_update_rejects_invalid_status(
         await repo.update_planned_visit(pv.id, status="weird")
 
 
+# ── Overdue-visit sweep → visit_window deviation ─────────────────────────
+
+
+async def _seed_one_planned_visit(
+    repo: ClinicalRepository, dep: StudyDeployment, subj: Subject
+) -> object:
+    """Active schedule with one day-0 visit (3-day after-window) + generate."""
+    sched = await repo.create_visit_schedule(dep.id, name="Main")
+    await repo.add_scheduled_visit(
+        sched.id, visit_name="Baseline", day_offset=0, window_after_days=3
+    )
+    await repo.set_active_visit_schedule(sched.id)
+    [pv] = await repo.generate_planned_visits(subj.id)
+    return pv
+
+
+async def test_sweep_opens_minor_visit_window_deviation_for_overdue(
+    clinical_session: AsyncSession,
+) -> None:
+    dep, _, subj = await _seed_deployment(clinical_session)
+    repo = ClinicalRepository(clinical_session)
+    pv = await _seed_one_planned_visit(repo, dep, subj)
+    # window_end is baseline (2026-01-01) + 3 days; sweep well after that.
+    now = datetime(2026, 3, 1, 12, 0, tzinfo=UTC)
+    created = await repo.sweep_overdue_visits(dep.id, now=now, actor_sub="monitor-1")
+    assert len(created) == 1
+    dev = created[0]
+    assert dev.category == "visit_window"
+    assert dev.classification == "minor"
+    assert dev.subject_id == subj.id
+    # The visit is flagged (dedupe guard) but stays pending (may attend late).
+    refreshed = await clinical_session.get(type(pv), pv.id)  # type: ignore[arg-type]
+    assert refreshed is not None
+    assert refreshed.window_deviation_id == dev.id
+    assert refreshed.status == "pending"
+
+
+async def test_sweep_is_idempotent(
+    clinical_session: AsyncSession,
+) -> None:
+    dep, _, subj = await _seed_deployment(clinical_session)
+    repo = ClinicalRepository(clinical_session)
+    await _seed_one_planned_visit(repo, dep, subj)
+    now = datetime(2026, 3, 1, 12, 0, tzinfo=UTC)
+    first = await repo.sweep_overdue_visits(dep.id, now=now)
+    second = await repo.sweep_overdue_visits(dep.id, now=now)
+    assert len(first) == 1
+    assert second == []  # already flagged → no duplicate deviation
+    assert len(await repo.list_deviations(deployment_id=dep.id)) == 1
+
+
+async def test_sweep_ignores_visit_still_in_window(
+    clinical_session: AsyncSession,
+) -> None:
+    dep, _, subj = await _seed_deployment(clinical_session)
+    repo = ClinicalRepository(clinical_session)
+    await _seed_one_planned_visit(repo, dep, subj)
+    # now is inside the window (baseline + 1 day, window_end = baseline + 3).
+    now = datetime(2026, 1, 2, 12, 0, tzinfo=UTC)
+    assert await repo.sweep_overdue_visits(dep.id, now=now) == []
+
+
+async def test_sweep_ignores_completed_visit(
+    clinical_session: AsyncSession,
+) -> None:
+    dep, _, subj = await _seed_deployment(clinical_session)
+    repo = ClinicalRepository(clinical_session)
+    pv = await _seed_one_planned_visit(repo, dep, subj)
+    await repo.update_planned_visit(pv.id, status="completed")  # type: ignore[attr-defined]
+    now = datetime(2026, 3, 1, 12, 0, tzinfo=UTC)
+    assert await repo.sweep_overdue_visits(dep.id, now=now) == []
+
+
 # ── Reminder queue ──────────────────────────────────────────────────────
 
 

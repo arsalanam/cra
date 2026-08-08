@@ -153,6 +153,48 @@ async def test_record_receipt_temp_excursion_flag_persists(
     assert "JFK" in receipt.notes
 
 
+async def test_temp_excursion_receipt_auto_opens_deviation_and_capa(
+    clinical_session: AsyncSession,
+) -> None:
+    """A cold-chain break auto-opens a major temp_excursion deviation with a
+    seed CAPA, cross-referencing the receipt."""
+    dep, _, _ = await _seed_deployment(clinical_session)
+    repo = ClinicalRepository(clinical_session)
+    ip = await repo.register_investigational_product(dep.id, drug_name="DrugX", strength="10 mg")
+    receipt = await repo.record_drug_receipt(
+        dep.id,
+        ip_id=ip.id,
+        lot_number="LOT-A",
+        quantity_received=50,
+        temp_excursion_flag=True,
+        notes="Freezer failure overnight",
+        actor_sub="coord-1",
+    )
+    devs = await repo.list_deviations(deployment_id=dep.id)
+    assert len(devs) == 1
+    dev = devs[0]
+    assert dev.category == "temp_excursion"
+    assert dev.classification == "major"
+    assert dev.subject_id is None  # deployment-wide
+    assert receipt.id in dev.description
+    assert "LOT-A" in dev.description
+    # Adding the CAPA flipped the deviation to under_capa.
+    assert dev.status == "under_capa"
+    capas = await repo.list_capas(dev.id)
+    assert len(capas) == 1
+    assert "Quarantine" in capas[0].action_text
+
+
+async def test_normal_receipt_opens_no_deviation(
+    clinical_session: AsyncSession,
+) -> None:
+    dep, _, _ = await _seed_deployment(clinical_session)
+    repo = ClinicalRepository(clinical_session)
+    ip = await repo.register_investigational_product(dep.id, drug_name="DrugX", strength="10 mg")
+    await repo.record_drug_receipt(dep.id, ip_id=ip.id, lot_number="LOT-A", quantity_received=50)
+    assert await repo.list_deviations(deployment_id=dep.id) == []
+
+
 # ── Dispensations ─────────────────────────────────────────────────────────
 
 

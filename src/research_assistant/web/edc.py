@@ -2887,6 +2887,44 @@ def create_edc_router() -> APIRouter:
             payload = await ClinicalRepository(s).recruitment_funnel(deployment_id, site_id=site_id)
             return RecruitmentFunnelOut.model_validate(payload)
 
+    @router.get("/deployments/{deployment_id}/recruitment/consort-flow.pdf")
+    async def download_consort_flow(
+        deployment_id: str,
+        user: SessionPayload = require_permission_scoped(
+            Permission.SCREENING_READ, resource_param="deployment_id"
+        ),
+        site_id: str | None = None,
+    ) -> Response:
+        """CONSORT 2010 enrolment flow diagram (PDF) built from the funnel.
+
+        Same ip.screening-read gate as the funnel JSON. `site_id` scopes to
+        one site. Enrolment block only — see reports.consort."""
+        from datetime import UTC, datetime
+
+        from ..persistence.clinical.models import StudyDeployment
+        from ..reports.consort import build_consort_flow_pdf
+
+        async with get_clinical_session() as s:
+            deployment = await s.get(StudyDeployment, deployment_id)
+            if deployment is None:
+                raise HTTPException(404, "Deployment not found")
+            funnel = await ClinicalRepository(s).recruitment_funnel(deployment_id, site_id=site_id)
+        pdf = build_consort_flow_pdf(
+            funnel,
+            deployment_name=deployment.name,
+            generated_at=datetime.now(UTC),
+        )
+        return Response(
+            content=pdf,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": (
+                    f'attachment; filename="consort-flow-{deployment_id[:8]}.pdf"'
+                ),
+                "Cache-Control": "no-store",
+            },
+        )
+
     # ── Visit scheduling + reminders (P1 #4) ─────────────────────────────
 
     @router.post(
@@ -3043,6 +3081,25 @@ def create_edc_router() -> APIRouter:
                 deployment_id=deployment_id, status=status
             )
             return [PlannedVisitOut.model_validate(r) for r in rows]
+
+    @router.post(
+        "/deployments/{deployment_id}/planned-visits/sweep-overdue",
+        response_model=list[DeviationOut],
+    )
+    async def sweep_overdue_visits(
+        deployment_id: str,
+        user: SessionPayload = require_permission_scoped(
+            Permission.DEVIATION_RECORD, resource_param="deployment_id"
+        ),
+    ) -> list[DeviationOut]:
+        """Open a minor visit_window deviation for every pending visit past
+        its window. Idempotent — a visit already flagged is skipped. Returns
+        the deviations created this sweep."""
+        async with get_clinical_session() as s:
+            devs = await ClinicalRepository(s).sweep_overdue_visits(
+                deployment_id, actor_sub=user.sub
+            )
+            return [DeviationOut.model_validate(d) for d in devs]
 
     @router.patch(
         "/planned-visits/{planned_visit_id}",

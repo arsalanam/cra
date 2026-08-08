@@ -2164,6 +2164,60 @@ class ClinicalRepository:
         await self._s.flush()
         return row
 
+    async def sweep_overdue_visits(
+        self,
+        deployment_id: str,
+        *,
+        now: datetime | None = None,
+        actor_sub: str | None = None,
+    ) -> list[ProtocolDeviation]:
+        """Open a visit_window deviation for every visit past its window.
+
+        A `pending` planned visit whose `window_end` is in the past has
+        violated its protocol visit window. This opens a **minor**
+        `visit_window` ProtocolDeviation for each such visit and records
+        the deviation id on the visit (`window_deviation_id`) so repeat
+        sweeps never double-log. The visit's status is deliberately LEFT
+        as `pending` — a window violation is distinct from a missed visit
+        (the subject may still attend late), and the coordinator remains
+        free to mark it completed/missed. Returns the deviations created
+        this sweep (empty when nothing is overdue).
+        """
+        current = now or datetime.now(UTC)
+        stmt = (
+            select(PlannedVisit)
+            .where(
+                PlannedVisit.subject_id.in_(
+                    select(Subject.id).where(Subject.deployment_id == deployment_id)
+                ),
+                PlannedVisit.status == "pending",
+                PlannedVisit.window_end < current,
+                PlannedVisit.window_deviation_id.is_(None),
+            )
+            .order_by(PlannedVisit.window_end)
+        )
+        overdue = list((await self._s.scalars(stmt)).all())
+        created: list[ProtocolDeviation] = []
+        for visit in overdue:
+            sv = await self._s.get(ScheduledVisit, visit.scheduled_visit_id)
+            visit_name = sv.visit_name if sv is not None else visit.scheduled_visit_id
+            dev = await self.record_deviation(
+                deployment_id=deployment_id,
+                subject_id=visit.subject_id,
+                classification="minor",
+                category="visit_window",
+                description=(
+                    f"Visit {visit_name!r} (planned {visit.planned_date:%Y-%m-%d}) "
+                    f"passed its window end {visit.window_end:%Y-%m-%d} without "
+                    f"being completed."
+                ),
+                actor_sub=actor_sub,
+            )
+            visit.window_deviation_id = dev.id
+            created.append(dev)
+        await self._s.flush()
+        return created
+
     async def upsert_participant_contact(
         self,
         participant_access_id: str,
@@ -2942,6 +2996,33 @@ class ClinicalRepository:
                 f"{',temp_excursion' if temp_excursion_flag else ''}"
             ),
         )
+        # A cold-chain break is a GCP deviation: auto-open a major deviation
+        # + a seed CAPA so the excursion surfaces in the deviation log the
+        # same day it's received, instead of living only in the receipt
+        # notes. Deployment-wide (no subject); the description carries the
+        # receipt id so the two records cross-reference.
+        if temp_excursion_flag:
+            dev = await self.record_deviation(
+                deployment_id=deployment_id,
+                subject_id=None,
+                classification="major",
+                category="temp_excursion",
+                description=(
+                    f"Temperature excursion on IP receipt {receipt.id} "
+                    f"({ip.drug_name} {ip.strength}, lot {lot_number})."
+                    + (f" Notes: {notes}" if notes else "")
+                ),
+                actor_sub=actor_sub,
+            )
+            await self.add_capa(
+                dev.id,
+                action_text=(
+                    "Quarantine the affected lot pending an impact assessment; "
+                    "confirm whether the excursion breaches the IP storage spec "
+                    "before any dispensation from this lot."
+                ),
+                actor_sub=actor_sub,
+            )
         return receipt
 
     async def list_drug_receipts(
