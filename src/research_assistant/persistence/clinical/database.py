@@ -56,6 +56,47 @@ CREATE TRIGGER trg_audit_entries_immutable
 """
 
 
+# Additive column migrations for the clinical store. `create_all` only
+# creates MISSING tables — it never adds a column to a table that already
+# exists — so a column added to an existing model needs an explicit ALTER
+# for a deployment whose Postgres volume predates it.
+#
+# This is Postgres-only ON PURPOSE: every SQLite database the app touches
+# (all tests, and any fresh dev DB) is created from scratch by `create_all`
+# and therefore already has every column — there is nothing to migrate. It
+# also matters mechanically: the test in-memory aiosqlite engine is reused
+# across tests without an explicit dispose(), so an extra DDL/reflection
+# round-trip on it leaks a connection-worker thread that races the
+# already-closed event loop at GC ("Event loop is closed" warnings). Keeping
+# the migration off the SQLite path avoids that entirely. `ADD COLUMN IF NOT
+# EXISTS` (Postgres 9.6+) is idempotent without reflection, so a fresh
+# Postgres deploy (column already made by create_all) is a clean no-op.
+_CLINICAL_COLUMN_MIGRATIONS: dict[str, dict[str, str]] = {
+    "adverse_events": {
+        # SUSAR detection — expectedness vs the Reference Safety Information.
+        "expectedness": "TEXT NOT NULL DEFAULT 'unknown'",
+    },
+    "planned_visits": {
+        # Visit-window-violation auto-deviation dedupe guard.
+        "window_deviation_id": "TEXT",
+    },
+}
+
+
+async def _apply_clinical_additive_migrations(engine: AsyncEngine) -> None:
+    """ADD COLUMN for pre-existing Postgres tables. No-op on SQLite (see the
+    _CLINICAL_COLUMN_MIGRATIONS comment)."""
+    if engine.dialect.name != "postgresql":
+        return
+    async with engine.begin() as conn:
+        for table, columns in _CLINICAL_COLUMN_MIGRATIONS.items():
+            for col, ddl in columns.items():
+                logger.info("Clinical migrating: ALTER %s ADD COLUMN IF NOT EXISTS %s", table, col)
+                await conn.exec_driver_sql(
+                    f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {ddl}"
+                )
+
+
 async def _apply_clinical_pg_ddl(engine: AsyncEngine) -> None:
     """Install the append-only audit trigger — Postgres only, no-op elsewhere."""
     if engine.dialect.name != "postgresql":
@@ -73,6 +114,7 @@ async def init_clinical_db() -> None:
     engine, _ = _get_engine_and_factory()
     async with engine.begin() as conn:
         await conn.run_sync(ClinicalBase.metadata.create_all)
+    await _apply_clinical_additive_migrations(engine)
     await _apply_clinical_pg_ddl(engine)
     logger.info("Clinical-data tables initialised")
 

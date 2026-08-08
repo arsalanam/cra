@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 import secrets
 import uuid as _uuid_mod
 from collections.abc import Sequence
@@ -68,12 +69,18 @@ from .recruitment_terminology import (
     ENROLMENT_STATUSES,
 )
 from .safety_rules import (
+    SUSAR_RELATIONSHIP_LEVELS,
     SeriousReason,
     auto_classify_serious,
     compute_reporting_deadline,
 )
 
 logger = logging.getLogger(__name__)
+
+# Accepted AE expectedness values (assessed vs the Reference Safety
+# Information). Mirrors safety_rules.Expectedness; kept as a runtime set
+# here for validation at capture / reclassify time.
+_ALLOWED_EXPECTEDNESS = frozenset({"expected", "unexpected", "unknown"})
 
 
 class ClinicalError(Exception):
@@ -1214,6 +1221,7 @@ class ClinicalRepository:
         relationship_to_intervention: str,
         start_date: datetime,
         end_date: datetime | None = None,
+        expectedness: str = "unknown",
         hospitalisation_flag: bool = False,
         life_threatening_flag: bool = False,
         persistent_disability_flag: bool = False,
@@ -1229,6 +1237,11 @@ class ClinicalRepository:
             raise ClinicalError(f"Subject {subject_id!r} not found.")
         if severity_grade < 1 or severity_grade > 5:
             raise ClinicalError("severity_grade must be 1–5 (CTCAE scale).")
+        if expectedness not in _ALLOWED_EXPECTEDNESS:
+            raise ClinicalError(
+                f"Invalid expectedness {expectedness!r}; choose from "
+                f"{', '.join(sorted(_ALLOWED_EXPECTEDNESS))}."
+            )
 
         is_serious, reasons = auto_classify_serious(
             severity_grade=severity_grade,
@@ -1250,6 +1263,7 @@ class ClinicalRepository:
             severity_grade=severity_grade,
             outcome=outcome,
             relationship_to_intervention=relationship_to_intervention,
+            expectedness=expectedness,
             start_date=start_date,
             end_date=end_date,
             is_serious=is_serious,
@@ -1307,6 +1321,28 @@ class ClinicalRepository:
         )
         return list((await self._s.scalars(stmt)).all())
 
+    async def list_susars(self, deployment_id: str) -> list[AdverseEvent]:
+        """Serious + suspected-reaction + unexpected AEs in a deployment.
+
+        SUSARs carry the tightest regulatory clock (7 / 15-day expedited
+        reporting), so this surfaces them for the safety physician's
+        review. The filter mirrors `safety_rules.is_susar` in SQL:
+        is_serious AND relationship in the suspected-reaction set AND
+        expectedness == 'unexpected'. A screening signal, not a regulatory
+        determination — the physician makes the final SUSAR call.
+        """
+        stmt = (
+            select(AdverseEvent)
+            .where(
+                AdverseEvent.deployment_id == deployment_id,
+                AdverseEvent.is_serious.is_(True),
+                AdverseEvent.relationship_to_intervention.in_(SUSAR_RELATIONSHIP_LEVELS),
+                AdverseEvent.expectedness == "unexpected",
+            )
+            .order_by(AdverseEvent.reported_at.desc())
+        )
+        return list((await self._s.scalars(stmt)).all())
+
     async def reclassify_adverse_event(
         self,
         ae_id: str,
@@ -1315,6 +1351,7 @@ class ClinicalRepository:
         serious_reasons: list[SeriousReason] | None = None,
         outcome: str | None = None,
         severity_grade: int | None = None,
+        expectedness: str | None = None,
         meddra_pt: str | None = None,
         narrative: str | None = None,
         actor_sub: str | None = None,
@@ -1323,12 +1360,21 @@ class ClinicalRepository:
 
         Only the fields explicitly passed are touched. Setting
         `is_serious=False` clears the reportable_deadline; setting it to
-        True (re)computes it from `reported_at`. Every change is audited.
+        True (re)computes it from `reported_at`. Overriding `expectedness`
+        can flip the SUSAR status (see `list_susars`). Every change is
+        audited.
         """
         ae = await self._s.get(AdverseEvent, ae_id)
         if ae is None:
             raise ClinicalError(f"AdverseEvent {ae_id!r} not found.")
         old_is_serious = ae.is_serious
+        if expectedness is not None:
+            if expectedness not in _ALLOWED_EXPECTEDNESS:
+                raise ClinicalError(
+                    f"Invalid expectedness {expectedness!r}; choose from "
+                    f"{', '.join(sorted(_ALLOWED_EXPECTEDNESS))}."
+                )
+            ae.expectedness = expectedness
         if severity_grade is not None:
             if severity_grade < 1 or severity_grade > 5:
                 raise ClinicalError("severity_grade must be 1–5.")
@@ -2118,6 +2164,60 @@ class ClinicalRepository:
         await self._s.flush()
         return row
 
+    async def sweep_overdue_visits(
+        self,
+        deployment_id: str,
+        *,
+        now: datetime | None = None,
+        actor_sub: str | None = None,
+    ) -> list[ProtocolDeviation]:
+        """Open a visit_window deviation for every visit past its window.
+
+        A `pending` planned visit whose `window_end` is in the past has
+        violated its protocol visit window. This opens a **minor**
+        `visit_window` ProtocolDeviation for each such visit and records
+        the deviation id on the visit (`window_deviation_id`) so repeat
+        sweeps never double-log. The visit's status is deliberately LEFT
+        as `pending` — a window violation is distinct from a missed visit
+        (the subject may still attend late), and the coordinator remains
+        free to mark it completed/missed. Returns the deviations created
+        this sweep (empty when nothing is overdue).
+        """
+        current = now or datetime.now(UTC)
+        stmt = (
+            select(PlannedVisit)
+            .where(
+                PlannedVisit.subject_id.in_(
+                    select(Subject.id).where(Subject.deployment_id == deployment_id)
+                ),
+                PlannedVisit.status == "pending",
+                PlannedVisit.window_end < current,
+                PlannedVisit.window_deviation_id.is_(None),
+            )
+            .order_by(PlannedVisit.window_end)
+        )
+        overdue = list((await self._s.scalars(stmt)).all())
+        created: list[ProtocolDeviation] = []
+        for visit in overdue:
+            sv = await self._s.get(ScheduledVisit, visit.scheduled_visit_id)
+            visit_name = sv.visit_name if sv is not None else visit.scheduled_visit_id
+            dev = await self.record_deviation(
+                deployment_id=deployment_id,
+                subject_id=visit.subject_id,
+                classification="minor",
+                category="visit_window",
+                description=(
+                    f"Visit {visit_name!r} (planned {visit.planned_date:%Y-%m-%d}) "
+                    f"passed its window end {visit.window_end:%Y-%m-%d} without "
+                    f"being completed."
+                ),
+                actor_sub=actor_sub,
+            )
+            visit.window_deviation_id = dev.id
+            created.append(dev)
+        await self._s.flush()
+        return created
+
     async def upsert_participant_contact(
         self,
         participant_access_id: str,
@@ -2807,6 +2907,16 @@ class ClinicalRepository:
             raise ClinicalError(
                 f"IP {drug_name!r} at {strength!r} already registered in this deployment."
             )
+        # Validate the kit_id pattern is a compilable regex up front, so a
+        # typo'd pattern fails at registration rather than silently rejecting
+        # every dispense later. Enforcement lives in record_drug_dispensation.
+        if kit_id_pattern:
+            try:
+                re.compile(kit_id_pattern)
+            except re.error as exc:
+                raise ClinicalError(
+                    f"kit_id_pattern {kit_id_pattern!r} is not a valid regex: {exc}."
+                ) from exc
         ip = InvestigationalProduct(
             deployment_id=deployment_id,
             drug_name=drug_name,
@@ -2886,6 +2996,33 @@ class ClinicalRepository:
                 f"{',temp_excursion' if temp_excursion_flag else ''}"
             ),
         )
+        # A cold-chain break is a GCP deviation: auto-open a major deviation
+        # + a seed CAPA so the excursion surfaces in the deviation log the
+        # same day it's received, instead of living only in the receipt
+        # notes. Deployment-wide (no subject); the description carries the
+        # receipt id so the two records cross-reference.
+        if temp_excursion_flag:
+            dev = await self.record_deviation(
+                deployment_id=deployment_id,
+                subject_id=None,
+                classification="major",
+                category="temp_excursion",
+                description=(
+                    f"Temperature excursion on IP receipt {receipt.id} "
+                    f"({ip.drug_name} {ip.strength}, lot {lot_number})."
+                    + (f" Notes: {notes}" if notes else "")
+                ),
+                actor_sub=actor_sub,
+            )
+            await self.add_capa(
+                dev.id,
+                action_text=(
+                    "Quarantine the affected lot pending an impact assessment; "
+                    "confirm whether the excursion breaches the IP storage spec "
+                    "before any dispensation from this lot."
+                ),
+                actor_sub=actor_sub,
+            )
         return receipt
 
     async def list_drug_receipts(
@@ -2978,6 +3115,14 @@ class ClinicalRepository:
         if ip is None or ip.deployment_id != deployment_id:
             raise ClinicalError(
                 f"Investigational product {ip_id!r} not registered in this deployment."
+            )
+        # Enforce the catalogue's kit_id pattern (if the IP declares one).
+        # fullmatch — the whole kit_id must conform, not just a prefix — so a
+        # pattern like 'KIT-[0-9]{4}' rejects 'KIT-12' and 'KIT-1234-X' alike.
+        if ip.kit_id_pattern and not re.fullmatch(ip.kit_id_pattern, kit_id):
+            raise ClinicalError(
+                f"kit_id {kit_id!r} does not match the required pattern "
+                f"{ip.kit_id_pattern!r} for {ip.drug_name}."
             )
         available = await self._lot_inventory(deployment_id, ip_id, lot_number)
         if available < quantity_dispensed:
@@ -3180,6 +3325,71 @@ class ClinicalRepository:
             "totals": totals,
             "by_lot": by_lot,
         }
+
+    async def subject_drug_compliance(
+        self,
+        deployment_id: str,
+        *,
+        subject_id: str | None = None,
+    ) -> dict[str, object]:
+        """Per-subject drug-accountability compliance.
+
+        Compliance = sum(quantity_used) / sum(quantity_dispensed) per
+        subject, expressed as a fraction in [0, 1] (None when the subject
+        has no dispensations yet). `quantity_used` is only known once the
+        subject returns the kit, so this is a LOWER BOUND while drug is
+        still out — a subject with dispensed-but-not-yet-returned units
+        reads low until the return is logged. It is a monitoring signal,
+        not a protocol-defined adherence endpoint (which would need the
+        planned dosing schedule, not just what was handed out).
+
+        Returns {deployment_id, by_subject: {subject_id: {subject_code,
+        dispensed, used, returned, lost, compliance}}}. Pass `subject_id`
+        to scope to a single subject.
+        """
+        dispensations = await self.list_drug_dispensations(
+            deployment_id=None if subject_id else deployment_id,
+            subject_id=subject_id,
+        )
+        # list_drug_dispensations scoped by subject_id ignores deployment;
+        # keep only rows in this deployment so a stray subject_id can't
+        # leak another deployment's data.
+        dispensations = [d for d in dispensations if d.deployment_id == deployment_id]
+        returns = await self.list_drug_returns(
+            deployment_id=None if subject_id else deployment_id,
+            subject_id=subject_id,
+        )
+        returns = [r for r in returns if r.deployment_id == deployment_id]
+
+        # Accumulate the four counts per subject in a strictly-int structure
+        # so the arithmetic stays typed; the mixed-type view (with the
+        # subject_code string and the float ratio) is assembled at the end.
+        def _counts() -> dict[str, int]:
+            return {"dispensed": 0, "used": 0, "returned": 0, "lost": 0}
+
+        counts: dict[str, dict[str, int]] = {}
+        for d in dispensations:
+            counts.setdefault(d.subject_id, _counts())["dispensed"] += int(d.quantity_dispensed)
+        for r in returns:
+            bucket = counts.setdefault(r.subject_id, _counts())
+            bucket["used"] += int(r.quantity_used)
+            bucket["returned"] += int(r.quantity_returned)
+            bucket["lost"] += int(r.quantity_lost)
+
+        by_subject: dict[str, dict[str, object]] = {}
+        for sid, c in counts.items():
+            subject = await self._s.get(Subject, sid)
+            dispensed = c["dispensed"]
+            by_subject[sid] = {
+                "subject_code": subject.subject_code if subject is not None else None,
+                "dispensed": dispensed,
+                "used": c["used"],
+                "returned": c["returned"],
+                "lost": c["lost"],
+                "compliance": round(c["used"] / dispensed, 4) if dispensed > 0 else None,
+            }
+
+        return {"deployment_id": deployment_id, "by_subject": by_subject}
 
     # ── Lab-data feeds (P2 #6) ─────────────────────────────────────────
 

@@ -12,6 +12,7 @@ import pytest
 
 from research_assistant.tools.data_science.sample_size import (
     sample_size_paired,
+    sample_size_sensitivity,
     sample_size_time_to_event,
     sample_size_two_means,
     sample_size_two_proportions,
@@ -183,3 +184,196 @@ def test_allocation_imbalance_changes_arm_sizes() -> None:
     # Intervention arm should be ~2x the control (within rounding)
     ratio = r["n_per_arm_intervention"] / r["n_per_arm_control"]
     assert 1.8 <= ratio <= 2.2
+
+
+# ── Non-inferiority + equivalence ────────────────────────────────────────
+
+
+def test_non_inferiority_proportions_textbook_magnitude() -> None:
+    """Assumed-equal 10% event rates, NI margin 0.05, one-sided
+    alpha=0.025, power=0.80, balanced → ~566/arm by the Chow closed form
+    (7.849 * 0.18 / 0.05²)."""
+    r = sample_size_two_proportions(
+        p_control=0.10,
+        p_intervention=0.10,
+        alpha=0.025,
+        power=0.80,
+        hypothesis="non_inferiority",
+        margin=0.05,
+    )
+    assert 555 <= r["n_per_arm_control"] <= 575
+    assert r["hypothesis"] == "non_inferiority"
+    assert r["inputs"]["margin"] == 0.05
+    assert r["inputs"]["one_sided"] is True  # NI is always one-sided
+    assert "non-inferiority" in r["formula_name"]
+    assert "Chow" in r["formula_reference"]
+
+
+def test_non_inferiority_allows_equal_rates() -> None:
+    """Equal assumed rates are the norm for NI (treatments truly
+    equivalent) — must NOT raise the superiority 'cannot be equal' error."""
+    r = sample_size_two_proportions(
+        p_control=0.20,
+        p_intervention=0.20,
+        hypothesis="non_inferiority",
+        margin=0.10,
+    )
+    assert r["n_per_arm_control"] >= 1
+
+
+def test_non_inferiority_requires_positive_margin() -> None:
+    with pytest.raises(ValueError, match="requires a positive `margin`"):
+        sample_size_two_proportions(
+            p_control=0.10, p_intervention=0.10, hypothesis="non_inferiority"
+        )
+
+
+def test_smaller_margin_needs_more_participants() -> None:
+    """A stricter (smaller) NI margin is harder to establish → larger N."""
+    wide = sample_size_two_proportions(
+        p_control=0.10, p_intervention=0.10, hypothesis="non_inferiority", margin=0.08
+    )
+    tight = sample_size_two_proportions(
+        p_control=0.10, p_intervention=0.10, hypothesis="non_inferiority", margin=0.04
+    )
+    assert tight["n_per_arm_control"] > wide["n_per_arm_control"]
+
+
+def test_equivalence_needs_more_than_non_inferiority() -> None:
+    """Equivalence uses the TOST β/2 split (z_{1-β/2} > z_{1-β}), so for
+    the same margin it always needs at least as many participants as the
+    one-sided NI test."""
+    ni = sample_size_two_proportions(
+        p_control=0.10, p_intervention=0.10, hypothesis="non_inferiority", margin=0.05
+    )
+    equiv = sample_size_two_proportions(
+        p_control=0.10, p_intervention=0.10, hypothesis="equivalence", margin=0.05
+    )
+    assert equiv["n_per_arm_control"] > ni["n_per_arm_control"]
+    assert "equivalence" in equiv["formula_name"]
+
+
+def test_infeasible_when_assumed_effect_exceeds_margin() -> None:
+    """If the assumed true difference is outside the margin, no finite N
+    powers the test — reject rather than emit a garbage number."""
+    with pytest.raises(ValueError, match="Infeasible"):
+        sample_size_two_proportions(
+            p_control=0.10,
+            p_intervention=0.20,  # true gap 0.10 >= margin 0.05
+            hypothesis="non_inferiority",
+            margin=0.05,
+        )
+
+
+def test_non_inferiority_two_means_equal_means_ok() -> None:
+    """NI on a continuous outcome: assumed-equal means, margin half an SD,
+    one-sided alpha=0.025, power=0.80 → ~64/arm."""
+    r = sample_size_two_means(
+        mean_control=0.0,
+        mean_intervention=0.0,
+        standard_deviation=1.0,
+        alpha=0.025,
+        power=0.80,
+        hypothesis="non_inferiority",
+        margin=0.5,
+    )
+    assert 58 <= r["n_per_arm_control"] <= 72
+    assert r["hypothesis"] == "non_inferiority"
+
+
+def test_equivalence_two_means_more_than_ni() -> None:
+    ni = sample_size_two_means(
+        mean_control=0.0,
+        mean_intervention=0.0,
+        standard_deviation=1.0,
+        hypothesis="non_inferiority",
+        margin=0.5,
+    )
+    equiv = sample_size_two_means(
+        mean_control=0.0,
+        mean_intervention=0.0,
+        standard_deviation=1.0,
+        hypothesis="equivalence",
+        margin=0.5,
+    )
+    assert equiv["n_per_arm_control"] > ni["n_per_arm_control"]
+
+
+# ── Sensitivity grid ─────────────────────────────────────────────────────
+
+
+def test_sensitivity_grid_covers_full_product() -> None:
+    grid = sample_size_sensitivity(
+        outcome_type="two_proportions",
+        base_params={"p_control": 0.10, "p_intervention": 0.05},
+        vary={"power": [0.80, 0.90], "dropout_rate": [0.0, 0.20]},
+    )
+    assert grid["varied"] == ["dropout_rate", "power"]  # sorted
+    assert grid["truncated"] is False
+    assert len(grid["rows"]) == 4  # 2 x 2
+    # Every row echoes its swept params + a total.
+    for row in grid["rows"]:
+        assert set(row["params"]) == {"power", "dropout_rate"}
+        assert row["n_total"] >= 2
+
+
+def test_sensitivity_grid_matches_single_point_run() -> None:
+    """A grid cell must equal the scalar tool for the same inputs — the
+    whole point is one consistent closed form."""
+    base = {"p_control": 0.10, "p_intervention": 0.05}
+    grid = sample_size_sensitivity(
+        outcome_type="two_proportions",
+        base_params=base,
+        vary={"power": [0.90]},
+    )
+    scalar = sample_size_two_proportions(**base, power=0.90)  # type: ignore[arg-type]
+    assert grid["rows"][0]["n_total"] == scalar["n_total"]
+
+
+def test_sensitivity_grid_monotonic_in_power() -> None:
+    grid = sample_size_sensitivity(
+        outcome_type="two_means",
+        base_params={"mean_control": 0.0, "mean_intervention": 0.5, "standard_deviation": 1.0},
+        vary={"power": [0.80, 0.90, 0.95]},
+    )
+    totals = [r["n_total"] for r in grid["rows"]]
+    assert totals == sorted(totals)  # more power → more N
+
+
+def test_sensitivity_grid_infeasible_cell_carries_error_not_crash() -> None:
+    """A non-inferiority sweep where some margins are smaller than the
+    assumed true gap must mark only those cells as errors."""
+    grid = sample_size_sensitivity(
+        outcome_type="two_proportions",
+        base_params={
+            "p_control": 0.10,
+            "p_intervention": 0.15,  # true gap 0.05
+            "hypothesis": "non_inferiority",
+            "alpha": 0.025,
+        },
+        vary={"margin": [0.04, 0.10]},  # 0.04 < gap → infeasible; 0.10 ok
+    )
+    by_margin = {row["params"]["margin"]: row for row in grid["rows"]}
+    assert "error" in by_margin[0.04]
+    assert "Infeasible" in by_margin[0.04]["error"]
+    assert by_margin[0.10]["n_total"] >= 2
+
+
+def test_sensitivity_grid_truncates_and_flags() -> None:
+    grid = sample_size_sensitivity(
+        outcome_type="two_proportions",
+        base_params={"p_control": 0.10, "p_intervention": 0.05},
+        vary={"power": [0.80, 0.85, 0.90]},
+        max_combinations=2,
+    )
+    assert grid["truncated"] is True
+    assert len(grid["rows"]) == 2
+
+
+def test_sensitivity_grid_rejects_empty_vary() -> None:
+    with pytest.raises(ValueError, match="at least one parameter"):
+        sample_size_sensitivity(
+            outcome_type="two_proportions",
+            base_params={"p_control": 0.10, "p_intervention": 0.05},
+            vary={},
+        )

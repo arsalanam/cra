@@ -13,6 +13,7 @@ has setup and the quality-gate workflow.
 | [`design/architecture.md`](design/architecture.md) | Target system topology — containers, stores, AWS deployment shape |
 | [`design/rbac-design.md`](design/rbac-design.md) | Role-based access control: ~105 permissions, 12 roles, scoped grants, separation of duties |
 | [`design/ecrf-design.md`](design/ecrf-design.md) | eCRF/EDC design and its locked decisions (dedicated PHI store, Part 11/ALCOA+, EDC + ePRO) |
+| [`design/cdisc-readiness.md`](design/cdisc-readiness.md) ([HTML](design/cdisc-readiness.html)) | CDISC submission-readiness matrix — what SDTM/ADaM/Define-XML the platform produces vs. a complete submission; read before any "we do CDISC" claim |
 | [`hipaa-posture.md`](hipaa-posture.md) | PHI & HIPAA posture: code-verified data inventory, Security-Rule alignment, shared-responsibility split |
 | [`agent-loop-review.md`](agent-loop-review.md) | The review that produced the current agent-loop design (routing, retries, circuit breaker) |
 

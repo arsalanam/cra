@@ -6,7 +6,9 @@ citation-network analysis).
 """
 
 from . import (
+    bayesian,
     calculator,
+    group_sequential,
     ipd_analysis,
     nma_analysis,
     python_repl,
@@ -17,7 +19,9 @@ from . import (
 )
 
 __all__ = [
+    "bayesian",
     "calculator",
+    "group_sequential",
     "ipd_analysis",
     "nma_analysis",
     "python_repl",

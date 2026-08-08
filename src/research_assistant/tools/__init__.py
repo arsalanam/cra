@@ -17,7 +17,14 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Protocol
 
 from .clinical import fetch_pmc_fulltext, mesh_lookup, search_papers
-from .data_science import calculator, python_repl, sample_size, sandbox_exec
+from .data_science import (
+    bayesian,
+    calculator,
+    group_sequential,
+    python_repl,
+    sample_size,
+    sandbox_exec,
+)
 from .general import describe_image, fetch_document, read_file, web_search, wikipedia
 
 if TYPE_CHECKING:
@@ -52,6 +59,8 @@ DATA_SCIENCE_TOOLS: list[ToolModule] = [
     calculator,
     python_repl,
     sample_size,
+    group_sequential,
+    bayesian,
     sandbox_exec,
 ]
 

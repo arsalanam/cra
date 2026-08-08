@@ -443,6 +443,16 @@ class AdverseEvent(ClinicalBase):
         default="unknown",
         doc="unrelated | unlikely | possible | probable | definite | unknown",
     )
+    expectedness: Mapped[str] = mapped_column(
+        Text,
+        default="unknown",
+        server_default="unknown",
+        doc=(
+            "expected | unexpected | unknown — assessed against the "
+            "Reference Safety Information (Investigator's Brochure). "
+            "'unexpected' is the SUSAR trigger (safety_rules.is_susar)."
+        ),
+    )
 
     is_serious: Mapped[bool] = mapped_column(Boolean, default=False)
     serious_reasons_json: Mapped[str] = mapped_column(
@@ -532,7 +542,8 @@ class ProtocolDeviation(ClinicalBase):
         Text,
         doc=(
             "consent | eligibility | procedure | visit_window | "
-            "drug_compliance | ae_not_reported | data_capture | other"
+            "drug_compliance | temp_excursion | ae_not_reported | "
+            "data_capture | other"
         ),
     )
     description: Mapped[str] = mapped_column(Text)
@@ -1482,6 +1493,16 @@ class PlannedVisit(ClinicalBase):
         DateTime(timezone=True), nullable=True, default=None
     )
     override_reason: Mapped[str] = mapped_column(Text, default="")
+    window_deviation_id: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        default=None,
+        doc=(
+            "Id of the visit_window ProtocolDeviation auto-created when this "
+            "visit aged past its window (see sweep_overdue_visits). Guards "
+            "against duplicate deviations on re-sweeps; NULL until violated."
+        ),
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
@@ -1770,7 +1791,8 @@ class InvestigationalProduct(ClinicalBase):
         default=None,
         doc=(
             "Optional regex pattern that kit_ids for this IP must match "
-            "(e.g. 'KIT-[0-9]{4}'). Documented; not enforced this slice."
+            "(e.g. 'KIT-[0-9]{4}'). Validated as a compilable regex at "
+            "registration and enforced (re.fullmatch) at dispense time."
         ),
     )
     status: Mapped[str] = mapped_column(Text, default="active")

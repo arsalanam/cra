@@ -153,6 +153,48 @@ async def test_record_receipt_temp_excursion_flag_persists(
     assert "JFK" in receipt.notes
 
 
+async def test_temp_excursion_receipt_auto_opens_deviation_and_capa(
+    clinical_session: AsyncSession,
+) -> None:
+    """A cold-chain break auto-opens a major temp_excursion deviation with a
+    seed CAPA, cross-referencing the receipt."""
+    dep, _, _ = await _seed_deployment(clinical_session)
+    repo = ClinicalRepository(clinical_session)
+    ip = await repo.register_investigational_product(dep.id, drug_name="DrugX", strength="10 mg")
+    receipt = await repo.record_drug_receipt(
+        dep.id,
+        ip_id=ip.id,
+        lot_number="LOT-A",
+        quantity_received=50,
+        temp_excursion_flag=True,
+        notes="Freezer failure overnight",
+        actor_sub="coord-1",
+    )
+    devs = await repo.list_deviations(deployment_id=dep.id)
+    assert len(devs) == 1
+    dev = devs[0]
+    assert dev.category == "temp_excursion"
+    assert dev.classification == "major"
+    assert dev.subject_id is None  # deployment-wide
+    assert receipt.id in dev.description
+    assert "LOT-A" in dev.description
+    # Adding the CAPA flipped the deviation to under_capa.
+    assert dev.status == "under_capa"
+    capas = await repo.list_capas(dev.id)
+    assert len(capas) == 1
+    assert "Quarantine" in capas[0].action_text
+
+
+async def test_normal_receipt_opens_no_deviation(
+    clinical_session: AsyncSession,
+) -> None:
+    dep, _, _ = await _seed_deployment(clinical_session)
+    repo = ClinicalRepository(clinical_session)
+    ip = await repo.register_investigational_product(dep.id, drug_name="DrugX", strength="10 mg")
+    await repo.record_drug_receipt(dep.id, ip_id=ip.id, lot_number="LOT-A", quantity_received=50)
+    assert await repo.list_deviations(deployment_id=dep.id) == []
+
+
 # ── Dispensations ─────────────────────────────────────────────────────────
 
 
@@ -235,6 +277,103 @@ async def test_dispense_rejects_negative_quantity(
             kit_id="KIT-001",
             quantity_dispensed=-5,
         )
+
+
+# ── kit_id pattern enforcement ────────────────────────────────────────────
+
+
+async def test_register_ip_rejects_invalid_kit_id_pattern(
+    clinical_session: AsyncSession,
+) -> None:
+    """A typo'd pattern must fail at registration, not silently reject every
+    dispense later."""
+    dep, _, _ = await _seed_deployment(clinical_session)
+    repo = ClinicalRepository(clinical_session)
+    with pytest.raises(ClinicalError, match="not a valid regex"):
+        await repo.register_investigational_product(
+            dep.id, drug_name="DrugX", strength="10 mg", kit_id_pattern="KIT-[0-9"
+        )
+
+
+async def test_dispense_accepts_kit_id_matching_pattern(
+    clinical_session: AsyncSession,
+) -> None:
+    dep, _, subj = await _seed_deployment(clinical_session)
+    repo = ClinicalRepository(clinical_session)
+    ip = await repo.register_investigational_product(
+        dep.id, drug_name="DrugX", strength="10 mg", kit_id_pattern="KIT-[0-9]{4}"
+    )
+    await repo.record_drug_receipt(dep.id, ip_id=ip.id, lot_number="LOT-A", quantity_received=100)
+    disp = await repo.record_drug_dispensation(
+        dep.id,
+        subject_id=subj.id,
+        ip_id=ip.id,
+        lot_number="LOT-A",
+        kit_id="KIT-0001",
+        quantity_dispensed=30,
+    )
+    assert disp.kit_id == "KIT-0001"
+
+
+async def test_dispense_rejects_kit_id_not_matching_pattern(
+    clinical_session: AsyncSession,
+) -> None:
+    dep, _, subj = await _seed_deployment(clinical_session)
+    repo = ClinicalRepository(clinical_session)
+    ip = await repo.register_investigational_product(
+        dep.id, drug_name="DrugX", strength="10 mg", kit_id_pattern="KIT-[0-9]{4}"
+    )
+    await repo.record_drug_receipt(dep.id, ip_id=ip.id, lot_number="LOT-A", quantity_received=100)
+    with pytest.raises(ClinicalError, match="does not match the required pattern"):
+        await repo.record_drug_dispensation(
+            dep.id,
+            subject_id=subj.id,
+            ip_id=ip.id,
+            lot_number="LOT-A",
+            kit_id="BOTTLE-1",
+            quantity_dispensed=30,
+        )
+
+
+async def test_dispense_kit_id_pattern_is_fullmatch_not_prefix(
+    clinical_session: AsyncSession,
+) -> None:
+    """A prefix that matches but carries extra trailing chars must be
+    rejected — 'KIT-0001-X' is not a valid 'KIT-[0-9]{4}'."""
+    dep, _, subj = await _seed_deployment(clinical_session)
+    repo = ClinicalRepository(clinical_session)
+    ip = await repo.register_investigational_product(
+        dep.id, drug_name="DrugX", strength="10 mg", kit_id_pattern="KIT-[0-9]{4}"
+    )
+    await repo.record_drug_receipt(dep.id, ip_id=ip.id, lot_number="LOT-A", quantity_received=100)
+    with pytest.raises(ClinicalError, match="does not match the required pattern"):
+        await repo.record_drug_dispensation(
+            dep.id,
+            subject_id=subj.id,
+            ip_id=ip.id,
+            lot_number="LOT-A",
+            kit_id="KIT-0001-X",
+            quantity_dispensed=30,
+        )
+
+
+async def test_dispense_without_pattern_accepts_any_kit_id(
+    clinical_session: AsyncSession,
+) -> None:
+    """No declared pattern → the kit_id is free-text (back-compat)."""
+    dep, _, subj = await _seed_deployment(clinical_session)
+    repo = ClinicalRepository(clinical_session)
+    ip = await repo.register_investigational_product(dep.id, drug_name="DrugX", strength="10 mg")
+    await repo.record_drug_receipt(dep.id, ip_id=ip.id, lot_number="LOT-A", quantity_received=100)
+    disp = await repo.record_drug_dispensation(
+        dep.id,
+        subject_id=subj.id,
+        ip_id=ip.id,
+        lot_number="LOT-A",
+        kit_id="anything-goes",
+        quantity_dispensed=30,
+    )
+    assert disp.kit_id == "anything-goes"
 
 
 # ── Returns ──────────────────────────────────────────────────────────────
@@ -389,6 +528,100 @@ async def test_reconciliation_empty_deployment_returns_zero_totals(
     assert rollup["totals"]["received"] == 0
     assert rollup["totals"]["current_inventory"] == 0
     assert rollup["by_lot"] == {}
+
+
+# ── Per-subject compliance ────────────────────────────────────────────────
+
+
+async def test_subject_compliance_ratio_used_over_dispensed(
+    clinical_session: AsyncSession,
+) -> None:
+    dep, _, subj = await _seed_deployment(clinical_session)
+    repo = ClinicalRepository(clinical_session)
+    ip = await repo.register_investigational_product(dep.id, drug_name="DrugX", strength="10 mg")
+    await repo.record_drug_receipt(dep.id, ip_id=ip.id, lot_number="LOT-A", quantity_received=100)
+    disp = await repo.record_drug_dispensation(
+        dep.id,
+        subject_id=subj.id,
+        ip_id=ip.id,
+        lot_number="LOT-A",
+        kit_id="KIT-001",
+        quantity_dispensed=40,
+    )
+    # Returned 10, of which 8 used → compliance = 8 / 40 = 0.2.
+    await repo.record_drug_return(disp.id, quantity_returned=10, quantity_used=8, quantity_lost=1)
+
+    rollup = await repo.subject_drug_compliance(dep.id)
+    bucket = rollup["by_subject"][subj.id]
+    assert bucket["subject_code"] == "S-001"
+    assert bucket["dispensed"] == 40
+    assert bucket["used"] == 8
+    assert bucket["compliance"] == 0.2
+
+
+async def test_subject_compliance_none_when_nothing_dispensed(
+    clinical_session: AsyncSession,
+) -> None:
+    """A subject with no dispensations doesn't appear; the deployment
+    rollup is simply empty."""
+    dep, _, _ = await _seed_deployment(clinical_session)
+    repo = ClinicalRepository(clinical_session)
+    rollup = await repo.subject_drug_compliance(dep.id)
+    assert rollup["deployment_id"] == dep.id
+    assert rollup["by_subject"] == {}
+
+
+async def test_subject_compliance_dispensed_not_yet_returned_is_zero(
+    clinical_session: AsyncSession,
+) -> None:
+    """Drug is out but no return logged yet → used=0, compliance=0.0 (the
+    documented lower-bound behaviour), NOT None."""
+    dep, _, subj = await _seed_deployment(clinical_session)
+    repo = ClinicalRepository(clinical_session)
+    ip = await repo.register_investigational_product(dep.id, drug_name="DrugX", strength="10 mg")
+    await repo.record_drug_receipt(dep.id, ip_id=ip.id, lot_number="LOT-A", quantity_received=100)
+    await repo.record_drug_dispensation(
+        dep.id,
+        subject_id=subj.id,
+        ip_id=ip.id,
+        lot_number="LOT-A",
+        kit_id="KIT-001",
+        quantity_dispensed=30,
+    )
+    rollup = await repo.subject_drug_compliance(dep.id)
+    bucket = rollup["by_subject"][subj.id]
+    assert bucket["dispensed"] == 30
+    assert bucket["used"] == 0
+    assert bucket["compliance"] == 0.0
+
+
+async def test_subject_compliance_scoped_to_single_subject(
+    clinical_session: AsyncSession,
+) -> None:
+    dep, site, subj_a = await _seed_deployment(clinical_session)
+    # A second subject in the same deployment.
+    subj_b = Subject(
+        deployment_id=dep.id,
+        site_id=site.id,
+        subject_code="S-002",
+        baseline_date=datetime(2026, 1, 2, 12, 0, tzinfo=UTC),
+    )
+    clinical_session.add(subj_b)
+    await clinical_session.flush()
+    repo = ClinicalRepository(clinical_session)
+    ip = await repo.register_investigational_product(dep.id, drug_name="DrugX", strength="10 mg")
+    await repo.record_drug_receipt(dep.id, ip_id=ip.id, lot_number="LOT-A", quantity_received=100)
+    for s in (subj_a, subj_b):
+        await repo.record_drug_dispensation(
+            dep.id,
+            subject_id=s.id,
+            ip_id=ip.id,
+            lot_number="LOT-A",
+            kit_id="KIT-001",
+            quantity_dispensed=10,
+        )
+    scoped = await repo.subject_drug_compliance(dep.id, subject_id=subj_a.id)
+    assert set(scoped["by_subject"].keys()) == {subj_a.id}
 
 
 # ── RBAC matrix ──────────────────────────────────────────────────────────
