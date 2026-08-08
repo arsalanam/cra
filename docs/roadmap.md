@@ -347,9 +347,23 @@ The platform's existing invite endpoint (`/api/admin/users`) was bare — global
 
 ### CDISC mapping (SDTM → ADaM → TLF)
 
-- **MedDRA license-gated mappers** for AE / MH preferred-term coding. **Benefit:** the regulator-acceptable submission unblocked.
-- **WHODrug license-gated mappers** for CM medication coding. **Benefit:** same as above for concomitant meds.
+> **Coverage today vs. a complete submission:** see the
+> [CDISC submission-readiness matrix](design/cdisc-readiness.md) (7 SDTM domains
+> + ADSL/ADTTE + Define-XML v2.1 + XPT + starter TLFs are produced; the gaps
+> below are what stands between that and a regulator-complete package). Consult
+> it before making any "we can do CDISC submissions" claim — the honest answer
+> is *core yes, full submission not yet*, and MedDRA/WHODrug is a license gate,
+> not code.
+
+- **Additional SDTM domains** — `DA` (drug accountability data already exists),
+  `DS` (disposition), `SV`/`SE` (subject visits), `QS` (from ePRO), and the
+  static Trial-Design domains (`TA·TE·TV·TI·TS`). **Benefit:** each closes a gap
+  a reviewer expects in a typical package; the underlying data is mostly already
+  captured, so the work is the mapper.
+- **MedDRA license-gated mappers** for AE / MH preferred-term coding. **Benefit:** the regulator-acceptable submission unblocked. (Deploy gate, not backlog.)
+- **WHODrug license-gated mappers** for CM medication coding. **Benefit:** same as above for concomitant meds. (Deploy gate, not backlog.)
 - **Additional ADaM datasets** — ADAE, ADCM, ADLB, ADVS, ADQS. **Benefit:** each one is an FDA-recommended dataset for typical submissions.
+- **Reviewer guides + annotated CRF** — SDRG / ADRG (drafter shape parallel to the CSR/IRB drafters, templated from Define-XML + derivation metadata) and the annotated CRF. **Benefit:** the human-facing half of an FDA data package.
 - **More TLF templates** — subgroup forest plots, Kaplan-Meier curves overlayed by ADSL strata, swimmer + waterfall as standard outputs. **Benefit:** richer TLF library reduces operator paste-into-CSR work.
 - **FDA ESG / EMA CESP submission gateway.** Today we export the bundle; submission is the operator's job. A direct gateway adapter is the next step. **Benefit:** end-to-end submission inside the platform.
 

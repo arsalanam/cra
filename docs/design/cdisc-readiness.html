@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>CDISC Submission Readiness — CRA</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #EDF1F4; --surface: #FFFFFF; --surface-2: #F5F8FA;
+    --ink: #17242E; --muted: #59687500; --muted: #5A6975;
+    --line: #DBE3E9; --line-strong: #C4D0D8;
+    --accent: #0E7C86; --accent-soft: #0E7C8618;
+    --good: #2E7D57; --good-soft: #2E7D5718;
+    --warn: #B0761C; --warn-soft: #B0761C1a;
+    --none: #7C8B97; --none-soft: #7C8B9718;
+    --blocked: #A34A52; --blocked-soft: #A34A521a;
+    --shadow: 0 1px 2px rgba(20,35,46,.06), 0 8px 24px rgba(20,35,46,.05);
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --mono: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0C1218; --surface: #131C24; --surface-2: #18232C;
+      --ink: #E7EEF3; --muted: #93A4B0;
+      --line: #24313B; --line-strong: #32424E;
+      --accent: #36AAB4; --accent-soft: #36AAB420;
+      --good: #52B98C; --good-soft: #52B98c22;
+      --warn: #D6A24A; --warn-soft: #D6A24a22;
+      --none: #6E7D89; --none-soft: #6E7D8922;
+      --blocked: #CC717A; --blocked-soft: #CC717a22;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 30px rgba(0,0,0,.28);
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #EDF1F4; --surface: #FFFFFF; --surface-2: #F5F8FA;
+    --ink: #17242E; --muted: #5A6975; --line: #DBE3E9; --line-strong: #C4D0D8;
+    --accent: #0E7C86; --accent-soft: #0E7C8618;
+    --good: #2E7D57; --good-soft: #2E7D5718; --warn: #B0761C; --warn-soft: #B0761C1a;
+    --none: #7C8B97; --none-soft: #7C8B9718; --blocked: #A34A52; --blocked-soft: #A34A521a;
+    --shadow: 0 1px 2px rgba(20,35,46,.06), 0 8px 24px rgba(20,35,46,.05);
+  }
+  :root[data-theme="dark"] {
+    --bg: #0C1218; --surface: #131C24; --surface-2: #18232C;
+    --ink: #E7EEF3; --muted: #93A4B0; --line: #24313B; --line-strong: #32424E;
+    --accent: #36AAB4; --accent-soft: #36AAB420;
+    --good: #52B98C; --good-soft: #52B98c22; --warn: #D6A24A; --warn-soft: #D6A24a22;
+    --none: #6E7D89; --none-soft: #6E7D8922; --blocked: #CC717A; --blocked-soft: #CC717a22;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 30px rgba(0,0,0,.28);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: var(--sans); line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1060px; margin: 0 auto; padding: 44px 24px 80px; }
+
+  .eyebrow {
+    font: 600 11.5px/1 var(--mono); letter-spacing: .16em; text-transform: uppercase;
+    color: var(--accent); margin: 0 0 14px;
+  }
+  h1 { font-size: clamp(26px, 4vw, 38px); line-height: 1.08; margin: 0 0 12px; letter-spacing: -.02em; text-wrap: balance; font-weight: 680; }
+  .lede { font-size: 17px; color: var(--muted); max-width: 64ch; margin: 0; }
+  .meta { margin-top: 16px; font: 500 12px/1.5 var(--mono); color: var(--muted); }
+  .meta b { color: var(--ink); font-weight: 600; }
+
+  /* headline metrics */
+  .metrics { display: flex; flex-wrap: wrap; gap: 10px; margin: 26px 0 30px; }
+  .metric {
+    flex: 1 1 130px; background: var(--surface); border: 1px solid var(--line);
+    border-radius: 10px; padding: 14px 16px; box-shadow: var(--shadow);
+  }
+  .metric .n { font: 700 24px/1 var(--sans); letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+  .metric .l { font-size: 11.5px; color: var(--muted); margin-top: 5px; letter-spacing: .01em; }
+
+  /* verdict callout */
+  .verdict {
+    background: var(--surface); border: 1px solid var(--line);
+    border-left: 3px solid var(--accent); border-radius: 10px;
+    padding: 18px 20px; margin: 0 0 34px; box-shadow: var(--shadow);
+  }
+  .verdict h2 { margin: 0 0 8px; font-size: 15px; letter-spacing: .01em; }
+  .verdict p { margin: 0; font-size: 14.5px; color: var(--muted); }
+  .verdict p + p { margin-top: 8px; }
+  .verdict strong { color: var(--ink); font-weight: 620; }
+
+  /* legend */
+  .legend { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 0 0 30px; padding: 0; list-style: none; }
+  .legend li { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--muted); }
+  .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+  .dot.good { background: var(--good); } .dot.warn { background: var(--warn); }
+  .dot.none { background: var(--none); } .dot.blocked { background: var(--blocked); }
+
+  /* pipeline strip */
+  .flowsec { margin: 0 0 40px; }
+  .flow {
+    display: flex; align-items: stretch; gap: 0; overflow-x: auto;
+    border: 1px solid var(--line); border-radius: 12px; background: var(--surface);
+    box-shadow: var(--shadow); padding: 6px;
+  }
+  .stage { flex: 1 0 auto; min-width: 128px; padding: 14px 16px; position: relative; }
+  .stage:not(:last-child)::after {
+    content: "›"; position: absolute; right: -7px; top: 50%; transform: translateY(-50%);
+    color: var(--line-strong); font-size: 20px; z-index: 1;
+  }
+  .stage .k { font: 600 10.5px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--accent); }
+  .stage .t { font-size: 13.5px; font-weight: 600; margin: 7px 0 3px; }
+  .stage .d { font-size: 11.5px; color: var(--muted); line-height: 1.4; }
+
+  section.block { margin: 0 0 12px; }
+  .block-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 34px 0 12px; flex-wrap: wrap; }
+  .block-head h2 { font-size: 18px; margin: 0; letter-spacing: -.01em; }
+  .block-head .sub { font-size: 12.5px; color: var(--muted); }
+
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); overflow: hidden; }
+  .tbl-scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  thead th {
+    text-align: left; font: 600 10.5px/1.2 var(--mono); letter-spacing: .1em; text-transform: uppercase;
+    color: var(--muted); padding: 12px 16px; background: var(--surface-2); border-bottom: 1px solid var(--line);
+    white-space: nowrap;
+  }
+  tbody td { padding: 11px 16px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr { transition: background .12s ease; }
+  tbody tr:hover { background: var(--surface-2); }
+  td.code { font: 600 12.5px/1.3 var(--mono); color: var(--ink); white-space: nowrap; }
+  td.name { font-weight: 550; white-space: nowrap; }
+  td.note { color: var(--muted); font-size: 12.5px; min-width: 220px; }
+  /* status stripe on first cell */
+  td.st { white-space: nowrap; border-left: 3px solid transparent; }
+  tr.s-good td.st { border-left-color: var(--good); }
+  tr.s-warn td.st { border-left-color: var(--warn); }
+  tr.s-none td.st { border-left-color: var(--none); }
+  tr.s-blocked td.st { border-left-color: var(--blocked); }
+
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px; font: 600 11px/1 var(--sans);
+    padding: 5px 9px 5px 8px; border-radius: 999px; white-space: nowrap;
+  }
+  .chip::before { content: ""; width: 7px; height: 7px; border-radius: 50%; }
+  .chip.good { background: var(--good-soft); color: var(--good); } .chip.good::before { background: var(--good); }
+  .chip.warn { background: var(--warn-soft); color: var(--warn); } .chip.warn::before { background: var(--warn); }
+  .chip.none { background: var(--none-soft); color: var(--none); } .chip.none::before { background: var(--none); }
+  .chip.blocked { background: var(--blocked-soft); color: var(--blocked); } .chip.blocked::before { background: var(--blocked); }
+
+  footer { margin-top: 44px; padding-top: 22px; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--muted); }
+  footer code { font-family: var(--mono); font-size: 12px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; color: var(--ink); }
+  footer p { margin: 0 0 8px; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p class="eyebrow">CDISC Submission Readiness</p>
+  <h1>Can a drug-intervention trial run through CRA generate its CDISC submission?</h1>
+  <p class="lede">A coverage read for a common parallel-group randomized drug trial: what the platform derives and packages today, what's partial, and what's still missing before a package is regulator-complete.</p>
+  <p class="meta">Scope: <b>parallel-group RCT, safety + time-to-event</b> &nbsp;·&nbsp; Assessed against the CDISC SDTM IG / ADaM IG expectation for a typical submission &nbsp;·&nbsp; Grounded in the current <b>cdisc/</b> package</p>
+
+  <div class="metrics">
+    <div class="metric"><div class="n">7</div><div class="l">SDTM domains derived</div></div>
+    <div class="metric"><div class="n">2</div><div class="l">ADaM datasets derived</div></div>
+    <div class="metric"><div class="n">v2.1</div><div class="l">Define-XML + XPT v5</div></div>
+    <div class="metric"><div class="n">4</div><div class="l">TLF artefacts</div></div>
+    <div class="metric"><div class="n">1&nbsp;ZIP</div><div class="l">Submission bundle</div></div>
+  </div>
+
+  <div class="verdict">
+    <h2>Bottom line</h2>
+    <p><strong>Yes for the core — not a turnkey full submission.</strong> From captured eCRF data, one derive run produces a genuine, reviewable CDISC package: seven SDTM domains, the subject-level (ADSL) and time-to-event (ADTTE) ADaM datasets, a Define-XML v2.1 metadata file, SAS Transport (XPT v5) datasets, a starter table/figure set, and an ICH E3 clinical study report — assembled into one submission-bundle ZIP.</p>
+    <p>What it is <strong>not</strong> yet: a complete FDA/EMA eCTD Module 5 package. Several standard SDTM &amp; ADaM datasets, the reviewer guides (SDRG / ADRG / annotated CRF), and — critically — <strong>MedDRA / WHODrug medical coding</strong> are outstanding. Coding is license-gated, not an engineering gap.</p>
+  </div>
+
+  <ul class="legend">
+    <li><span class="dot good"></span> Produced — derived &amp; in the bundle</li>
+    <li><span class="dot warn"></span> Partial — produced with a documented caveat</li>
+    <li><span class="dot none"></span> Not yet — buildable, on the backlog</li>
+    <li><span class="dot blocked"></span> Blocked — external license or multi-quarter build</li>
+  </ul>
+
+  <div class="flowsec">
+    <div class="block-head"><h2>How it's generated</h2><span class="sub">one transaction · <code style="font-family:var(--mono);font-size:11.5px">POST /deployments/{id}/cdisc/derive</code></span></div>
+    <div class="flow">
+      <div class="stage"><div class="k">Capture</div><div class="t">eCRF / EDC</div><div class="d">Subject, AE, exposure, labs, vitals, con-meds, history</div></div>
+      <div class="stage"><div class="k">Map</div><div class="t">SDTM</div><div class="d">7 domains, SDTM CT applied</div></div>
+      <div class="stage"><div class="k">Derive</div><div class="t">ADaM</div><div class="d">ADSL + ADTTE</div></div>
+      <div class="stage"><div class="k">Summarize</div><div class="t">TLF</div><div class="d">Tables + AE figure</div></div>
+      <div class="stage"><div class="k">Describe</div><div class="t">Define-XML</div><div class="d">v2.1 metadata + codelists</div></div>
+      <div class="stage"><div class="k">Package</div><div class="t">Bundle ZIP</div><div class="d">define.xml + .xpt + TLF</div></div>
+    </div>
+  </div>
+
+  <!-- SDTM -->
+  <section class="block">
+    <div class="block-head"><h2>SDTM domains</h2><span class="sub">Study Data Tabulation Model — the standardized raw-data tables</span></div>
+    <div class="card"><div class="tbl-scroll"><table>
+      <thead><tr><th>Status</th><th>Domain</th><th>Dataset</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr class="s-good"><td class="st"><span class="chip good">Produced</span></td><td class="code">DM</td><td class="name">Demographics</td><td class="note">Age, sex, race, arm, reference dates. Full.</td></tr>
+        <tr class="s-warn"><td class="st"><span class="chip warn">Partial</span></td><td class="code">AE</td><td class="name">Adverse Events</td><td class="note">Verbatim + seriousness + relationship. <b>AEDECOD / AEBODSYS free-text</b> — MedDRA coding blocked.</td></tr>
+        <tr class="s-good"><td class="st"><span class="chip good">Produced</span></td><td class="code">EX</td><td class="name">Exposure</td><td class="note">Dosing / administration records with routes.</td></tr>
+        <tr class="s-warn"><td class="st"><span class="chip warn">Partial</span></td><td class="code">CM</td><td class="name">Concomitant Meds</td><td class="note">Captured &amp; mapped. <b>CMDECOD free-text</b> — WHODrug coding blocked.</td></tr>
+        <tr class="s-warn"><td class="st"><span class="chip warn">Partial</span></td><td class="code">LB</td><td class="name">Laboratory</td><td class="note">Results + normal-range indicator. STRESN = ORRES until a unit-conversion table is wired in.</td></tr>
+        <tr class="s-good"><td class="st"><span class="chip good">Produced</span></td><td class="code">VS</td><td class="name">Vital Signs</td><td class="note">Height, weight, BP, pulse, temperature.</td></tr>
+        <tr class="s-warn"><td class="st"><span class="chip warn">Partial</span></td><td class="code">MH</td><td class="name">Medical History</td><td class="note">Captured &amp; mapped. SOC placeholder until MedDRA.</td></tr>
+        <tr class="s-none"><td class="st"><span class="chip none">Not yet</span></td><td class="code">DA</td><td class="name">Drug Accountability</td><td class="note"><b>Data already exists</b> (IP receipt / dispense / return subsystem) — just no SDTM DA mapper yet.</td></tr>
+        <tr class="s-none"><td class="st"><span class="chip none">Not yet</span></td><td class="code">DS</td><td class="name">Disposition</td><td class="note">Completion / discontinuation events. Derivable from screening + visit state.</td></tr>
+        <tr class="s-none"><td class="st"><span class="chip none">Not yet</span></td><td class="code">SV / SE</td><td class="name">Subject Visits / Elements</td><td class="note">Visit-schedule data exists; needs the SV/SE mappers.</td></tr>
+        <tr class="s-none"><td class="st"><span class="chip none">Not yet</span></td><td class="code">QS</td><td class="name">Questionnaires</td><td class="note">ePRO subsystem could feed QS; mapper not built.</td></tr>
+        <tr class="s-none"><td class="st"><span class="chip none">Not yet</span></td><td class="code">EG</td><td class="name">ECG</td><td class="note">Only if the trial collects ECG (capture + mapper).</td></tr>
+        <tr class="s-none"><td class="st"><span class="chip none">Not yet</span></td><td class="code">TA·TE·TV·TI·TS</td><td class="name">Trial Design</td><td class="note">Small static domains required for submission; not yet emitted.</td></tr>
+      </tbody>
+    </table></div></div>
+  </section>
+
+  <!-- ADaM -->
+  <section class="block">
+    <div class="block-head"><h2>ADaM datasets</h2><span class="sub">Analysis Data Model — SDTM plus analysis-ready derived variables</span></div>
+    <div class="card"><div class="tbl-scroll"><table>
+      <thead><tr><th>Status</th><th>Dataset</th><th>Name</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr class="s-good"><td class="st"><span class="chip good">Produced</span></td><td class="code">ADSL</td><td class="name">Subject-Level</td><td class="note">One row/subject; population flags (SAFFL / ITTFL / DTHFL), age groups, treatment, reference dates.</td></tr>
+        <tr class="s-good"><td class="st"><span class="chip good">Produced</span></td><td class="code">ADTTE</td><td class="name">Time-to-Event</td><td class="note">Time to first AE / SAE / death; AVAL + CNSR with SRCDOM/SRCVAR traceability.</td></tr>
+        <tr class="s-none"><td class="st"><span class="chip none">Not yet</span></td><td class="code">ADAE</td><td class="name">Adverse Events</td><td class="note">Scoped &amp; deferred — a 6-file slice (model + deriver + pipeline + Define-XML + XPT). TRTEMFL / AOCCFL flags.</td></tr>
+        <tr class="s-none"><td class="st"><span class="chip none">Not yet</span></td><td class="code">ADLB · ADVS</td><td class="name">Labs / Vitals (BDS)</td><td class="note">Basic-Data-Structure analysis datasets from LB / VS.</td></tr>
+        <tr class="s-none"><td class="st"><span class="chip none">Not yet</span></td><td class="code">ADCM</td><td class="name">Concomitant Meds</td><td class="note">Occurrence-data-structure dataset from CM.</td></tr>
+      </tbody>
+    </table></div></div>
+  </section>
+
+  <!-- Submission artifacts -->
+  <section class="block">
+    <div class="block-head"><h2>Submission artifacts</h2><span class="sub">The metadata, transport, and coding layer a reviewer expects around the datasets</span></div>
+    <div class="card"><div class="tbl-scroll"><table>
+      <thead><tr><th>Status</th><th>Artifact</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr class="s-good"><td class="st"><span class="chip good">Produced</span></td><td class="name">Define-XML v2.1</td><td class="note">One ItemGroupDef per dataset + CodeLists + Methods — the machine-readable data dictionary regulators preflight.</td></tr>
+        <tr class="s-good"><td class="st"><span class="chip good">Produced</span></td><td class="name">SAS Transport (XPT v5)</td><td class="note">Hand-rolled writer — the CDISC IG default transport format, one per dataset.</td></tr>
+        <tr class="s-good"><td class="st"><span class="chip good">Produced</span></td><td class="name">Per-dataset CSV</td><td class="note">Human-readable companion export for every SDTM / ADaM dataset.</td></tr>
+        <tr class="s-good"><td class="st"><span class="chip good">Produced</span></td><td class="name">Submission-bundle ZIP</td><td class="note"><code style="font-family:var(--mono);font-size:11px">define.xml</code> + <code style="font-family:var(--mono);font-size:11px">sdtm/*.xpt</code> + <code style="font-family:var(--mono);font-size:11px">adam/*.xpt</code> + <code style="font-family:var(--mono);font-size:11px">tlf/*</code> in one download.</td></tr>
+        <tr class="s-warn"><td class="st"><span class="chip warn">Partial</span></td><td class="name">Controlled Terminology</td><td class="note">SDTM CT applied (sex, severity, outcome, routes, …). <b>MedDRA + WHODrug coding not applied.</b></td></tr>
+        <tr class="s-blocked"><td class="st"><span class="chip blocked">Blocked</span></td><td class="name">MedDRA / WHODrug coding</td><td class="note">Licensed dictionaries (MSSO / Uppsala). AE/MH/CM terms stay verbatim until the license drops in at deploy.</td></tr>
+        <tr class="s-none"><td class="st"><span class="chip none">Not yet</span></td><td class="name">Reviewer guides (SDRG / ADRG)</td><td class="note">The Study &amp; Analysis Data Reviewer's Guides expected in an FDA package.</td></tr>
+        <tr class="s-none"><td class="st"><span class="chip none">Not yet</span></td><td class="name">Annotated CRF (aCRF)</td><td class="note">The blank CRF annotated with SDTM variable origins.</td></tr>
+        <tr class="s-none"><td class="st"><span class="chip none">Not yet</span></td><td class="name">eCTD Module 5 packaging</td><td class="note">Folder structure + gateway submission is the operator's step.</td></tr>
+      </tbody>
+    </table></div></div>
+  </section>
+
+  <!-- TLF -->
+  <section class="block">
+    <div class="block-head"><h2>Tables, Listings &amp; Figures</h2><span class="sub">The reporting shells that summarize the datasets</span></div>
+    <div class="card"><div class="tbl-scroll"><table>
+      <thead><tr><th>Status</th><th>Output</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr class="s-good"><td class="st"><span class="chip good">Produced</span></td><td class="name">Table 1 — Subject Disposition</td><td class="note">From ADSL population flags.</td></tr>
+        <tr class="s-good"><td class="st"><span class="chip good">Produced</span></td><td class="name">Table 2 — Baseline Demographics</td><td class="note">Age groups, sex, race by arm.</td></tr>
+        <tr class="s-good"><td class="st"><span class="chip good">Produced</span></td><td class="name">Table 3 — Adverse Event Summary</td><td class="note">AE / SAE counts and rates.</td></tr>
+        <tr class="s-good"><td class="st"><span class="chip good">Produced</span></td><td class="name">Figure — AE Frequency</td><td class="note">SVG, embedded in the bundle.</td></tr>
+        <tr class="s-warn"><td class="st"><span class="chip warn">Partial</span></td><td class="name">Efficacy / survival TLFs</td><td class="note">The trial-stats specialist renders K-M, Cox, subgroup forest &amp; waterfall in the sandbox — analysis-driven, not yet a fixed regulatory shell.</td></tr>
+        <tr class="s-none"><td class="st"><span class="chip none">Not yet</span></td><td class="name">Full TLF shell</td><td class="note">Lab shift tables, exposure listings, the complete efficacy/safety table set.</td></tr>
+      </tbody>
+    </table></div></div>
+  </section>
+
+  <!-- Reports -->
+  <section class="block">
+    <div class="block-head"><h2>Regulatory reports &amp; documents</h2><span class="sub">The narrative deliverables the platform drafts alongside the datasets</span></div>
+    <div class="card"><div class="tbl-scroll"><table>
+      <thead><tr><th>Status</th><th>Document</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr class="s-good"><td class="st"><span class="chip good">Produced</span></td><td class="name">CSR — ICH E3</td><td class="note">Clinical study report synopsis + data sections, every count carrying a derived-from trace. PDF / DOCX.</td></tr>
+        <tr class="s-good"><td class="st"><span class="chip good">Produced</span></td><td class="name">SAP</td><td class="note">Statistical analysis plan drafter (PICOT → SAP), with sample-size + adaptive-design tooling.</td></tr>
+        <tr class="s-good"><td class="st"><span class="chip good">Produced</span></td><td class="name">FDA 3500A / IND safety</td><td class="note">Per-event MedWatch draft from the safety subsystem.</td></tr>
+        <tr class="s-good"><td class="st"><span class="chip good">Produced</span></td><td class="name">Protocol · IRB · Registration</td><td class="note">IRB/ethics packet, ICF, and CT.gov / CTIS registration drafts.</td></tr>
+        <tr class="s-good"><td class="st"><span class="chip good">Produced</span></td><td class="name">Validation pack</td><td class="note">IQ / OQ / PQ + requirements-traceability matrix for the system itself.</td></tr>
+        <tr class="s-none"><td class="st"><span class="chip none">Not yet</span></td><td class="name">CSR narrative chapters</td><td class="note">Introduction / Discussion / Conclusions ship as operator-to-complete placeholders.</td></tr>
+      </tbody>
+    </table></div></div>
+  </section>
+
+  <footer>
+    <p><b>How to generate it:</b> derive with <code>POST /api/edc/deployments/{id}/cdisc/derive</code>, then pull the submission-bundle ZIP. Survival TLFs render via <code>/cdisc/survival/render</code>.</p>
+    <p><b>Reading the gaps:</b> most <span style="color:var(--none)">Not-yet</span> rows are backlog-buildable (the data usually already exists in the platform); the two hard limits are <span style="color:var(--blocked)">MedDRA/WHODrug</span> (paid license) and the reviewer-guide/eCTD packaging that is inherently an operator step.</p>
+    <p style="margin-top:12px;color:var(--muted)">Assessment reflects the <code>cdisc/</code> package on branch <code>feat/backlog-quick-wins</code>. Status is coverage-of-standard, not a regulatory clearance.</p>
+  </footer>
+</div>
+
+</body>
+</html>
