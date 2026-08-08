@@ -31,7 +31,15 @@ logger = logging.getLogger(__name__)
 
 
 _MAX_UPLOAD_BYTES = 5 * 1024 * 1024  # 5 MB
-_VALID_FORMATS: tuple[CitationFormat, ...] = ("bibtex", "ris")
+_VALID_FORMATS: tuple[CitationFormat, ...] = ("bibtex", "ris", "csl_json", "endnote_xml")
+_FORMAT_CHOICES = "'bibtex', 'ris', 'csl_json' or 'endnote_xml'"
+# (file extension, media type) per export format.
+_EXPORT_FILE_META: dict[str, tuple[str, str]] = {
+    "bibtex": ("bib", "application/x-bibtex"),
+    "ris": ("ris", "application/x-research-info-systems"),
+    "csl_json": ("json", "application/vnd.citationstyles.csl+json"),
+    "endnote_xml": ("xml", "application/xml"),
+}
 
 
 class CitationOut(BaseModel):
@@ -106,7 +114,7 @@ def create_citations_router() -> APIRouter:
             if format not in _VALID_FORMATS:
                 raise HTTPException(
                     422,
-                    f"Invalid format {format!r}; choose 'bibtex' or 'ris'.",
+                    f"Invalid format {format!r}; choose {_FORMAT_CHOICES}.",
                 )
             sniffed = format
         else:
@@ -114,7 +122,7 @@ def create_citations_router() -> APIRouter:
             if sniffed is None:
                 raise HTTPException(
                     422,
-                    "Could not detect citation format. Supply format=bibtex|ris.",
+                    f"Could not detect citation format. Supply format={_FORMAT_CHOICES}.",
                 )
         try:
             citations = parse(text, fmt=sniffed)
@@ -132,7 +140,7 @@ def create_citations_router() -> APIRouter:
         if body.format not in _VALID_FORMATS:
             raise HTTPException(
                 422,
-                f"Invalid format {body.format!r}; choose 'bibtex' or 'ris'.",
+                f"Invalid format {body.format!r}; choose {_FORMAT_CHOICES}.",
             )
         citations = [
             Citation(
@@ -154,12 +162,7 @@ def create_citations_router() -> APIRouter:
             for c in body.citations
         ]
         text = export(citations, body.format)
-        ext = "bib" if body.format == "bibtex" else "ris"
-        media_type = (
-            "application/x-bibtex"
-            if body.format == "bibtex"
-            else "application/x-research-info-systems"
-        )
+        ext, media_type = _EXPORT_FILE_META[body.format]
         return Response(
             content=text,
             media_type=media_type,

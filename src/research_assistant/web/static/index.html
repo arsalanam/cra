@@ -1329,13 +1329,14 @@ function App() {
     await _runHandoff(`Meta-analysis: ${researchQuestion.slice(0, 100)}`, seed);
   }
 
-  /* meta_analysis → lay_summary hand-off. The dispatcher's continuation
-     prefix "Draft lay summary from meta-analysis" pins the new thread to
-     the lay_summary workflow; the seed pastes the meta-analysis JSON so
-     the drafter has authoritative numbers + PMIDs to ground the
-     plain-language draft in (no fabricated effect sizes, no fabricated
-     PMIDs). Operator picks the audience profile in the next turn. */
-  async function handoffToLaySummary(metaAnalysisTurn) {
+  /* → lay_summary hand-off from any evidence artefact. The seed prefix
+     pins the new thread to the lay_summary workflow via the dispatcher's
+     _HANDOFF_SEEDS ("Draft lay summary from meta-analysis" | "... from CSR"
+     | "... from IRB packet"), all of which already route to lay_summary.
+     The seed pastes the SOURCE turn JSON so the drafter grounds every
+     number + PMID in it verbatim (no fabricated effect sizes / PMIDs).
+     Operator picks the audience profile in the next turn. */
+  async function handoffToLaySummary(sourceTurn) {
     let researchQuestion = "";
     for (let i = messages.length - 1; i >= 0; i--) {
       const m = messages[i];
@@ -1345,15 +1346,25 @@ function App() {
       }
     }
     if (!researchQuestion) researchQuestion = "(see prior conversation)";
-    const sourceJson = JSON.stringify(metaAnalysisTurn, null, 2);
+    const kind = sourceTurn && sourceTurn.kind;
+    let prefix = "Draft lay summary from meta-analysis";
+    let sourceLabel = "meta_analysis turn JSON";
+    if (kind === "csr_document") {
+      prefix = "Draft lay summary from CSR";
+      sourceLabel = "CSR document JSON";
+    } else if (kind === "irb_document") {
+      prefix = "Draft lay summary from IRB packet";
+      sourceLabel = "IRB packet JSON";
+    }
+    const sourceJson = JSON.stringify(sourceTurn, null, 2);
     const seed = [
-      "Draft lay summary from meta-analysis",
+      prefix,
       "",
       `Research question: ${researchQuestion}`,
       "",
       "Audience profile: please ask me for target reading grade, language, region, and population descriptor before drafting.",
       "",
-      "Source artefact (meta_analysis turn JSON — ground all numbers + PMIDs in this verbatim, do not invent):",
+      `Source artefact (${sourceLabel} — ground all numbers + PMIDs in this verbatim, do not invent):`,
       "```json",
       sourceJson,
       "```",
@@ -1602,6 +1613,7 @@ function Turn({ message, onSend, onHandoff, onHandoffProtocolToSearch, onHandoff
     "rob_assessments", "rob_summary",
     "picot", "sample_size", "analysis_plan", "sap_document",
     "manuscript_intake", "manuscript_draft", "reviewer_response",
+    "csr_document", "irb_document",
   ]);
   return (
     <div className="turn">
@@ -1625,6 +1637,8 @@ function Turn({ message, onSend, onHandoff, onHandoffProtocolToSearch, onHandoff
         {turn.kind === "manuscript_intake" && <ManuscriptIntakeCard turn={turn} onSend={onSend} disabled={running} />}
         {turn.kind === "manuscript_draft" && <ManuscriptDraftCard turn={turn} threadId={message.thread_id} onSend={onSend} disabled={running} />}
         {turn.kind === "reviewer_response" && <ReviewerResponseCard turn={turn} threadId={message.thread_id} onSend={onSend} disabled={running} />}
+        {turn.kind === "csr_document"     && <CsrDocumentCard turn={turn} threadId={message.thread_id} onHandoffToLaySummary={onHandoffToLaySummary} />}
+        {turn.kind === "irb_document"     && <IrbDocumentCard turn={turn} threadId={message.thread_id} onHandoffToLaySummary={onHandoffToLaySummary} />}
         {!KNOWN_KINDS.has(turn.kind)      && <UnknownTurnCard turn={turn} />}
       </TurnErrorBoundary>
     </div>
@@ -2125,6 +2139,105 @@ function MetaAnalysisCard({ turn, threadId, onHandoffToManuscript, onHandoffToLa
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+/* CSR final document — synopsis + report download + lay-summary hand-off.
+   The clinical-study report renders generically otherwise; this gives it a
+   first-class card with the plain-language hand-off (backend route:
+   "Draft lay summary from CSR"). */
+function CsrDocumentCard({ turn, threadId, onHandoffToLaySummary }) {
+  function downloadReport(fmt) {
+    if (!threadId) return;
+    window.location.href = `/api/threads/${threadId}/report/csr/${fmt}`;
+  }
+  const syn = turn.synopsis || {};
+  return (
+    <div className="card">
+      <div className="card-header">
+        <h3>{syn.title || "Clinical Study Report"}</h3>
+        <span className="card-tag meta_analysis">csr_document</span>
+      </div>
+      {syn.conclusions && <div className="meta-summary">{syn.conclusions}</div>}
+      {syn.primary_result_description && (
+        <p style={{ fontSize: 13, color: "#b3cfee" }}>{syn.primary_result_description}</p>
+      )}
+      {threadId && (
+        <div className="handoff-cta">
+          <div className="text">
+            <strong>ICH E3 clinical study report.</strong> Download the synopsis + data
+            sections as a formatted document.
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="btn-primary" onClick={() => downloadReport("pdf")}>
+              Download PDF
+            </button>
+            <button className="btn-secondary" onClick={() => downloadReport("docx")}>
+              Download DOCX
+            </button>
+          </div>
+        </div>
+      )}
+      <div className="handoff-cta" style={{ marginTop: 8 }}>
+        <div className="text">
+          Turn these results into a patient-facing plain-language summary for
+          participants and the public.
+        </div>
+        <button
+          className="btn-secondary"
+          onClick={() => onHandoffToLaySummary && onHandoffToLaySummary(turn)}
+        >
+          → Draft lay summary
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* IRB packet final document — synopsis + ICF + report download + lay-summary
+   hand-off (backend route: "Draft lay summary from IRB packet"). */
+function IrbDocumentCard({ turn, threadId, onHandoffToLaySummary }) {
+  function downloadReport(fmt) {
+    if (!threadId) return;
+    window.location.href = `/api/threads/${threadId}/report/irb/${fmt}`;
+  }
+  const syn = turn.synopsis || {};
+  return (
+    <div className="card">
+      <div className="card-header">
+        <h3>{syn.title || "IRB / Ethics Packet"}</h3>
+        <span className="card-tag meta_analysis">irb_document</span>
+      </div>
+      {syn.background && <div className="meta-summary">{syn.background}</div>}
+      {threadId && (
+        <div className="handoff-cta">
+          <div className="text">
+            <strong>IRB submission packet.</strong> Download the protocol synopsis +
+            informed-consent form as a formatted document.
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="btn-primary" onClick={() => downloadReport("pdf")}>
+              Download PDF
+            </button>
+            <button className="btn-secondary" onClick={() => downloadReport("docx")}>
+              Download DOCX
+            </button>
+          </div>
+        </div>
+      )}
+      <div className="handoff-cta" style={{ marginTop: 8 }}>
+        <div className="text">
+          Draft a plain-language recruitment summary for prospective participants
+          from this protocol.
+        </div>
+        <button
+          className="btn-secondary"
+          onClick={() => onHandoffToLaySummary && onHandoffToLaySummary(turn)}
+        >
+          → Draft lay summary
+        </button>
+      </div>
     </div>
   );
 }

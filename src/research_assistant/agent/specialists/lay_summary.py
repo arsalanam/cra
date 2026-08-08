@@ -32,10 +32,11 @@ Anti-hallucination + compliance posture:
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Sequence
 from typing import Any
 
-from pydantic_ai import Agent
+from pydantic_ai import Agent, ModelRetry
 from pydantic_ai.messages import ModelMessage
 
 from ...domain.lay_summary import (
@@ -211,6 +212,44 @@ _OUTPUT_TYPES: list[type] = [
 
 _agent: Agent[AgentDeps, LaySummaryTurn] | None = None
 
+# Medical-decision / directive phrasing that a lay summary must never carry:
+# it informs, it does not instruct the patient to take, stop, or change
+# treatment. The "you should/must/need to" patterns deliberately EXCLUDE a
+# referral to a clinician ("you should talk to your doctor"), which is
+# encouraged, via a negative lookahead. Patterns are ENGLISH ONLY — es / fr
+# / de summaries need their own phrase lists (tracked with the per-language
+# readability work); the validator is a backstop for the prompt rule, not a
+# multilingual guarantee.
+_MEDICAL_DECISION_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(
+        r"\byou\s+(?:should|must|need\s+to|ought\s+to|have\s+to)\s+"
+        r"(?!(?:talk|speak|ask|contact|discuss|call|consult|see|reach|tell|"
+        r"inform|let)\b)",
+        re.I,
+    ),
+    re.compile(
+        r"\bwe\s+recommend(?:\s+(?:that\s+)?you)?\s+(?:take|stop|start|use|switch)",
+        re.I,
+    ),
+    re.compile(r"\b(?:stop|start|begin)\s+taking\b", re.I),
+    re.compile(
+        r"\b(?:increase|decrease|lower|raise|change|adjust)\s+your\s+"
+        r"(?:dose|dosage|medication|medicine)",
+        re.I,
+    ),
+    re.compile(r"\byou\s+can\s+(?:stop|start)\s+(?:taking|using)\b", re.I),
+)
+
+
+def find_medical_decision_phrase(text: str) -> str | None:
+    """Return the first medical-decision / directive phrase in `text`, or
+    None. Used by the output validator and unit-testable in isolation."""
+    for pattern in _MEDICAL_DECISION_PATTERNS:
+        m = pattern.search(text)
+        if m is not None:
+            return m.group(0).strip()
+    return None
+
 
 def build_agent() -> Agent[AgentDeps, LaySummaryTurn]:
     agent: Agent[AgentDeps, LaySummaryTurn] = Agent(
@@ -223,6 +262,32 @@ def build_agent() -> Agent[AgentDeps, LaySummaryTurn]:
     )
     for mod in _SPECIALIST_TOOLS:
         mod.register(agent)
+
+    @agent.output_validator
+    def _reject_medical_decision_language(output: LaySummaryTurn) -> LaySummaryTurn:
+        """Host-side enforcement of the prompt's 'no medical-decision
+        phrasing' rule — a lay summary informs, it never instructs the
+        patient to take / stop / change treatment. Scans the patient-facing
+        body of draft + document turns and forces a rewrite on a hit."""
+        body: str | None = None
+        if isinstance(output, LaySummaryDraft):
+            body = output.joined_body
+        elif isinstance(output, LaySummaryDocument):
+            body = output.draft.joined_body
+        if body is not None:
+            phrase = find_medical_decision_phrase(body)
+            if phrase is not None:
+                logger.warning("lay_summary rejected — medical-decision phrasing (%r)", phrase)
+                raise ModelRetry(
+                    f"The summary contains medical-decision language ({phrase!r}). "
+                    "A lay summary must INFORM, never INSTRUCT the reader to take, "
+                    "stop, or change treatment. Rewrite it descriptively (e.g. "
+                    "'the study looked at whether the drug lowered blood pressure') "
+                    "and, where a next step is needed, point the reader to their own "
+                    "doctor rather than giving the instruction yourself."
+                )
+        return output
+
     logger.info(
         "lay_summary specialist built — %d tools registered",
         len(_SPECIALIST_TOOLS),

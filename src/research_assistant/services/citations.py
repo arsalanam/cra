@@ -18,11 +18,15 @@ the manager.
 
 from __future__ import annotations
 
+import json
 import re
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Any, Literal
 
-CitationFormat = Literal["bibtex", "ris"]
+from defusedxml.ElementTree import fromstring as _xml_fromstring
+
+CitationFormat = Literal["bibtex", "ris", "csl_json", "endnote_xml"]
 
 
 _BIBTEX_TYPE_BY_RIS_TY: dict[str, str] = {
@@ -90,12 +94,22 @@ class Citation:
 
 
 def detect_format(text: str) -> CitationFormat | None:
-    """Sniff BibTeX vs RIS from the first few non-empty lines."""
+    """Sniff the citation format from the leading content."""
     head = "\n".join(text.splitlines()[:20]).strip()
     if not head:
         return None
     if "@" in head and re.search(r"@\w+\s*[{(]", head):
         return "bibtex"
+    lead = head.lstrip()
+    if lead.startswith("<") and ("<record" in text[:800] or "ref-type" in text[:800]):
+        return "endnote_xml"
+    if lead[:1] in "[{" and (
+        '"issued"' in head
+        or '"container-title"' in head
+        or '"DOI"' in head
+        or ('"type"' in head and '"id"' in head)
+    ):
+        return "csl_json"
     if re.search(r"^[A-Z][A-Z0-9]\s*-\s*", head, re.MULTILINE):
         return "ris"
     return None
@@ -374,6 +388,246 @@ def export_ris(citations: list[Citation]) -> str:
     return "\n".join(lines)
 
 
+# ── CSL JSON ───────────────────────────────────────────────────────────
+# Citation Style Language JSON — the interchange format used by Zotero,
+# Pandoc, and citeproc. An array of item objects; the type vocabulary
+# differs from BibTeX (article-journal, paper-conference, …).
+
+_CSL_TYPE_BY_ENTRY: dict[str, str] = {
+    "article": "article-journal",
+    "book": "book",
+    "incollection": "chapter",
+    "inproceedings": "paper-conference",
+    "techreport": "report",
+    "phdthesis": "thesis",
+    "misc": "document",
+}
+
+_ENTRY_BY_CSL_TYPE: dict[str, str] = {
+    "article-journal": "article",
+    "article": "article",
+    "book": "book",
+    "chapter": "incollection",
+    "paper-conference": "inproceedings",
+    "report": "techreport",
+    "thesis": "phdthesis",
+}
+
+
+def _csl_authors(item: dict[str, Any]) -> list[str]:
+    names: list[str] = []
+    for a in item.get("author") or []:
+        if not isinstance(a, dict):
+            continue
+        if a.get("literal"):
+            names.append(str(a["literal"]))
+        else:
+            family = str(a.get("family", "")).strip()
+            given = str(a.get("given", "")).strip()
+            names.append(f"{family}, {given}".strip().strip(",").strip() if given else family)
+    return [n for n in names if n]
+
+
+def _csl_year(item: dict[str, Any]) -> int | None:
+    issued = item.get("issued")
+    if isinstance(issued, dict):
+        parts = issued.get("date-parts")
+        if isinstance(parts, list) and parts and isinstance(parts[0], list) and parts[0]:
+            try:
+                return int(parts[0][0])
+            except (ValueError, TypeError):
+                return None
+    return None
+
+
+def _opt_str(value: Any) -> str | None:
+    return None if value is None else str(value)
+
+
+def parse_csl_json(text: str) -> list[Citation]:
+    data = json.loads(text)
+    if isinstance(data, dict):
+        data = [data]
+    if not isinstance(data, list):
+        raise ValueError("CSL JSON must be an array of citation items.")
+    out: list[Citation] = []
+    for raw in data:
+        if not isinstance(raw, dict):
+            continue
+        authors = _csl_authors(raw)
+        year = _csl_year(raw)
+        anchor = (authors[0].split(",")[0] if authors else "ref").strip()
+        cite_key = str(raw.get("id") or f"{anchor}_{year or 'na'}").replace(" ", "_")
+        out.append(
+            Citation(
+                cite_key=cite_key,
+                entry_type=_ENTRY_BY_CSL_TYPE.get(str(raw.get("type", "")), "misc"),
+                title=_opt_str(raw.get("title")),
+                authors=authors,
+                year=year,
+                journal=_opt_str(raw.get("container-title")),
+                volume=_opt_str(raw.get("volume")),
+                issue=_opt_str(raw.get("issue")),
+                pages=_opt_str(raw.get("page")),
+                publisher=_opt_str(raw.get("publisher")),
+                doi=_opt_str(raw.get("DOI")),
+                pmid=_opt_str(raw.get("PMID")),
+                url=_opt_str(raw.get("URL")),
+                abstract=_opt_str(raw.get("abstract")),
+            )
+        )
+    return out
+
+
+def export_csl_json(citations: list[Citation]) -> str:
+    items: list[dict[str, Any]] = []
+    for cit in citations:
+        item: dict[str, Any] = {
+            "id": cit.cite_key,
+            "type": _CSL_TYPE_BY_ENTRY.get(cit.entry_type, "document"),
+        }
+        if cit.title:
+            item["title"] = cit.title
+        authors: list[dict[str, str]] = []
+        for name in cit.authors:
+            if "," in name:
+                family, _, given = name.partition(",")
+                authors.append({"family": family.strip(), "given": given.strip()})
+            else:
+                authors.append({"literal": name})
+        if authors:
+            item["author"] = authors
+        if cit.year is not None:
+            item["issued"] = {"date-parts": [[cit.year]]}
+        for key, value in (
+            ("container-title", cit.journal),
+            ("volume", cit.volume),
+            ("issue", cit.issue),
+            ("page", cit.pages),
+            ("publisher", cit.publisher),
+            ("DOI", cit.doi),
+            ("PMID", cit.pmid),
+            ("URL", cit.url),
+            ("abstract", cit.abstract),
+        ):
+            if value:
+                item[key] = value
+        items.append(item)
+    return json.dumps(items, indent=2, ensure_ascii=False)
+
+
+# ── EndNote XML ────────────────────────────────────────────────────────
+# EndNote's export XML: <xml><records><record>…</record></records></xml>.
+# Text fields are often wrapped in nested <style> elements, so all reads go
+# through itertext(). Parsing uses defusedxml (untrusted input); writing
+# uses stdlib ElementTree (safe — no external entities on output).
+
+_ENDNOTE_REFTYPE_BY_ENTRY: dict[str, tuple[str, str]] = {
+    "article": ("Journal Article", "17"),
+    "book": ("Book", "6"),
+    "incollection": ("Book Section", "5"),
+    "inproceedings": ("Conference Proceedings", "10"),
+    "techreport": ("Report", "27"),
+    "phdthesis": ("Thesis", "32"),
+    "misc": ("Generic", "13"),
+}
+
+_ENTRY_BY_ENDNOTE_REFTYPE: dict[str, str] = {
+    "Journal Article": "article",
+    "Book": "book",
+    "Book Section": "incollection",
+    "Conference Proceedings": "inproceedings",
+    "Report": "techreport",
+    "Thesis": "phdthesis",
+}
+
+
+def _en_text(el: ET.Element | None) -> str | None:
+    if el is None:
+        return None
+    text = "".join(el.itertext()).strip()
+    return text or None
+
+
+def _endnote_record_to_citation(rec: ET.Element) -> Citation:
+    ref_type_el = rec.find("ref-type")
+    entry_type = "misc"
+    if ref_type_el is not None:
+        name = ref_type_el.get("name", "")
+        entry_type = _ENTRY_BY_ENDNOTE_REFTYPE.get(name, "misc")
+
+    authors = [
+        t for a in rec.findall("./contributors/authors/author") if (t := _en_text(a)) is not None
+    ]
+    title = _en_text(rec.find("./titles/title"))
+    journal = _en_text(rec.find("./titles/secondary-title"))
+    year_raw = _en_text(rec.find("./dates/year"))
+    year: int | None = None
+    if year_raw:
+        digits = re.sub(r"\D", "", year_raw[:4])
+        year = int(digits) if digits else None
+    anchor = (authors[0].split(",")[0] if authors else "ref").strip()
+    cite_key = f"{anchor}_{year or 'na'}".replace(" ", "_")
+    return Citation(
+        cite_key=cite_key,
+        entry_type=entry_type,
+        title=title,
+        authors=authors,
+        year=year,
+        journal=journal,
+        volume=_en_text(rec.find("volume")),
+        issue=_en_text(rec.find("number")),
+        pages=_en_text(rec.find("pages")),
+        publisher=_en_text(rec.find("publisher")),
+        doi=_en_text(rec.find("electronic-resource-num")),
+        pmid=_en_text(rec.find("accession-num")),
+        url=_en_text(rec.find("./urls/related-urls/url")),
+        abstract=_en_text(rec.find("abstract")),
+    )
+
+
+def parse_endnote_xml(text: str) -> list[Citation]:
+    root = _xml_fromstring(text)
+    return [_endnote_record_to_citation(rec) for rec in root.iter("record")]
+
+
+def export_endnote_xml(citations: list[Citation]) -> str:
+    root = ET.Element("xml")
+    records = ET.SubElement(root, "records")
+    for cit in citations:
+        rec = ET.SubElement(records, "record")
+        name, num = _ENDNOTE_REFTYPE_BY_ENTRY.get(cit.entry_type, ("Generic", "13"))
+        rt = ET.SubElement(rec, "ref-type")
+        rt.set("name", name)
+        rt.text = num
+        if cit.authors:
+            authors_el = ET.SubElement(ET.SubElement(rec, "contributors"), "authors")
+            for author in cit.authors:
+                ET.SubElement(authors_el, "author").text = author
+        titles = ET.SubElement(rec, "titles")
+        if cit.title:
+            ET.SubElement(titles, "title").text = cit.title
+        if cit.journal:
+            ET.SubElement(titles, "secondary-title").text = cit.journal
+        if cit.year is not None:
+            ET.SubElement(ET.SubElement(rec, "dates"), "year").text = str(cit.year)
+        for tag, value in (
+            ("volume", cit.volume),
+            ("number", cit.issue),
+            ("pages", cit.pages),
+            ("publisher", cit.publisher),
+            ("electronic-resource-num", cit.doi),
+            ("accession-num", cit.pmid),
+            ("abstract", cit.abstract),
+        ):
+            if value:
+                ET.SubElement(rec, tag).text = value
+        if cit.url:
+            related = ET.SubElement(ET.SubElement(rec, "urls"), "related-urls")
+            ET.SubElement(related, "url").text = cit.url
+    return ET.tostring(root, encoding="unicode")
+
+
 # ── Convenience ────────────────────────────────────────────────────────
 
 
@@ -387,12 +641,20 @@ def parse(text: str, fmt: CitationFormat | None = None) -> list[Citation]:
         )
     if detected == "bibtex":
         return parse_bibtex(text)
+    if detected == "csl_json":
+        return parse_csl_json(text)
+    if detected == "endnote_xml":
+        return parse_endnote_xml(text)
     return parse_ris(text)
 
 
 def export(citations: list[Citation], fmt: CitationFormat) -> str:
     if fmt == "bibtex":
         return export_bibtex(citations)
+    if fmt == "csl_json":
+        return export_csl_json(citations)
+    if fmt == "endnote_xml":
+        return export_endnote_xml(citations)
     return export_ris(citations)
 
 
@@ -402,8 +664,12 @@ __all__ = [
     "detect_format",
     "export",
     "export_bibtex",
+    "export_csl_json",
+    "export_endnote_xml",
     "export_ris",
     "parse",
     "parse_bibtex",
+    "parse_csl_json",
+    "parse_endnote_xml",
     "parse_ris",
 ]
