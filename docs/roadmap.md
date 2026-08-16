@@ -371,7 +371,10 @@ The platform's existing invite endpoint (`/api/admin/users`) was bare — global
     screen-failures.
 - **MedDRA license-gated mappers** for AE / MH preferred-term coding. **Benefit:** the regulator-acceptable submission unblocked. (Deploy gate, not backlog.)
 - **WHODrug license-gated mappers** for CM medication coding. **Benefit:** same as above for concomitant meds. (Deploy gate, not backlog.)
-- **Additional ADaM datasets** — ADAE, ADCM, ADLB, ADVS, ADQS. **Benefit:** each one is an FDA-recommended dataset for typical submissions.
+- **Additional ADaM datasets** — ADAE, ADCM, ADLB, ADVS ✅ **shipped** (ADaM
+  now 2 → 6, the FDA-recommended set: ADAE with TRTEMFL/AOCCFL; ADLB/ADVS BDS
+  with baseline/change; ADCM OCCDS). **ADQS** remains — blocked on SDTM `QS`
+  (no ePRO questionnaire-response model yet).
 - **Reviewer guides + annotated CRF** — SDRG / ADRG (drafter shape parallel to the CSR/IRB drafters, templated from Define-XML + derivation metadata) and the annotated CRF. **Benefit:** the human-facing half of an FDA data package.
 - **More TLF templates** — subgroup forest plots, Kaplan-Meier curves overlayed by ADSL strata, swimmer + waterfall as standard outputs. **Benefit:** richer TLF library reduces operator paste-into-CSR work.
 - **FDA ESG / EMA CESP submission gateway.** Today we export the bundle; submission is the operator's job. A direct gateway adapter is the next step. **Benefit:** end-to-end submission inside the platform.

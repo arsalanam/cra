@@ -36,8 +36,12 @@ from datetime import UTC, datetime
 from typing import Any
 
 from ..persistence.clinical.models import (
+    AdamAdae,
+    AdamAdcm,
+    AdamAdlb,
     AdamAdsl,
     AdamAdtte,
+    AdamAdvs,
     SdtmAe,
     SdtmCm,
     SdtmDa,
@@ -211,6 +215,75 @@ _DS_COLUMNS = [
     "DSCAT",
     "DSSTDTC",
 ]
+_ADAE_COLUMNS = [
+    "STUDYID",
+    "USUBJID",
+    "ASEQ",
+    "TRTA",
+    "TRTP",
+    "AGE",
+    "SEX",
+    "SAFFL",
+    "AEDECOD",
+    "AETERM",
+    "AEBODSYS",
+    "AESEV",
+    "AESER",
+    "AEREL",
+    "AEOUT",
+    "ASTDT",
+    "AENDT",
+    "TRTEMFL",
+    "AOCCFL",
+]
+_ADCM_COLUMNS = [
+    "STUDYID",
+    "USUBJID",
+    "ASEQ",
+    "TRTA",
+    "TRTP",
+    "SAFFL",
+    "CMDECOD",
+    "CMTRT",
+    "CMINDC",
+    "CMDOSE",
+    "CMDOSU",
+    "ASTDT",
+    "AENDT",
+]
+_ADLB_COLUMNS = [
+    "STUDYID",
+    "USUBJID",
+    "ASEQ",
+    "TRTA",
+    "TRTP",
+    "PARAMCD",
+    "PARAM",
+    "AVAL",
+    "AVALU",
+    "ADT",
+    "ANRIND",
+    "A1LO",
+    "A1HI",
+    "ABLFL",
+    "BASE",
+    "CHG",
+]
+_ADVS_COLUMNS = [
+    "STUDYID",
+    "USUBJID",
+    "ASEQ",
+    "TRTA",
+    "TRTP",
+    "PARAMCD",
+    "PARAM",
+    "AVAL",
+    "AVALU",
+    "ADT",
+    "ABLFL",
+    "BASE",
+    "CHG",
+]
 _ADTTE_COLUMNS = [
     "STUDYID",
     "USUBJID",
@@ -283,6 +356,22 @@ def ds_to_csv(records: Iterable[SdtmDs]) -> bytes:
     return _records_to_csv(_DS_COLUMNS, records)
 
 
+def adae_to_csv(records: Iterable[AdamAdae]) -> bytes:
+    return _records_to_csv(_ADAE_COLUMNS, records)
+
+
+def adcm_to_csv(records: Iterable[AdamAdcm]) -> bytes:
+    return _records_to_csv(_ADCM_COLUMNS, records)
+
+
+def adlb_to_csv(records: Iterable[AdamAdlb]) -> bytes:
+    return _records_to_csv(_ADLB_COLUMNS, records)
+
+
+def advs_to_csv(records: Iterable[AdamAdvs]) -> bytes:
+    return _records_to_csv(_ADVS_COLUMNS, records)
+
+
 def adtte_to_csv(records: Iterable[AdamAdtte]) -> bytes:
     return _records_to_csv(_ADTTE_COLUMNS, records)
 
@@ -330,6 +419,22 @@ def ds_to_xpt(records: Iterable[SdtmDs]) -> bytes:
     return write_xpt(DOMAIN_METADATA["DS"], records)
 
 
+def adae_to_xpt(records: Iterable[AdamAdae]) -> bytes:
+    return write_xpt(DOMAIN_METADATA["ADAE"], records)
+
+
+def adcm_to_xpt(records: Iterable[AdamAdcm]) -> bytes:
+    return write_xpt(DOMAIN_METADATA["ADCM"], records)
+
+
+def adlb_to_xpt(records: Iterable[AdamAdlb]) -> bytes:
+    return write_xpt(DOMAIN_METADATA["ADLB"], records)
+
+
+def advs_to_xpt(records: Iterable[AdamAdvs]) -> bytes:
+    return write_xpt(DOMAIN_METADATA["ADVS"], records)
+
+
 def adsl_to_xpt(records: Iterable[AdamAdsl]) -> bytes:
     return write_xpt(DOMAIN_METADATA["ADSL"], records)
 
@@ -370,6 +475,10 @@ def build_submission_bundle(
     sv: list[SdtmSv] | None = None,
     ds: list[SdtmDs] | None = None,
     adtte: list[AdamAdtte] | None = None,
+    adae: list[AdamAdae] | None = None,
+    adcm: list[AdamAdcm] | None = None,
+    adlb: list[AdamAdlb] | None = None,
+    advs: list[AdamAdvs] | None = None,
 ) -> bytes:
     """Build the deployment's submission bundle as a ZIP bytes payload.
 
@@ -385,6 +494,10 @@ def build_submission_bundle(
     sv_records = sv or []
     ds_records = ds or []
     adtte_records = adtte or []
+    adae_records = adae or []
+    adcm_records = adcm or []
+    adlb_records = adlb or []
+    advs_records = advs or []
     ts = (triggered_at or datetime.now(UTC)).strftime("%Y-%m-%dT%H:%M:%SZ")
     manifest_lines = [
         "CRA submission bundle",
@@ -403,6 +516,10 @@ def build_submission_bundle(
         f"  SDTM SV:  {len(sv_records)}",
         f"  SDTM DS:  {len(ds_records)}",
         f"  ADaM ADSL: {len(adsl)}",
+        f"  ADaM ADAE: {len(adae_records)}",
+        f"  ADaM ADCM: {len(adcm_records)}",
+        f"  ADaM ADLB: {len(adlb_records)}",
+        f"  ADaM ADVS: {len(advs_records)}",
         f"  ADaM ADTTE: {len(adtte_records)}",
         f"  TLF artefacts: {len(tlfs)}",
         "",
@@ -444,6 +561,10 @@ def build_submission_bundle(
         z.writestr("sdtm/sv.csv", sv_to_csv(sv_records))
         z.writestr("sdtm/ds.csv", ds_to_csv(ds_records))
         z.writestr("adam/adsl.csv", adsl_to_csv(adsl))
+        z.writestr("adam/adae.csv", adae_to_csv(adae_records))
+        z.writestr("adam/adcm.csv", adcm_to_csv(adcm_records))
+        z.writestr("adam/adlb.csv", adlb_to_csv(adlb_records))
+        z.writestr("adam/advs.csv", advs_to_csv(advs_records))
         z.writestr("adam/adtte.csv", adtte_to_csv(adtte_records))
 
         # SAS Transport (XPT v5) — the CDISC IG submission default.
@@ -458,6 +579,10 @@ def build_submission_bundle(
         z.writestr("sdtm/sv.xpt", sv_to_xpt(sv_records))
         z.writestr("sdtm/ds.xpt", ds_to_xpt(ds_records))
         z.writestr("adam/adsl.xpt", adsl_to_xpt(adsl))
+        z.writestr("adam/adae.xpt", adae_to_xpt(adae_records))
+        z.writestr("adam/adcm.xpt", adcm_to_xpt(adcm_records))
+        z.writestr("adam/adlb.xpt", adlb_to_xpt(adlb_records))
+        z.writestr("adam/advs.xpt", advs_to_xpt(advs_records))
         z.writestr("adam/adtte.xpt", adtte_to_xpt(adtte_records))
 
         for tlf in tlfs:
@@ -472,10 +597,18 @@ def build_submission_bundle(
 
 
 __all__ = [
+    "adae_to_csv",
+    "adae_to_xpt",
+    "adcm_to_csv",
+    "adcm_to_xpt",
+    "adlb_to_csv",
+    "adlb_to_xpt",
     "adsl_to_csv",
     "adsl_to_xpt",
     "adtte_to_csv",
     "adtte_to_xpt",
+    "advs_to_csv",
+    "advs_to_xpt",
     "ae_to_csv",
     "ae_to_xpt",
     "build_submission_bundle",

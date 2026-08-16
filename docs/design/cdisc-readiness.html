@@ -160,7 +160,7 @@
 
   <div class="metrics">
     <div class="metric"><div class="n">10</div><div class="l">SDTM domains derived</div></div>
-    <div class="metric"><div class="n">2</div><div class="l">ADaM datasets derived</div></div>
+    <div class="metric"><div class="n">6</div><div class="l">ADaM datasets derived</div></div>
     <div class="metric"><div class="n">v2.1</div><div class="l">Define-XML + XPT v5</div></div>
     <div class="metric"><div class="n">4</div><div class="l">TLF artefacts</div></div>
     <div class="metric"><div class="n">1&nbsp;ZIP</div><div class="l">Submission bundle</div></div>
@@ -168,7 +168,7 @@
 
   <div class="verdict">
     <h2>Bottom line</h2>
-    <p><strong>Yes for the core — not a turnkey full submission.</strong> From captured eCRF data, one derive run produces a genuine, reviewable CDISC package: ten SDTM domains, the subject-level (ADSL) and time-to-event (ADTTE) ADaM datasets, a Define-XML v2.1 metadata file, SAS Transport (XPT v5) datasets, a starter table/figure set, and an ICH E3 clinical study report — assembled into one submission-bundle ZIP.</p>
+    <p><strong>Yes for the core — not a turnkey full submission.</strong> From captured eCRF data, one derive run produces a genuine, reviewable CDISC package: ten SDTM domains, 6 ADaM datasets (ADSL, ADAE, ADCM, ADLB, ADVS, ADTTE), a Define-XML v2.1 metadata file, SAS Transport (XPT v5) datasets, a starter table/figure set, and an ICH E3 clinical study report — assembled into one submission-bundle ZIP.</p>
     <p>What it is <strong>not</strong> yet: a complete FDA/EMA eCTD Module 5 package. Several standard SDTM &amp; ADaM datasets, the reviewer guides (SDRG / ADRG / annotated CRF), and — critically — <strong>MedDRA / WHODrug medical coding</strong> are outstanding. Coding is license-gated, not an engineering gap.</p>
   </div>
 
@@ -223,9 +223,9 @@
       <tbody>
         <tr class="s-good"><td class="st"><span class="chip good">Produced</span></td><td class="code">ADSL</td><td class="name">Subject-Level</td><td class="note">One row/subject; population flags (SAFFL / ITTFL / DTHFL), age groups, treatment, reference dates.</td></tr>
         <tr class="s-good"><td class="st"><span class="chip good">Produced</span></td><td class="code">ADTTE</td><td class="name">Time-to-Event</td><td class="note">Time to first AE / SAE / death; AVAL + CNSR with SRCDOM/SRCVAR traceability.</td></tr>
-        <tr class="s-none"><td class="st"><span class="chip none">Not yet</span></td><td class="code">ADAE</td><td class="name">Adverse Events</td><td class="note">Scoped &amp; deferred — a 6-file slice (model + deriver + pipeline + Define-XML + XPT). TRTEMFL / AOCCFL flags.</td></tr>
-        <tr class="s-none"><td class="st"><span class="chip none">Not yet</span></td><td class="code">ADLB · ADVS</td><td class="name">Labs / Vitals (BDS)</td><td class="note">Basic-Data-Structure analysis datasets from LB / VS.</td></tr>
-        <tr class="s-none"><td class="st"><span class="chip none">Not yet</span></td><td class="code">ADCM</td><td class="name">Concomitant Meds</td><td class="note">Occurrence-data-structure dataset from CM.</td></tr>
+        <tr class="s-good"><td class="st"><span class="chip good">Produced</span></td><td class="code">ADAE</td><td class="name">Adverse Events</td><td class="note">One row per AE + ADSL treatment/population; TRTEMFL + AOCCFL flags. In Define-XML + XPT + bundle.</td></tr>
+        <tr class="s-good"><td class="st"><span class="chip good">Produced</span></td><td class="code">ADLB · ADVS</td><td class="name">Labs / Vitals (BDS)</td><td class="note">One row per result with baseline/change (ABLFL / BASE / CHG). In Define-XML + XPT + bundle.</td></tr>
+        <tr class="s-good"><td class="st"><span class="chip good">Produced</span></td><td class="code">ADCM</td><td class="name">Concomitant Meds</td><td class="note">Con-meds merged with ADSL treatment/population (OCCDS). In Define-XML + XPT + bundle.</td></tr>
       </tbody>
     </table></div></div>
   </section>

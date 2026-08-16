@@ -18,8 +18,12 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..persistence.clinical.models import (
+    AdamAdae,
+    AdamAdcm,
+    AdamAdlb,
     AdamAdsl,
     AdamAdtte,
+    AdamAdvs,
     AdverseEvent,
     Allocation,
     CdiscDerivation,
@@ -46,6 +50,7 @@ from ..persistence.clinical.models import (
     TlfArtefact,
 )
 from .adam_deriver import derive_adsl
+from .adam_extra import derive_adae, derive_adcm, derive_adlb, derive_advs
 from .adtte_deriver import derive_adtte
 from .sdtm_mapper import (
     BuiltinPythonMapper,
@@ -304,6 +309,10 @@ async def run_derivation(
         SdtmDs,
         AdamAdsl,
         AdamAdtte,
+        AdamAdae,
+        AdamAdcm,
+        AdamAdlb,
+        AdamAdvs,
         TlfArtefact,
     ):
         await session.execute(delete(model).where(model.deployment_id == deployment_id))
@@ -425,6 +434,10 @@ async def run_derivation(
         adsl=adsl,
         ae_records=ae,
     )
+    adae = derive_adae(deployment_id=deployment_id, study_id=study_id, adsl=adsl, ae_records=ae)
+    adcm = derive_adcm(deployment_id=deployment_id, study_id=study_id, adsl=adsl, cm_records=cm)
+    adlb = derive_adlb(deployment_id=deployment_id, study_id=study_id, adsl=adsl, lb_records=lb)
+    advs = derive_advs(deployment_id=deployment_id, study_id=study_id, adsl=adsl, vs_records=vs)
     tlfs = generate_tlfs(
         deployment_id=deployment_id,
         adsl=adsl,
@@ -443,6 +456,10 @@ async def run_derivation(
     session.add_all(sv)
     session.add_all(ds)
     session.add_all(adsl)
+    session.add_all(adae)
+    session.add_all(adcm)
+    session.add_all(adlb)
+    session.add_all(advs)
     session.add_all(adtte)
     session.add_all(tlfs)
 
@@ -458,6 +475,10 @@ async def run_derivation(
         "sv": len(sv),
         "ds": len(ds),
         "adsl": len(adsl),
+        "adae": len(adae),
+        "adcm": len(adcm),
+        "adlb": len(adlb),
+        "advs": len(advs),
         "adtte": len(adtte),
         "tlf": len(tlfs),
     }
@@ -689,10 +710,70 @@ async def fetch_ds(session: AsyncSession, deployment_id: str) -> list[SdtmDs]:
     )
 
 
+async def fetch_adae(session: AsyncSession, deployment_id: str) -> list[AdamAdae]:
+    return list(
+        (
+            await session.execute(
+                select(AdamAdae)
+                .where(AdamAdae.deployment_id == deployment_id)
+                .order_by(AdamAdae.USUBJID, AdamAdae.ASEQ)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
+async def fetch_adcm(session: AsyncSession, deployment_id: str) -> list[AdamAdcm]:
+    return list(
+        (
+            await session.execute(
+                select(AdamAdcm)
+                .where(AdamAdcm.deployment_id == deployment_id)
+                .order_by(AdamAdcm.USUBJID, AdamAdcm.ASEQ)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
+async def fetch_adlb(session: AsyncSession, deployment_id: str) -> list[AdamAdlb]:
+    return list(
+        (
+            await session.execute(
+                select(AdamAdlb)
+                .where(AdamAdlb.deployment_id == deployment_id)
+                .order_by(AdamAdlb.USUBJID, AdamAdlb.ASEQ)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
+async def fetch_advs(session: AsyncSession, deployment_id: str) -> list[AdamAdvs]:
+    return list(
+        (
+            await session.execute(
+                select(AdamAdvs)
+                .where(AdamAdvs.deployment_id == deployment_id)
+                .order_by(AdamAdvs.USUBJID, AdamAdvs.ASEQ)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
 __all__ = [
     "DerivationResult",
+    "fetch_adae",
+    "fetch_adcm",
+    "fetch_adlb",
     "fetch_adsl",
     "fetch_adtte",
+    "fetch_advs",
     "fetch_ae",
     "fetch_cm",
     "fetch_da",

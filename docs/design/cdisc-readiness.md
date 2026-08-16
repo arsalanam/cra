@@ -5,7 +5,7 @@ CRA, can someone generate the CDISC submission datasets and reports end-to-end?
 
 **Bottom line — yes for the core, not a turnkey full submission.** From captured
 eCRF data, one derive run produces a genuine, reviewable CDISC package: 10 SDTM
-domains, the subject-level (ADSL) and time-to-event (ADTTE) ADaM datasets, a
+domains, 6 ADaM datasets (ADSL, ADAE, ADCM, ADLB, ADVS, ADTTE), a
 Define-XML v2.1 metadata file, SAS Transport (XPT v5) datasets, a starter
 table/figure set, and an ICH E3 clinical study report — assembled into one
 submission-bundle ZIP. It is **not** yet a complete FDA/EMA eCTD Module 5
@@ -64,9 +64,10 @@ Analysis Data Model — SDTM plus analysis-ready derived variables.
 |---|---|---|---|
 | ✅ | `ADSL` | Subject-Level | One row/subject; population flags (SAFFL / ITTFL / DTHFL), age groups, treatment, reference dates. |
 | ✅ | `ADTTE` | Time-to-Event | Time to first AE / SAE / death; AVAL + CNSR with SRCDOM/SRCVAR traceability. |
-| ⬜ | `ADAE` | Adverse Events | Scoped & deferred — a 6-file slice (model + deriver + pipeline + Define-XML + XPT). TRTEMFL / AOCCFL flags. |
-| ⬜ | `ADLB` / `ADVS` | Labs / Vitals (BDS) | Basic-Data-Structure analysis datasets from LB / VS. |
-| ⬜ | `ADCM` | Concomitant Meds | Occurrence-data-structure dataset from CM. |
+| ✅ | `ADAE` | Adverse Events | One row per AE + ADSL treatment/population; `TRTEMFL` (treatment-emergent) + `AOCCFL` (first occurrence) flags. In Define-XML + XPT + bundle. |
+| ✅ | `ADLB` / `ADVS` | Labs / Vitals (BDS) | One row per result with the BDS baseline/change value-add (`ABLFL` / `BASE` / `CHG`). |
+| ✅ | `ADCM` | Concomitant Meds | Con-meds merged with ADSL treatment/population (OCCDS). |
+| ⬜ | `ADQS` | Questionnaires (BDS) | Blocked on SDTM `QS` (no ePRO questionnaire-response model yet). |
 
 ## Submission artifacts
 
@@ -126,9 +127,9 @@ Suggested build sequence (cheapest-given-existing-data first):
 3. **SDTM `DS`** — 🟡 *minimal shipped* (disposition from `Subject.status`). To
    fully clear: capture a per-subject disposition lifecycle (exit reason + date)
    and/or fold in screening-log screen-failures.
-4. **ADaM `ADAE`** — the deferred 6-file slice; highest analysis value.
-5. **ADaM `ADLB` / `ADVS`** — BDS datasets from LB / VS.
-6. **Reviewer guides (SDRG / ADRG)** — drafter shape parallel to the CSR/IRB
+4. ~~**ADaM `ADAE` · `ADCM` · `ADLB` · `ADVS`**~~ — ✅ **shipped.** Takes ADaM
+   from 2 → 6 (the FDA-recommended set); ADQS still needs SDTM `QS` first.
+5. **Reviewer guides (SDRG / ADRG)** — drafter shape parallel to the CSR/IRB
    drafters; templated from the Define-XML + derivation metadata.
 7. **LB unit-conversion table** — makes `LBSTRESN` regulator-ready (removes an
    `LB` caveat).
