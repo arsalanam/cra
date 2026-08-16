@@ -159,7 +159,7 @@
   <p class="meta">Scope: <b>parallel-group RCT, safety + time-to-event</b> &nbsp;·&nbsp; Assessed against the CDISC SDTM IG / ADaM IG expectation for a typical submission &nbsp;·&nbsp; Grounded in the current <b>cdisc/</b> package</p>
 
   <div class="metrics">
-    <div class="metric"><div class="n">8</div><div class="l">SDTM domains derived</div></div>
+    <div class="metric"><div class="n">10</div><div class="l">SDTM domains derived</div></div>
     <div class="metric"><div class="n">2</div><div class="l">ADaM datasets derived</div></div>
     <div class="metric"><div class="n">v2.1</div><div class="l">Define-XML + XPT v5</div></div>
     <div class="metric"><div class="n">4</div><div class="l">TLF artefacts</div></div>
@@ -168,7 +168,7 @@
 
   <div class="verdict">
     <h2>Bottom line</h2>
-    <p><strong>Yes for the core — not a turnkey full submission.</strong> From captured eCRF data, one derive run produces a genuine, reviewable CDISC package: eight SDTM domains, the subject-level (ADSL) and time-to-event (ADTTE) ADaM datasets, a Define-XML v2.1 metadata file, SAS Transport (XPT v5) datasets, a starter table/figure set, and an ICH E3 clinical study report — assembled into one submission-bundle ZIP.</p>
+    <p><strong>Yes for the core — not a turnkey full submission.</strong> From captured eCRF data, one derive run produces a genuine, reviewable CDISC package: ten SDTM domains, the subject-level (ADSL) and time-to-event (ADTTE) ADaM datasets, a Define-XML v2.1 metadata file, SAS Transport (XPT v5) datasets, a starter table/figure set, and an ICH E3 clinical study report — assembled into one submission-bundle ZIP.</p>
     <p>What it is <strong>not</strong> yet: a complete FDA/EMA eCTD Module 5 package. Several standard SDTM &amp; ADaM datasets, the reviewer guides (SDRG / ADRG / annotated CRF), and — critically — <strong>MedDRA / WHODrug medical coding</strong> are outstanding. Coding is license-gated, not an engineering gap.</p>
   </div>
 
@@ -183,7 +183,7 @@
     <div class="block-head"><h2>How it's generated</h2><span class="sub">one transaction · <code style="font-family:var(--mono);font-size:11.5px">POST /deployments/{id}/cdisc/derive</code></span></div>
     <div class="flow">
       <div class="stage"><div class="k">Capture</div><div class="t">eCRF / EDC</div><div class="d">Subject, AE, exposure, labs, vitals, con-meds, history</div></div>
-      <div class="stage"><div class="k">Map</div><div class="t">SDTM</div><div class="d">8 domains, SDTM CT applied</div></div>
+      <div class="stage"><div class="k">Map</div><div class="t">SDTM</div><div class="d">10 domains, SDTM CT applied</div></div>
       <div class="stage"><div class="k">Derive</div><div class="t">ADaM</div><div class="d">ADSL + ADTTE</div></div>
       <div class="stage"><div class="k">Summarize</div><div class="t">TLF</div><div class="d">Tables + AE figure</div></div>
       <div class="stage"><div class="k">Describe</div><div class="t">Define-XML</div><div class="d">v2.1 metadata + codelists</div></div>
@@ -205,8 +205,9 @@
         <tr class="s-good"><td class="st"><span class="chip good">Produced</span></td><td class="code">VS</td><td class="name">Vital Signs</td><td class="note">Height, weight, BP, pulse, temperature.</td></tr>
         <tr class="s-warn"><td class="st"><span class="chip warn">Partial</span></td><td class="code">MH</td><td class="name">Medical History</td><td class="note">Captured &amp; mapped. SOC placeholder until MedDRA.</td></tr>
         <tr class="s-good"><td class="st"><span class="chip good">Produced</span></td><td class="code">DA</td><td class="name">Drug Accountability</td><td class="note">Dispense / return amounts as DISPAMT / RETURNED findings, kit id as DAREFID. In Define-XML + XPT + the bundle.</td></tr>
-        <tr class="s-none"><td class="st"><span class="chip none">Not yet</span></td><td class="code">DS</td><td class="name">Disposition</td><td class="note">Completion / discontinuation events. Derivable from screening + visit state.</td></tr>
-        <tr class="s-none"><td class="st"><span class="chip none">Not yet</span></td><td class="code">SV / SE</td><td class="name">Subject Visits / Elements</td><td class="note">Visit-schedule data exists; needs the SV/SE mappers.</td></tr>
+        <tr class="s-warn"><td class="st"><span class="chip warn">Partial</span></td><td class="code">DS</td><td class="name">Disposition</td><td class="note">One disposition event per subject, DSDECOD from Subject.status. Minimal — no per-subject exit lifecycle yet. In Define-XML + XPT + the bundle.</td></tr>
+        <tr class="s-good"><td class="st"><span class="chip good">Produced</span></td><td class="code">SV</td><td class="name">Subject Visits</td><td class="note">One record per completed visit; VISIT/VISITNUM from the schedule, dated at completion. In Define-XML + XPT + the bundle.</td></tr>
+        <tr class="s-none"><td class="st"><span class="chip none">Not yet</span></td><td class="code">SE</td><td class="name">Subject Elements</td><td class="note">Study-element timing; needs the SE mapper.</td></tr>
         <tr class="s-none"><td class="st"><span class="chip none">Not yet</span></td><td class="code">QS</td><td class="name">Questionnaires</td><td class="note">ePRO subsystem could feed QS; mapper not built.</td></tr>
         <tr class="s-none"><td class="st"><span class="chip none">Not yet</span></td><td class="code">EG</td><td class="name">ECG</td><td class="note">Only if the trial collects ECG (capture + mapper).</td></tr>
         <tr class="s-none"><td class="st"><span class="chip none">Not yet</span></td><td class="code">TA·TE·TV·TI·TS</td><td class="name">Trial Design</td><td class="note">Small static domains required for submission; not yet emitted.</td></tr>

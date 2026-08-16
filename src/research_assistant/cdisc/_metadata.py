@@ -275,6 +275,44 @@ _DA = DatasetMeta(
     ),
 )
 
+_SV = DatasetMeta(
+    name="SV",
+    label="Subject Visits",
+    structure="One record per subject per visit",
+    purpose="Tabulation",
+    klass="SPECIAL PURPOSE",
+    key_vars=("STUDYID", "USUBJID", "SVSEQ"),
+    columns=(
+        ColumnMeta("STUDYID", "CHAR", 20, "Study Identifier", mandatory=True),
+        ColumnMeta("DOMAIN", "CHAR", 2, "Domain Abbreviation", mandatory=True),
+        ColumnMeta("USUBJID", "CHAR", 40, "Unique Subject Identifier", mandatory=True),
+        ColumnMeta("SVSEQ", "NUM", 8, "Sequence Number", mandatory=True),
+        ColumnMeta("VISITNUM", "NUM", 8, "Visit Number"),
+        ColumnMeta("VISIT", "CHAR", 60, "Visit Name"),
+        ColumnMeta("SVSTDTC", "CHAR", 30, "Start Date/Time of Visit"),
+        ColumnMeta("SVENDTC", "CHAR", 30, "End Date/Time of Visit"),
+    ),
+)
+
+_DS = DatasetMeta(
+    name="DS",
+    label="Disposition",
+    structure="One record per subject per disposition event",
+    purpose="Tabulation",
+    klass="EVENTS",
+    key_vars=("STUDYID", "USUBJID", "DSSEQ"),
+    columns=(
+        ColumnMeta("STUDYID", "CHAR", 20, "Study Identifier", mandatory=True),
+        ColumnMeta("DOMAIN", "CHAR", 2, "Domain Abbreviation", mandatory=True),
+        ColumnMeta("USUBJID", "CHAR", 40, "Unique Subject Identifier", mandatory=True),
+        ColumnMeta("DSSEQ", "NUM", 8, "Sequence Number", mandatory=True),
+        ColumnMeta("DSTERM", "CHAR", 200, "Reported Term for the Disposition Event"),
+        ColumnMeta("DSDECOD", "CHAR", 60, "Standardized Disposition Term"),
+        ColumnMeta("DSCAT", "CHAR", 40, "Category for Disposition Event"),
+        ColumnMeta("DSSTDTC", "CHAR", 30, "Start Date/Time of Disposition Event"),
+    ),
+)
+
 _ADSL = DatasetMeta(
     name="ADSL",
     label="Subject-Level Analysis Dataset",
@@ -351,7 +389,20 @@ _ADTTE = DatasetMeta(
 )
 
 
-DATASETS: tuple[DatasetMeta, ...] = (_DM, _AE, _VS, _LB, _EX, _CM, _MH, _DA, _ADSL, _ADTTE)
+DATASETS: tuple[DatasetMeta, ...] = (
+    _DM,
+    _AE,
+    _VS,
+    _LB,
+    _EX,
+    _CM,
+    _MH,
+    _DA,
+    _SV,
+    _DS,
+    _ADSL,
+    _ADTTE,
+)
 DOMAIN_METADATA: dict[str, DatasetMeta] = {d.name: d for d in DATASETS}
 
 

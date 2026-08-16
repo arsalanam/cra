@@ -29,13 +29,17 @@ from ..persistence.clinical.models import (
     FormInstance,
     InvestigationalProduct,
     ItemData,
+    PlannedVisit,
+    ScheduledVisit,
     SdtmAe,
     SdtmCm,
     SdtmDa,
     SdtmDm,
+    SdtmDs,
     SdtmEx,
     SdtmLb,
     SdtmMh,
+    SdtmSv,
     SdtmVs,
     StudyDeployment,
     Subject,
@@ -231,6 +235,31 @@ async def run_derivation(
         ).all()
     }
 
+    # Subject Visits (SV): the planned-visit calendar + the schedule that
+    # names each visit. Scoped to this deployment's subjects.
+    subject_ids = [s.id for s in subjects]
+    planned_visits: list[PlannedVisit] = (
+        list(
+            (
+                await session.scalars(
+                    select(PlannedVisit).where(PlannedVisit.subject_id.in_(subject_ids))
+                )
+            ).all()
+        )
+        if subject_ids
+        else []
+    )
+    scheduled_visits_by_id: dict[str, ScheduledVisit] = {
+        sv.id: sv
+        for sv in (
+            await session.scalars(
+                select(ScheduledVisit).where(
+                    ScheduledVisit.id.in_({pv.scheduled_visit_id for pv in planned_visits})
+                )
+            )
+        ).all()
+    }
+
     # IRT (E8): pull Allocation rows so ADSL/ADTTE can populate
     # TRT01P / TRT01A from the audited randomisation assignment rather
     # than the "TBD" placeholder. Map subject_id → Allocation.
@@ -271,6 +300,8 @@ async def run_derivation(
         SdtmCm,
         SdtmMh,
         SdtmDa,
+        SdtmSv,
+        SdtmDs,
         AdamAdsl,
         AdamAdtte,
         TlfArtefact,
@@ -368,6 +399,18 @@ async def run_derivation(
         subjects_by_id=subjects_by_id,
         units_by_ip_id=units_by_ip_id,
     )
+    sv = mapper.derive_sv(
+        deployment_id=deployment_id,
+        study_id=study_id,
+        planned_visits=planned_visits,
+        subjects_by_id=subjects_by_id,
+        scheduled_visits_by_id=scheduled_visits_by_id,
+    )
+    ds = mapper.derive_ds(
+        deployment_id=deployment_id,
+        study_id=study_id,
+        subjects=subjects,
+    )
     adsl = derive_adsl(
         deployment_id=deployment_id,
         study_id=study_id,
@@ -397,6 +440,8 @@ async def run_derivation(
     session.add_all(cm)
     session.add_all(mh)
     session.add_all(da)
+    session.add_all(sv)
+    session.add_all(ds)
     session.add_all(adsl)
     session.add_all(adtte)
     session.add_all(tlfs)
@@ -410,6 +455,8 @@ async def run_derivation(
         "cm": len(cm),
         "mh": len(mh),
         "da": len(da),
+        "sv": len(sv),
+        "ds": len(ds),
         "adsl": len(adsl),
         "adtte": len(adtte),
         "tlf": len(tlfs),
@@ -614,6 +661,34 @@ async def fetch_da(session: AsyncSession, deployment_id: str) -> list[SdtmDa]:
     )
 
 
+async def fetch_sv(session: AsyncSession, deployment_id: str) -> list[SdtmSv]:
+    return list(
+        (
+            await session.execute(
+                select(SdtmSv)
+                .where(SdtmSv.deployment_id == deployment_id)
+                .order_by(SdtmSv.USUBJID, SdtmSv.SVSEQ)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
+async def fetch_ds(session: AsyncSession, deployment_id: str) -> list[SdtmDs]:
+    return list(
+        (
+            await session.execute(
+                select(SdtmDs)
+                .where(SdtmDs.deployment_id == deployment_id)
+                .order_by(SdtmDs.USUBJID, SdtmDs.DSSEQ)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
 __all__ = [
     "DerivationResult",
     "fetch_adsl",
@@ -622,9 +697,11 @@ __all__ = [
     "fetch_cm",
     "fetch_da",
     "fetch_dm",
+    "fetch_ds",
     "fetch_ex",
     "fetch_lb",
     "fetch_mh",
+    "fetch_sv",
     "fetch_tlfs",
     "fetch_vs",
     "list_datasets",

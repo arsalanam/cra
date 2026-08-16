@@ -355,12 +355,15 @@ The platform's existing invite endpoint (`/api/admin/users`) was bare — global
 > is *core yes, full submission not yet*, and MedDRA/WHODrug is a license gate,
 > not code.
 
-- **Additional SDTM domains** — `DS` (disposition), `SV`/`SE` (subject visits),
-  `QS` (from ePRO), and the static Trial-Design domains (`TA·TE·TV·TI·TS`).
-  **Benefit:** each closes a gap a reviewer expects in a typical package; the
-  underlying data is mostly already captured, so the work is the mapper.
-  (`DA` — Drug Accountability — ✅ shipped: dispense/return records derive to the
-  SDTM DA domain, into Define-XML + XPT + the bundle.)
+- **Additional SDTM domains** — `SE` (subject elements), `QS` (from ePRO), and
+  the static Trial-Design domains (`TA·TE·TV·TI·TS`). **Benefit:** each closes a
+  gap a reviewer expects in a typical package; the underlying data is mostly
+  already captured, so the work is the mapper.
+  - `DA` (Drug Accountability) — ✅ shipped: dispense/return records → SDTM DA.
+  - `SV` (Subject Visits) — ✅ shipped: completed planned-visits → SDTM SV.
+  - `DS` (Disposition) — 🟡 minimal shipped from `Subject.status`; enrich with a
+    per-subject disposition lifecycle (exit reason + date) and/or screening-log
+    screen-failures.
 - **MedDRA license-gated mappers** for AE / MH preferred-term coding. **Benefit:** the regulator-acceptable submission unblocked. (Deploy gate, not backlog.)
 - **WHODrug license-gated mappers** for CM medication coding. **Benefit:** same as above for concomitant meds. (Deploy gate, not backlog.)
 - **Additional ADaM datasets** — ADAE, ADCM, ADLB, ADVS, ADQS. **Benefit:** each one is an FDA-recommended dataset for typical submissions.

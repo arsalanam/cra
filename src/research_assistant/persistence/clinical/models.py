@@ -917,6 +917,73 @@ class SdtmDa(ClinicalBase):
     derived_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
+class SdtmSv(ClinicalBase):
+    """SDTM Subject Visits row — one per subject per completed visit.
+
+    Derived from the PlannedVisit calendar: a visit that reached
+    status='completed' becomes an SV record dated at `completed_at` (the
+    actual visit) falling back to `planned_date`. VISIT / VISITNUM come
+    from the linked ScheduledVisit (name + day-offset ordering). Visits
+    still pending / missed / cancelled are NOT emitted — SV captures
+    visits that actually occurred.
+    """
+
+    __tablename__ = "sdtm_sv"
+    __table_args__ = (
+        UniqueConstraint("deployment_id", "USUBJID", "SVSEQ", name="uq_sdtm_sv_svseq"),
+    )
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    deployment_id: Mapped[str] = mapped_column(Text, index=True)
+    STUDYID: Mapped[str] = mapped_column(Text)
+    DOMAIN: Mapped[str] = mapped_column(Text, default="SV")
+    USUBJID: Mapped[str] = mapped_column(Text, index=True)
+    SVSEQ: Mapped[int] = mapped_column(Integer, doc="Sequence number within subject.")
+    VISITNUM: Mapped[float | None] = mapped_column(
+        Float, nullable=True, default=None, doc="Visit number (day-offset ordering)."
+    )
+    VISIT: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    SVSTDTC: Mapped[str | None] = mapped_column(
+        Text, nullable=True, default=None, doc="Start date/time of the visit (ISO 8601)."
+    )
+    SVENDTC: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+
+    derived_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class SdtmDs(ClinicalBase):
+    """SDTM Disposition row — one disposition event per subject.
+
+    MINIMAL derivation from `Subject.status`: the platform does not yet
+    capture a per-subject disposition lifecycle (withdrawals, completion
+    dates, screen-failure reasons live in the screening log, not linked by
+    USUBJID). Today this emits one DISPOSITION EVENT per enrolled subject
+    with DSDECOD mapped from the coarse status, DSSTDTC = the subject
+    reference (baseline) date as the available anchor. Enrich when a
+    dedicated disposition-capture surface lands.
+    """
+
+    __tablename__ = "sdtm_ds"
+    __table_args__ = (
+        UniqueConstraint("deployment_id", "USUBJID", "DSSEQ", name="uq_sdtm_ds_dsseq"),
+    )
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    deployment_id: Mapped[str] = mapped_column(Text, index=True)
+    STUDYID: Mapped[str] = mapped_column(Text)
+    DOMAIN: Mapped[str] = mapped_column(Text, default="DS")
+    USUBJID: Mapped[str] = mapped_column(Text, index=True)
+    DSSEQ: Mapped[int] = mapped_column(Integer, doc="Sequence number within subject.")
+    DSTERM: Mapped[str] = mapped_column(Text, doc="Reported disposition term (verbatim status).")
+    DSDECOD: Mapped[str] = mapped_column(Text, doc="Standardised disposition (CT).")
+    DSCAT: Mapped[str] = mapped_column(Text, default="DISPOSITION EVENT")
+    DSSTDTC: Mapped[str | None] = mapped_column(
+        Text, nullable=True, default=None, doc="Start date of the disposition event (ISO 8601)."
+    )
+
+    derived_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
 class AdamAdsl(ClinicalBase):
     """ADaM Subject-Level Analysis Dataset — one row per subject.
 

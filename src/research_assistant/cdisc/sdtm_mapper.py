@@ -25,17 +25,32 @@ from ..persistence.clinical.models import (
     DrugReturn,
     FormInstance,
     ItemData,
+    PlannedVisit,
+    ScheduledVisit,
     SdtmAe,
     SdtmCm,
     SdtmDa,
     SdtmDm,
+    SdtmDs,
     SdtmEx,
     SdtmLb,
     SdtmMh,
+    SdtmSv,
     SdtmVs,
     Subject,
 )
 from .terminology import load as _load_terminology
+
+# Coarse Subject.status → SDTM DS disposition CT. Enrich when a real
+# disposition-capture surface exists (see SdtmDs docstring).
+_DS_DISPOSITION = {
+    "enrolled": "ONGOING",
+    "locked": "COMPLETED",
+    "completed": "COMPLETED",
+    "withdrawn": "WITHDRAWAL BY SUBJECT",
+    "discontinued": "DISCONTINUED",
+    "screen_failure": "SCREEN FAILURE",
+}
 
 # Lazy-loaded controlled terminology tables.
 _AE_SEVERITY = _load_terminology("ae_severity.json")["mapping"]
@@ -835,6 +850,94 @@ class BuiltinPythonMapper:
                     DASTRESN=float(f["qty"]),
                     DASTRESU=f["units"],
                     DADTC=_to_iso8601(f["dtc"]),
+                )
+            )
+        return out
+
+    def derive_sv(
+        self,
+        *,
+        deployment_id: str,
+        study_id: str,
+        planned_visits: Iterable[PlannedVisit],
+        subjects_by_id: dict[str, Subject] | None = None,
+        scheduled_visits_by_id: dict[str, ScheduledVisit] | None = None,
+    ) -> list[SdtmSv]:
+        """SDTM Subject Visits from the planned-visit calendar.
+
+        Only visits that reached status='completed' are emitted (SV records
+        the visits that actually occurred), dated at `completed_at` with a
+        fallback to `planned_date`. VISIT / VISITNUM come from the linked
+        ScheduledVisit — VISITNUM is the 1-based rank of the scheduled visit
+        by day-offset, so it is consistent across subjects.
+        """
+        subjects_by_id = subjects_by_id or {}
+        scheduled_visits_by_id = scheduled_visits_by_id or {}
+        # VISITNUM = rank of the scheduled visit by (day_offset, name).
+        visitnum_by_sched: dict[str, float] = {}
+        for rank, sv in enumerate(
+            sorted(
+                scheduled_visits_by_id.values(),
+                key=lambda s: (s.day_offset, s.visit_name),
+            ),
+            start=1,
+        ):
+            visitnum_by_sched[sv.id] = float(rank)
+
+        completed = [pv for pv in planned_visits if pv.status == "completed"]
+        completed.sort(key=lambda pv: (pv.subject_id, pv.completed_at or pv.planned_date))
+
+        out: list[SdtmSv] = []
+        per_subject_seq: dict[str, int] = {}
+        for pv in completed:
+            subject = subjects_by_id.get(pv.subject_id)
+            subj_code = subject.subject_code if subject is not None else pv.subject_id
+            sched = scheduled_visits_by_id.get(pv.scheduled_visit_id)
+            dtc = _to_iso8601(pv.completed_at or pv.planned_date)
+            per_subject_seq[pv.subject_id] = per_subject_seq.get(pv.subject_id, 0) + 1
+            out.append(
+                SdtmSv(
+                    deployment_id=deployment_id,
+                    STUDYID=study_id,
+                    DOMAIN="SV",
+                    USUBJID=_usubjid(study_id, subj_code),
+                    SVSEQ=per_subject_seq[pv.subject_id],
+                    VISITNUM=visitnum_by_sched.get(pv.scheduled_visit_id),
+                    VISIT=sched.visit_name if sched is not None else None,
+                    SVSTDTC=dtc,
+                    SVENDTC=dtc,
+                )
+            )
+        return out
+
+    def derive_ds(
+        self,
+        *,
+        deployment_id: str,
+        study_id: str,
+        subjects: Iterable[Subject],
+    ) -> list[SdtmDs]:
+        """SDTM Disposition — one DISPOSITION EVENT per subject.
+
+        Minimal: DSDECOD is mapped from the coarse Subject.status, DSSTDTC
+        from the subject's baseline/reference date (the available anchor).
+        See SdtmDs for the data-capture limitation.
+        """
+        out: list[SdtmDs] = []
+        for subj in subjects:
+            status = subj.status or "enrolled"
+            per_subj_dtc = getattr(subj, "baseline_date", None) or getattr(subj, "created_at", None)
+            out.append(
+                SdtmDs(
+                    deployment_id=deployment_id,
+                    STUDYID=study_id,
+                    DOMAIN="DS",
+                    USUBJID=_usubjid(study_id, subj.subject_code),
+                    DSSEQ=1,
+                    DSTERM=status,
+                    DSDECOD=_DS_DISPOSITION.get(status, status.upper()),
+                    DSCAT="DISPOSITION EVENT",
+                    DSSTDTC=_to_iso8601(per_subj_dtc) if per_subj_dtc is not None else None,
                 )
             )
         return out

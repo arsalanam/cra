@@ -337,3 +337,95 @@ def test_derive_da_empty_when_no_accountability() -> None:
         )
         == []
     )
+
+
+# ── SV (Subject Visits) ──────────────────────────────────────────────────
+
+
+def _sched(**overrides: object) -> Any:
+    base = dict(id="sched-1", visit_name="Baseline", day_offset=0)
+    base.update(overrides)
+    return SimpleNamespace(**base)
+
+
+def _pv(**overrides: object) -> Any:
+    base = dict(
+        subject_id="subj-1",
+        scheduled_visit_id="sched-1",
+        planned_date=datetime(2026, 1, 1, tzinfo=UTC),
+        window_start=datetime(2026, 1, 1, tzinfo=UTC),
+        window_end=datetime(2026, 1, 4, tzinfo=UTC),
+        status="completed",
+        completed_at=datetime(2026, 1, 2, 10, 0, tzinfo=UTC),
+    )
+    base.update(overrides)
+    return SimpleNamespace(**base)
+
+
+def test_derive_sv_emits_completed_visits_with_visitnum() -> None:
+    mapper = BuiltinPythonMapper()
+    scheds = {
+        "sched-1": _sched(id="sched-1", visit_name="Baseline", day_offset=0),
+        "sched-2": _sched(id="sched-2", visit_name="Week 4", day_offset=28),
+    }
+    rows = mapper.derive_sv(
+        deployment_id="dep-1",
+        study_id="RS-1",
+        planned_visits=[
+            _pv(scheduled_visit_id="sched-1"),
+            _pv(scheduled_visit_id="sched-2", completed_at=datetime(2026, 1, 29, tzinfo=UTC)),
+        ],
+        subjects_by_id={"subj-1": _subject()},
+        scheduled_visits_by_id=scheds,
+    )
+    assert len(rows) == 2
+    by_visit = {r.VISIT: r for r in rows}
+    assert by_visit["Baseline"].VISITNUM == 1.0
+    assert by_visit["Week 4"].VISITNUM == 2.0
+    assert by_visit["Baseline"].USUBJID == "RS-1-S-001"
+    # SVSTDTC = the actual completion date.
+    assert by_visit["Baseline"].SVSTDTC.startswith("2026-01-02")
+
+
+def test_derive_sv_skips_non_completed_visits() -> None:
+    mapper = BuiltinPythonMapper()
+    rows = mapper.derive_sv(
+        deployment_id="dep-1",
+        study_id="RS-1",
+        planned_visits=[
+            _pv(status="pending"),
+            _pv(status="missed"),
+            _pv(status="cancelled"),
+        ],
+        subjects_by_id={"subj-1": _subject()},
+        scheduled_visits_by_id={"sched-1": _sched()},
+    )
+    assert rows == []
+
+
+# ── DS (Disposition) ─────────────────────────────────────────────────────
+
+
+def test_derive_ds_one_event_per_subject_mapped_from_status() -> None:
+    mapper = BuiltinPythonMapper()
+    subjects = [
+        _subject(id="s1", subject_code="S-001", status="enrolled"),
+        _subject(id="s2", subject_code="S-002", status="locked"),
+    ]
+    rows = mapper.derive_ds(deployment_id="dep-1", study_id="RS-1", subjects=subjects)
+    by_usubjid = {r.USUBJID: r for r in rows}
+    assert by_usubjid["RS-1-S-001"].DSDECOD == "ONGOING"
+    assert by_usubjid["RS-1-S-002"].DSDECOD == "COMPLETED"
+    assert all(r.DSCAT == "DISPOSITION EVENT" for r in rows)
+    assert all(r.DSSEQ == 1 for r in rows)
+
+
+def test_derive_ds_unknown_status_falls_back_to_uppercase() -> None:
+    mapper = BuiltinPythonMapper()
+    [row] = mapper.derive_ds(
+        deployment_id="dep-1",
+        study_id="RS-1",
+        subjects=[_subject(status="something_new")],
+    )
+    assert row.DSDECOD == "SOMETHING_NEW"
+    assert row.DSTERM == "something_new"

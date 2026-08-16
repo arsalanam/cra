@@ -4,7 +4,7 @@
 CRA, can someone generate the CDISC submission datasets and reports end-to-end?
 
 **Bottom line — yes for the core, not a turnkey full submission.** From captured
-eCRF data, one derive run produces a genuine, reviewable CDISC package: 8 SDTM
+eCRF data, one derive run produces a genuine, reviewable CDISC package: 10 SDTM
 domains, the subject-level (ADSL) and time-to-event (ADTTE) ADaM datasets, a
 Define-XML v2.1 metadata file, SAS Transport (XPT v5) datasets, a starter
 table/figure set, and an ICH E3 clinical study report — assembled into one
@@ -49,8 +49,9 @@ Study Data Tabulation Model — the standardized raw-data tables.
 | ✅ | `VS` | Vital Signs | Height, weight, BP, pulse, temperature. |
 | 🟡 | `MH` | Medical History | Captured & mapped. SOC placeholder until MedDRA. |
 | ✅ | `DA` | Drug Accountability | Dispense/return amounts as `DISPAMT`/`RETURNED` findings, kit id as `DAREFID`; derived from the IP dispense/return records. In Define-XML + XPT + the bundle. |
-| ⬜ | `DS` | Disposition | Completion / discontinuation events. Derivable from screening + visit state. |
-| ⬜ | `SV` / `SE` | Subject Visits / Elements | Visit-schedule data exists; needs the SV/SE mappers. |
+| 🟡 | `DS` | Disposition | One disposition event per subject, `DSDECOD` mapped from `Subject.status` (ONGOING/COMPLETED). Minimal — a per-subject disposition lifecycle (withdrawals, exit dates, screen-failure reasons) isn't captured yet. In Define-XML + XPT + the bundle. |
+| ✅ | `SV` | Subject Visits | One record per completed visit from the planned-visit calendar; VISIT/VISITNUM from the schedule, dated at the actual completion. In Define-XML + XPT + the bundle. |
+| ⬜ | `SE` | Subject Elements | Study-element timing; needs the SE mapper. |
 | ⬜ | `QS` | Questionnaires | ePRO subsystem could feed QS; mapper not built. |
 | ⬜ | `EG` | ECG | Only if the trial collects ECG (capture + mapper). |
 | ⬜ | `TA·TE·TV·TI·TS` | Trial Design | Small static domains required for submission; not yet emitted. |
@@ -119,9 +120,12 @@ that is inherently an operator step.
 Suggested build sequence (cheapest-given-existing-data first):
 
 1. ~~**SDTM `DA`**~~ — ✅ **shipped.** Drug-accountability dispense/return records
-   now derive to the SDTM DA domain (Define-XML + XPT + bundle).
-2. **SDTM `DS`** — disposition from screening-log + visit state (both captured).
-3. **SDTM `SV`** — subject visits from the visit-schedule subsystem.
+   derive to the SDTM DA domain (Define-XML + XPT + bundle).
+2. ~~**SDTM `SV`**~~ — ✅ **shipped.** Completed visits from the visit-schedule
+   subsystem derive to SDTM SV.
+3. **SDTM `DS`** — 🟡 *minimal shipped* (disposition from `Subject.status`). To
+   fully clear: capture a per-subject disposition lifecycle (exit reason + date)
+   and/or fold in screening-log screen-failures.
 4. **ADaM `ADAE`** — the deferred 6-file slice; highest analysis value.
 5. **ADaM `ADLB` / `ADVS`** — BDS datasets from LB / VS.
 6. **Reviewer guides (SDRG / ADRG)** — drafter shape parallel to the CSR/IRB
