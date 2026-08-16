@@ -7,6 +7,11 @@ Forward-looking tracker for what's left to build. This document is split into tw
 
 Historical context lives at the bottom: [Already shipped](#already-shipped) (one-line summary per landed item with a memory + commit pointer), [Designed but not yet built](#designed-but-not-yet-built), and [Maintenance norms](#maintenance).
 
+> **Visual view:** [`design/backlog-board.html`](design/backlog-board.html) renders
+> this backlog as an effort-and-status board (quick wins, subsystems, strategic
+> initiatives, deploy gates). This markdown file stays canonical — update both
+> together.
+
 ---
 
 ## How to read this
