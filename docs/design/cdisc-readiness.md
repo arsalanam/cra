@@ -4,8 +4,8 @@
 CRA, can someone generate the CDISC submission datasets and reports end-to-end?
 
 **Bottom line — yes for the core, not a turnkey full submission.** From captured
-eCRF data, one derive run produces a genuine, reviewable CDISC package: 7 SDTM
-domains, the subject-level (ADSL) and time-to-event (ADTTE) ADaM datasets, a
+eCRF data, one derive run produces a genuine, reviewable CDISC package: 10 SDTM
+domains, 6 ADaM datasets (ADSL, ADAE, ADCM, ADLB, ADVS, ADTTE), a
 Define-XML v2.1 metadata file, SAS Transport (XPT v5) datasets, a starter
 table/figure set, and an ICH E3 clinical study report — assembled into one
 submission-bundle ZIP. It is **not** yet a complete FDA/EMA eCTD Module 5
@@ -48,9 +48,10 @@ Study Data Tabulation Model — the standardized raw-data tables.
 | 🟡 | `LB` | Laboratory | Results + normal-range indicator. `LBSTRESN = LBORRES` until a unit-conversion table is wired in. |
 | ✅ | `VS` | Vital Signs | Height, weight, BP, pulse, temperature. |
 | 🟡 | `MH` | Medical History | Captured & mapped. SOC placeholder until MedDRA. |
-| ⬜ | `DA` | Drug Accountability | **Data already exists** (IP receipt / dispense / return subsystem) — no SDTM DA mapper yet. |
-| ⬜ | `DS` | Disposition | Completion / discontinuation events. Derivable from screening + visit state. |
-| ⬜ | `SV` / `SE` | Subject Visits / Elements | Visit-schedule data exists; needs the SV/SE mappers. |
+| ✅ | `DA` | Drug Accountability | Dispense/return amounts as `DISPAMT`/`RETURNED` findings, kit id as `DAREFID`; derived from the IP dispense/return records. In Define-XML + XPT + the bundle. |
+| 🟡 | `DS` | Disposition | One disposition event per subject, `DSDECOD` mapped from `Subject.status` (ONGOING/COMPLETED). Minimal — a per-subject disposition lifecycle (withdrawals, exit dates, screen-failure reasons) isn't captured yet. In Define-XML + XPT + the bundle. |
+| ✅ | `SV` | Subject Visits | One record per completed visit from the planned-visit calendar; VISIT/VISITNUM from the schedule, dated at the actual completion. In Define-XML + XPT + the bundle. |
+| ⬜ | `SE` | Subject Elements | Study-element timing; needs the SE mapper. |
 | ⬜ | `QS` | Questionnaires | ePRO subsystem could feed QS; mapper not built. |
 | ⬜ | `EG` | ECG | Only if the trial collects ECG (capture + mapper). |
 | ⬜ | `TA·TE·TV·TI·TS` | Trial Design | Small static domains required for submission; not yet emitted. |
@@ -63,9 +64,10 @@ Analysis Data Model — SDTM plus analysis-ready derived variables.
 |---|---|---|---|
 | ✅ | `ADSL` | Subject-Level | One row/subject; population flags (SAFFL / ITTFL / DTHFL), age groups, treatment, reference dates. |
 | ✅ | `ADTTE` | Time-to-Event | Time to first AE / SAE / death; AVAL + CNSR with SRCDOM/SRCVAR traceability. |
-| ⬜ | `ADAE` | Adverse Events | Scoped & deferred — a 6-file slice (model + deriver + pipeline + Define-XML + XPT). TRTEMFL / AOCCFL flags. |
-| ⬜ | `ADLB` / `ADVS` | Labs / Vitals (BDS) | Basic-Data-Structure analysis datasets from LB / VS. |
-| ⬜ | `ADCM` | Concomitant Meds | Occurrence-data-structure dataset from CM. |
+| ✅ | `ADAE` | Adverse Events | One row per AE + ADSL treatment/population; `TRTEMFL` (treatment-emergent) + `AOCCFL` (first occurrence) flags. In Define-XML + XPT + bundle. |
+| ✅ | `ADLB` / `ADVS` | Labs / Vitals (BDS) | One row per result with the BDS baseline/change value-add (`ABLFL` / `BASE` / `CHG`). |
+| ✅ | `ADCM` | Concomitant Meds | Con-meds merged with ADSL treatment/population (OCCDS). |
+| ⬜ | `ADQS` | Questionnaires (BDS) | Blocked on SDTM `QS` (no ePRO questionnaire-response model yet). |
 
 ## Submission artifacts
 
@@ -118,14 +120,16 @@ that is inherently an operator step.
 
 Suggested build sequence (cheapest-given-existing-data first):
 
-1. **SDTM `DA`** — drug-accountability subsystem already holds receipt / dispense /
-   return rows; add the DA mapper. Also closes the roadmap's "CDISC EX from
-   dispensations" follow-up.
-2. **SDTM `DS`** — disposition from screening-log + visit state (both captured).
-3. **SDTM `SV`** — subject visits from the visit-schedule subsystem.
-4. **ADaM `ADAE`** — the deferred 6-file slice; highest analysis value.
-5. **ADaM `ADLB` / `ADVS`** — BDS datasets from LB / VS.
-6. **Reviewer guides (SDRG / ADRG)** — drafter shape parallel to the CSR/IRB
+1. ~~**SDTM `DA`**~~ — ✅ **shipped.** Drug-accountability dispense/return records
+   derive to the SDTM DA domain (Define-XML + XPT + bundle).
+2. ~~**SDTM `SV`**~~ — ✅ **shipped.** Completed visits from the visit-schedule
+   subsystem derive to SDTM SV.
+3. **SDTM `DS`** — 🟡 *minimal shipped* (disposition from `Subject.status`). To
+   fully clear: capture a per-subject disposition lifecycle (exit reason + date)
+   and/or fold in screening-log screen-failures.
+4. ~~**ADaM `ADAE` · `ADCM` · `ADLB` · `ADVS`**~~ — ✅ **shipped.** Takes ADaM
+   from 2 → 6 (the FDA-recommended set); ADQS still needs SDTM `QS` first.
+5. **Reviewer guides (SDRG / ADRG)** — drafter shape parallel to the CSR/IRB
    drafters; templated from the Define-XML + derivation metadata.
 7. **LB unit-conversion table** — makes `LBSTRESN` regulator-ready (removes an
    `LB` caveat).

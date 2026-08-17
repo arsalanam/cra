@@ -18,26 +18,39 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..persistence.clinical.models import (
+    AdamAdae,
+    AdamAdcm,
+    AdamAdlb,
     AdamAdsl,
     AdamAdtte,
+    AdamAdvs,
     AdverseEvent,
     Allocation,
     CdiscDerivation,
     DeployedForm,
+    DrugDispensation,
+    DrugReturn,
     FormInstance,
+    InvestigationalProduct,
     ItemData,
+    PlannedVisit,
+    ScheduledVisit,
     SdtmAe,
     SdtmCm,
+    SdtmDa,
     SdtmDm,
+    SdtmDs,
     SdtmEx,
     SdtmLb,
     SdtmMh,
+    SdtmSv,
     SdtmVs,
     StudyDeployment,
     Subject,
     TlfArtefact,
 )
 from .adam_deriver import derive_adsl
+from .adam_extra import derive_adae, derive_adcm, derive_adlb, derive_advs
 from .adtte_deriver import derive_adtte
 from .sdtm_mapper import (
     BuiltinPythonMapper,
@@ -200,6 +213,58 @@ async def run_derivation(
     )
     item_data_by_subject = await _gather_item_data(session, subjects)
 
+    # Drug accountability (SDTM DA) source rows: dispensations + returns +
+    # the IP catalogue for units.
+    dispensations: list[DrugDispensation] = list(
+        (
+            await session.scalars(
+                select(DrugDispensation).where(DrugDispensation.deployment_id == deployment_id)
+            )
+        ).all()
+    )
+    drug_returns: list[DrugReturn] = list(
+        (
+            await session.scalars(
+                select(DrugReturn).where(DrugReturn.deployment_id == deployment_id)
+            )
+        ).all()
+    )
+    units_by_ip_id: dict[str, str] = {
+        ip.id: ip.units
+        for ip in (
+            await session.scalars(
+                select(InvestigationalProduct).where(
+                    InvestigationalProduct.deployment_id == deployment_id
+                )
+            )
+        ).all()
+    }
+
+    # Subject Visits (SV): the planned-visit calendar + the schedule that
+    # names each visit. Scoped to this deployment's subjects.
+    subject_ids = [s.id for s in subjects]
+    planned_visits: list[PlannedVisit] = (
+        list(
+            (
+                await session.scalars(
+                    select(PlannedVisit).where(PlannedVisit.subject_id.in_(subject_ids))
+                )
+            ).all()
+        )
+        if subject_ids
+        else []
+    )
+    scheduled_visits_by_id: dict[str, ScheduledVisit] = {
+        sv.id: sv
+        for sv in (
+            await session.scalars(
+                select(ScheduledVisit).where(
+                    ScheduledVisit.id.in_({pv.scheduled_visit_id for pv in planned_visits})
+                )
+            )
+        ).all()
+    }
+
     # IRT (E8): pull Allocation rows so ADSL/ADTTE can populate
     # TRT01P / TRT01A from the audited randomisation assignment rather
     # than the "TBD" placeholder. Map subject_id → Allocation.
@@ -239,8 +304,15 @@ async def run_derivation(
         SdtmEx,
         SdtmCm,
         SdtmMh,
+        SdtmDa,
+        SdtmSv,
+        SdtmDs,
         AdamAdsl,
         AdamAdtte,
+        AdamAdae,
+        AdamAdcm,
+        AdamAdlb,
+        AdamAdvs,
         TlfArtefact,
     ):
         await session.execute(delete(model).where(model.deployment_id == deployment_id))
@@ -328,6 +400,26 @@ async def run_derivation(
         form_instances=form_instances_by_domain.get("MH", []),
         config=cfg,
     )
+    da = mapper.derive_da(
+        deployment_id=deployment_id,
+        study_id=study_id,
+        dispensations=dispensations,
+        returns=drug_returns,
+        subjects_by_id=subjects_by_id,
+        units_by_ip_id=units_by_ip_id,
+    )
+    sv = mapper.derive_sv(
+        deployment_id=deployment_id,
+        study_id=study_id,
+        planned_visits=planned_visits,
+        subjects_by_id=subjects_by_id,
+        scheduled_visits_by_id=scheduled_visits_by_id,
+    )
+    ds = mapper.derive_ds(
+        deployment_id=deployment_id,
+        study_id=study_id,
+        subjects=subjects,
+    )
     adsl = derive_adsl(
         deployment_id=deployment_id,
         study_id=study_id,
@@ -342,6 +434,10 @@ async def run_derivation(
         adsl=adsl,
         ae_records=ae,
     )
+    adae = derive_adae(deployment_id=deployment_id, study_id=study_id, adsl=adsl, ae_records=ae)
+    adcm = derive_adcm(deployment_id=deployment_id, study_id=study_id, adsl=adsl, cm_records=cm)
+    adlb = derive_adlb(deployment_id=deployment_id, study_id=study_id, adsl=adsl, lb_records=lb)
+    advs = derive_advs(deployment_id=deployment_id, study_id=study_id, adsl=adsl, vs_records=vs)
     tlfs = generate_tlfs(
         deployment_id=deployment_id,
         adsl=adsl,
@@ -356,7 +452,14 @@ async def run_derivation(
     session.add_all(ex)
     session.add_all(cm)
     session.add_all(mh)
+    session.add_all(da)
+    session.add_all(sv)
+    session.add_all(ds)
     session.add_all(adsl)
+    session.add_all(adae)
+    session.add_all(adcm)
+    session.add_all(adlb)
+    session.add_all(advs)
     session.add_all(adtte)
     session.add_all(tlfs)
 
@@ -368,7 +471,14 @@ async def run_derivation(
         "ex": len(ex),
         "cm": len(cm),
         "mh": len(mh),
+        "da": len(da),
+        "sv": len(sv),
+        "ds": len(ds),
         "adsl": len(adsl),
+        "adae": len(adae),
+        "adcm": len(adcm),
+        "adlb": len(adlb),
+        "advs": len(advs),
         "adtte": len(adtte),
         "tlf": len(tlfs),
     }
@@ -558,16 +668,121 @@ async def fetch_mh(session: AsyncSession, deployment_id: str) -> list[SdtmMh]:
     )
 
 
+async def fetch_da(session: AsyncSession, deployment_id: str) -> list[SdtmDa]:
+    return list(
+        (
+            await session.execute(
+                select(SdtmDa)
+                .where(SdtmDa.deployment_id == deployment_id)
+                .order_by(SdtmDa.USUBJID, SdtmDa.DASEQ)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
+async def fetch_sv(session: AsyncSession, deployment_id: str) -> list[SdtmSv]:
+    return list(
+        (
+            await session.execute(
+                select(SdtmSv)
+                .where(SdtmSv.deployment_id == deployment_id)
+                .order_by(SdtmSv.USUBJID, SdtmSv.SVSEQ)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
+async def fetch_ds(session: AsyncSession, deployment_id: str) -> list[SdtmDs]:
+    return list(
+        (
+            await session.execute(
+                select(SdtmDs)
+                .where(SdtmDs.deployment_id == deployment_id)
+                .order_by(SdtmDs.USUBJID, SdtmDs.DSSEQ)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
+async def fetch_adae(session: AsyncSession, deployment_id: str) -> list[AdamAdae]:
+    return list(
+        (
+            await session.execute(
+                select(AdamAdae)
+                .where(AdamAdae.deployment_id == deployment_id)
+                .order_by(AdamAdae.USUBJID, AdamAdae.ASEQ)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
+async def fetch_adcm(session: AsyncSession, deployment_id: str) -> list[AdamAdcm]:
+    return list(
+        (
+            await session.execute(
+                select(AdamAdcm)
+                .where(AdamAdcm.deployment_id == deployment_id)
+                .order_by(AdamAdcm.USUBJID, AdamAdcm.ASEQ)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
+async def fetch_adlb(session: AsyncSession, deployment_id: str) -> list[AdamAdlb]:
+    return list(
+        (
+            await session.execute(
+                select(AdamAdlb)
+                .where(AdamAdlb.deployment_id == deployment_id)
+                .order_by(AdamAdlb.USUBJID, AdamAdlb.ASEQ)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
+async def fetch_advs(session: AsyncSession, deployment_id: str) -> list[AdamAdvs]:
+    return list(
+        (
+            await session.execute(
+                select(AdamAdvs)
+                .where(AdamAdvs.deployment_id == deployment_id)
+                .order_by(AdamAdvs.USUBJID, AdamAdvs.ASEQ)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
 __all__ = [
     "DerivationResult",
+    "fetch_adae",
+    "fetch_adcm",
+    "fetch_adlb",
     "fetch_adsl",
     "fetch_adtte",
+    "fetch_advs",
     "fetch_ae",
     "fetch_cm",
+    "fetch_da",
     "fetch_dm",
+    "fetch_ds",
     "fetch_ex",
     "fetch_lb",
     "fetch_mh",
+    "fetch_sv",
     "fetch_tlfs",
     "fetch_vs",
     "list_datasets",

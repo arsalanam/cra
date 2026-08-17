@@ -47,7 +47,24 @@ def test_one_itemgroupdef_per_dataset() -> None:
     root = _doc()
     igs = root.findall(f".//{{{_NS_ODM}}}ItemGroupDef")
     names = {ig.get("Name") for ig in igs}
-    expected = {"DM", "AE", "VS", "LB", "EX", "CM", "MH", "ADSL", "ADTTE"}
+    expected = {
+        "DM",
+        "AE",
+        "VS",
+        "LB",
+        "EX",
+        "CM",
+        "MH",
+        "DA",
+        "SV",
+        "DS",
+        "ADSL",
+        "ADAE",
+        "ADCM",
+        "ADLB",
+        "ADVS",
+        "ADTTE",
+    }
     assert names == expected
 
 

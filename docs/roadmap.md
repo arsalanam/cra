@@ -7,6 +7,11 @@ Forward-looking tracker for what's left to build. This document is split into tw
 
 Historical context lives at the bottom: [Already shipped](#already-shipped) (one-line summary per landed item with a memory + commit pointer), [Designed but not yet built](#designed-but-not-yet-built), and [Maintenance norms](#maintenance).
 
+> **Visual view:** [`design/backlog-board.html`](design/backlog-board.html) renders
+> this backlog as an effort-and-status board (quick wins, subsystems, strategic
+> initiatives, deploy gates). This markdown file stays canonical — update both
+> together.
+
 ---
 
 ## How to read this
@@ -355,14 +360,21 @@ The platform's existing invite endpoint (`/api/admin/users`) was bare — global
 > is *core yes, full submission not yet*, and MedDRA/WHODrug is a license gate,
 > not code.
 
-- **Additional SDTM domains** — `DA` (drug accountability data already exists),
-  `DS` (disposition), `SV`/`SE` (subject visits), `QS` (from ePRO), and the
-  static Trial-Design domains (`TA·TE·TV·TI·TS`). **Benefit:** each closes a gap
-  a reviewer expects in a typical package; the underlying data is mostly already
-  captured, so the work is the mapper.
+- **Additional SDTM domains** — `SE` (subject elements), `QS` (from ePRO), and
+  the static Trial-Design domains (`TA·TE·TV·TI·TS`). **Benefit:** each closes a
+  gap a reviewer expects in a typical package; the underlying data is mostly
+  already captured, so the work is the mapper.
+  - `DA` (Drug Accountability) — ✅ shipped: dispense/return records → SDTM DA.
+  - `SV` (Subject Visits) — ✅ shipped: completed planned-visits → SDTM SV.
+  - `DS` (Disposition) — 🟡 minimal shipped from `Subject.status`; enrich with a
+    per-subject disposition lifecycle (exit reason + date) and/or screening-log
+    screen-failures.
 - **MedDRA license-gated mappers** for AE / MH preferred-term coding. **Benefit:** the regulator-acceptable submission unblocked. (Deploy gate, not backlog.)
 - **WHODrug license-gated mappers** for CM medication coding. **Benefit:** same as above for concomitant meds. (Deploy gate, not backlog.)
-- **Additional ADaM datasets** — ADAE, ADCM, ADLB, ADVS, ADQS. **Benefit:** each one is an FDA-recommended dataset for typical submissions.
+- **Additional ADaM datasets** — ADAE, ADCM, ADLB, ADVS ✅ **shipped** (ADaM
+  now 2 → 6, the FDA-recommended set: ADAE with TRTEMFL/AOCCFL; ADLB/ADVS BDS
+  with baseline/change; ADCM OCCDS). **ADQS** remains — blocked on SDTM `QS`
+  (no ePRO questionnaire-response model yet).
 - **Reviewer guides + annotated CRF** — SDRG / ADRG (drafter shape parallel to the CSR/IRB drafters, templated from Define-XML + derivation metadata) and the annotated CRF. **Benefit:** the human-facing half of an FDA data package.
 - **More TLF templates** — subgroup forest plots, Kaplan-Meier curves overlayed by ADSL strata, swimmer + waterfall as standard outputs. **Benefit:** richer TLF library reduces operator paste-into-CSR work.
 - **FDA ESG / EMA CESP submission gateway.** Today we export the bundle; submission is the operator's job. A direct gateway adapter is the next step. **Benefit:** end-to-end submission inside the platform.

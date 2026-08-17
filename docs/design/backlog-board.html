@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>CRA Backlog Board</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #EDF1F4; --surface: #FFFFFF; --surface-2: #F5F8FA;
+    --ink: #17242E; --muted: #5A6975;
+    --line: #DBE3E9; --line-strong: #C4D0D8;
+    --accent: #0E7C86; --accent-soft: #0E7C8618;
+    --good: #2E7D57; --good-soft: #2E7D5718;
+    --warn: #B0761C; --warn-soft: #B0761C1a;
+    --none: #7C8B97; --none-soft: #7C8B9718;
+    --blocked: #A34A52; --blocked-soft: #A34A521a;
+    --strat: #6B54B0; --strat-soft: #6B54B01a;
+    --shadow: 0 1px 2px rgba(20,35,46,.06), 0 8px 24px rgba(20,35,46,.05);
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --mono: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0C1218; --surface: #131C24; --surface-2: #18232C;
+      --ink: #E7EEF3; --muted: #93A4B0;
+      --line: #24313B; --line-strong: #32424E;
+      --accent: #36AAB4; --accent-soft: #36AAB420;
+      --good: #52B98C; --good-soft: #52B98c22;
+      --warn: #D6A24A; --warn-soft: #D6A24a22;
+      --none: #6E7D89; --none-soft: #6E7D8922;
+      --blocked: #CC717A; --blocked-soft: #CC717a22;
+      --strat: #A48CE6; --strat-soft: #A48CE622;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 30px rgba(0,0,0,.28);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0C1218; --surface: #131C24; --surface-2: #18232C;
+    --ink: #E7EEF3; --muted: #93A4B0; --line: #24313B; --line-strong: #32424E;
+    --accent: #36AAB4; --accent-soft: #36AAB420;
+    --good: #52B98C; --good-soft: #52B98c22; --warn: #D6A24A; --warn-soft: #D6A24a22;
+    --none: #6E7D89; --none-soft: #6E7D8922; --blocked: #CC717A; --blocked-soft: #CC717a22;
+    --strat: #A48CE6; --strat-soft: #A48CE622;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 30px rgba(0,0,0,.28);
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--sans); line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 44px 24px 80px; }
+
+  .eyebrow { font: 600 11.5px/1 var(--mono); letter-spacing: .16em; text-transform: uppercase; color: var(--accent); margin: 0 0 14px; }
+  h1 { font-size: clamp(26px, 4vw, 38px); line-height: 1.08; margin: 0 0 12px; letter-spacing: -.02em; text-wrap: balance; font-weight: 680; }
+  .lede { font-size: 16.5px; color: var(--muted); max-width: 66ch; margin: 0; }
+  .meta { margin-top: 14px; font: 500 12px/1.5 var(--mono); color: var(--muted); }
+  .meta b { color: var(--ink); font-weight: 600; }
+
+  .metrics { display: flex; flex-wrap: wrap; gap: 10px; margin: 26px 0 26px; }
+  .metric { flex: 1 1 120px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 13px 15px; box-shadow: var(--shadow); }
+  .metric .n { font: 700 23px/1 var(--sans); letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+  .metric .l { font-size: 11.5px; color: var(--muted); margin-top: 5px; }
+
+  /* legend */
+  .legends { display: flex; flex-wrap: wrap; gap: 8px 26px; margin: 0 0 8px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 7px 14px; margin: 0; padding: 0; list-style: none; align-items: center; }
+  .legend .lab { font: 600 10px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin-right: 2px; }
+  .legend li { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+  .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+  .dot.open { background: var(--accent); } .dot.blocked { background: var(--blocked); }
+  .dot.strat { background: var(--strat); } .dot.gate { background: var(--warn); }
+  .dot.ship { background: var(--good); }
+
+  /* effort badge */
+  .eff { display: inline-flex; align-items: center; justify-content: center; min-width: 26px; height: 20px; padding: 0 6px;
+         font: 700 10.5px/1 var(--mono); border-radius: 5px; border: 1px solid transparent; }
+  .eff.S { color: var(--good); background: var(--good-soft); border-color: var(--good-soft); }
+  .eff.M { color: var(--accent); background: var(--accent-soft); }
+  .eff.L { color: var(--warn); background: var(--warn-soft); }
+  .eff.XL { color: var(--blocked); background: var(--blocked-soft); }
+
+  .note-blocked { color: var(--blocked); font-weight: 600; }
+
+  /* shipped strip */
+  .ship-strip { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 4px; }
+  .pill { font: 600 11px/1 var(--sans); padding: 5px 9px; border-radius: 999px; background: var(--good-soft); color: var(--good); }
+
+  .block-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 32px 0 12px; flex-wrap: wrap; }
+  .block-head h2 { font-size: 18px; margin: 0; letter-spacing: -.01em; }
+  .block-head .sub { font-size: 12.5px; color: var(--muted); }
+
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); overflow: hidden; }
+  .grp { border-bottom: 1px solid var(--line); }
+  .grp:last-child { border-bottom: none; }
+  .grp > .g-h { display: flex; align-items: center; gap: 10px; padding: 11px 16px; background: var(--surface-2); }
+  .grp > .g-h .g-t { font: 600 12.5px/1 var(--sans); }
+  .grp > .g-h .g-c { font: 600 10.5px/1 var(--mono); color: var(--muted); }
+
+  ul.items { list-style: none; margin: 0; padding: 0; }
+  ul.items li { display: grid; grid-template-columns: 34px 1fr; gap: 12px; padding: 10px 16px; border-top: 1px solid var(--line); }
+  ul.items li:first-child { border-top: none; }
+  ul.items li { border-left: 3px solid transparent; }
+  li.s-open { border-left-color: var(--accent); }
+  li.s-blocked { border-left-color: var(--blocked); }
+  li.s-strat { border-left-color: var(--strat); }
+  li.s-gate { border-left-color: var(--warn); }
+  .it-name { font-weight: 560; font-size: 13.5px; }
+  .it-note { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+  .it-name code, .it-note code { font-family: var(--mono); font-size: 11.5px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; color: var(--ink); }
+
+  /* two-column card grid for the subsystem groups */
+  .cols { display: grid; grid-template-columns: 1fr; gap: 0; }
+
+  footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--muted); }
+  footer code { font-family: var(--mono); font-size: 12px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; color: var(--ink); }
+  footer p { margin: 0 0 8px; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p class="eyebrow">Product Backlog</p>
+  <h1>CRA backlog board</h1>
+  <p class="lede">Everything not yet built, grouped by where it lives and tagged by effort. The genuinely-cheap "grab it now" set is smaller than the raw count — a real chunk is license-blocked or multi-quarter green-field.</p>
+  <p class="meta">Canonical tracker: <b>docs/roadmap.md</b> &nbsp;·&nbsp; Gates: <b>docs/trial-readiness.md</b> &nbsp;·&nbsp; Effort is a t-shirt estimate, not a commitment</p>
+
+  <div class="metrics">
+    <div class="metric"><div class="n">~90</div><div class="l">Pickable follow-ups</div></div>
+    <div class="metric"><div class="n">7</div><div class="l">Strategic initiatives</div></div>
+    <div class="metric"><div class="n">7</div><div class="l">Trial-readiness gates</div></div>
+    <div class="metric"><div class="n">4</div><div class="l">Blocked on a license</div></div>
+    <div class="metric"><div class="n">15</div><div class="l">Shipped this sweep</div></div>
+  </div>
+
+  <div class="legends">
+    <ul class="legend">
+      <li class="lab">Status</li>
+      <li><span class="dot open"></span> Open — buildable now</li>
+      <li><span class="dot blocked"></span> Blocked — license / external</li>
+      <li><span class="dot strat"></span> Strategic — new segment</li>
+      <li><span class="dot gate"></span> Gate — deploy blocker</li>
+    </ul>
+    <ul class="legend">
+      <li class="lab">Effort</li>
+      <li><span class="eff S">S</span> days</li>
+      <li><span class="eff M">M</span> ~2 wk</li>
+      <li><span class="eff L">L</span> quarter</li>
+      <li><span class="eff XL">XL</span> multi-Q</li>
+    </ul>
+  </div>
+
+  <!-- Recently shipped -->
+  <div class="block-head"><h2>Recently shipped</h2><span class="sub">this backlog sweep — context, not to-do</span></div>
+  <div class="ship-strip">
+    <span class="pill">kit_id enforcement</span><span class="pill">SUSAR detection</span>
+    <span class="pill">drug compliance</span><span class="pill">NI / equivalence N</span>
+    <span class="pill">temp-excursion → CAPA</span><span class="pill">visit-window → deviation</span>
+    <span class="pill">CONSORT flow PDF</span><span class="pill">sample-size grid</span>
+    <span class="pill">group-sequential</span><span class="pill">Bayesian posterior</span>
+    <span class="pill">plain-language guard</span><span class="pill">CSL / EndNote</span>
+    <span class="pill">CSR/IRB lay handoffs</span><span class="pill">SDTM DA</span>
+    <span class="pill">SDTM SV + DS</span><span class="pill">ADAE·ADCM·ADLB·ADVS</span>
+  </div>
+
+  <!-- Quick wins -->
+  <div class="block-head"><h2>Quick wins</h2><span class="sub">small, self-contained — the grab-it-now set</span></div>
+  <div class="card">
+    <ul class="items">
+      <li class="s-open"><span class="eff S">S</span><div><div class="it-name">LB unit-conversion table</div><div class="it-note">mg/dL ↔ mmol/L dict; flips the SDTM <code>LB</code> row from partial to produced.</div></div></li>
+      <li class="s-open"><span class="eff S">S</span><div><div class="it-name">SUSAR sponsor-notification webhook</div><div class="it-note">Fires on the SUSAR flag we already compute; closes the expedited-reporting loop.</div></div></li>
+      <li class="s-open"><span class="eff S">S</span><div><div class="it-name">CDISC <code>EX</code> from dispensations</div><div class="it-note">Auto-feed SDTM EX from IP dispense records, like DA now does.</div></div></li>
+      <li class="s-open"><span class="eff S">S</span><div><div class="it-name">Visit-window / temp-excursion loops → more triggers</div><div class="it-note">SMS (Twilio), ICS calendar attach, locale-aware reminders.</div></div></li>
+      <li class="s-open"><span class="eff S">S</span><div><div class="it-name">SR screening: title-only tier + reviewer annotations</div><div class="it-note">Cuts first-pass reviewer load; adds rationale to the adjudication queue.</div></div></li>
+      <li class="s-open"><span class="eff S">S</span><div><div class="it-name">Living-review: email digest + per-paper voting</div><div class="it-note">Reuses the SES integration; committee drill-down.</div></div></li>
+    </ul>
+  </div>
+
+  <!-- CDISC -->
+  <div class="block-head"><h2>CDISC — SDTM → ADaM → TLF</h2><span class="sub">the thread in progress · 10 SDTM + 2 ADaM produced today</span></div>
+  <div class="card">
+    <ul class="items">
+      <li class="s-open"><span class="eff M">M</span><div><div class="it-name">ADaM <code>ADQS</code></div><div class="it-note">Questionnaires (BDS) — blocked on SDTM QS. ADAE · ADCM · ADLB · ADVS ✅ shipped (ADaM 2→6).</div></div></li>
+      <li class="s-open"><span class="eff M">M</span><div><div class="it-name">SDTM <code>SE</code> · <code>QS</code> · Trial-Design (<code>TA/TE/TV/TI/TS</code>)</div><div class="it-note">Remaining expected domains; data mostly captured, work is the mapper.</div></div></li>
+      <li class="s-open"><span class="eff M">M</span><div><div class="it-name">Reviewer guides (SDRG / ADRG) + annotated CRF</div><div class="it-note">The human-facing half of an FDA data package; drafter-shaped.</div></div></li>
+      <li class="s-open"><span class="eff M">M</span><div><div class="it-name">More TLF templates</div><div class="it-note">K-M by ADSL strata, subgroup forest, swimmer + waterfall as fixed shells.</div></div></li>
+      <li class="s-blocked"><span class="eff M">M</span><div><div class="it-name">MedDRA / WHODrug coding <span class="note-blocked">· blocked</span></div><div class="it-note">Paid dictionaries (MSSO / Uppsala). AE/MH/CM terms stay verbatim until deploy.</div></div></li>
+      <li class="s-open"><span class="eff L">L</span><div><div class="it-name">FDA ESG / EMA CESP submission gateway</div><div class="it-note">Direct gateway adapter — end-to-end submission inside the platform.</div></div></li>
+    </ul>
+  </div>
+
+  <!-- Stats / analysis -->
+  <div class="block-head"><h2>Statistics &amp; analysis</h2><span class="sub">SAP · trial-stats · meta-analysis viz · NMA · IPD</span></div>
+  <div class="card">
+    <ul class="items">
+      <li class="s-open"><span class="eff M">M</span><div><div class="it-name">Trial-stats: RMST · Bland-Altman</div><div class="it-note">RMST = a sandbox K-M-area analysis (FDA-preferred when hazards non-proportional). Bayesian posterior ✅ done.</div></div></li>
+      <li class="s-open"><span class="eff M">M</span><div><div class="it-name">Beyond-forest viz: bubble (meta-regression) · Doi · tipping-point</div><div class="it-note">Publication-bias + sensitivity plots.</div></div></li>
+      <li class="s-open"><span class="eff M">M</span><div><div class="it-name">NMA: PyMC-in-sandbox · component-NMA · IPD-NMA</div><div class="it-note">Unlocks the Bayesian NMA backend + composite interventions.</div></div></li>
+      <li class="s-open"><span class="eff M">M</span><div><div class="it-name">Sample-size: response-adaptive · cluster design-effect</div><div class="it-note">Superiority + NI/equivalence + adaptive boundaries ✅ done.</div></div></li>
+    </ul>
+  </div>
+
+  <!-- Clinical ops -->
+  <div class="block-head"><h2>Clinical operations</h2><span class="sub">safety · drug accountability · visits · lab feeds · source docs</span></div>
+  <div class="card">
+    <ul class="items">
+      <li class="s-open"><span class="eff M">M</span><div><div class="it-name">Safety: SUSAR → E2B(R3) XML · FAERS gateway</div><div class="it-note">Turns the drafted 3500A into an actual expedited submission.</div></div></li>
+      <li class="s-open"><span class="eff S">S</span><div><div class="it-name">Drug acct: destruction/recall · IRT-dispensing · parent-child dosing</div><div class="it-note">Completes the GCP-mandated IP lifecycle. (kit_id, compliance, temp-excursion ✅ done.)</div></div></li>
+      <li class="s-open"><span class="eff M">M</span><div><div class="it-name">Lab feeds: LOINC map · MLLP/TCP listener · MRN→subject · streaming &gt;20 MB</div><div class="it-note">Opens hospital lab integrations that don't speak REST.</div></div></li>
+      <li class="s-open"><span class="eff M">M</span><div><div class="it-name">Source-doc: FHIR pull · OCR · FHIR/JSON ingest</div><div class="it-note">Removes the manual export step at FHIR-capable sites.</div></div></li>
+      <li class="s-open"><span class="eff M">M</span><div><div class="it-name">Randomisation: schedule extension · code-break webhook · block-size shuffle</div><div class="it-note">Common asks for over-enrolling + blinding integrity.</div></div></li>
+    </ul>
+  </div>
+
+  <!-- Drafters -->
+  <div class="block-head"><h2>Drafters &amp; documents</h2><span class="sub">CSR · manuscript · registration · IRB · lay summaries</span></div>
+  <div class="card">
+    <ul class="items">
+      <li class="s-open"><span class="eff M">M</span><div><div class="it-name">CSR: narrative chapters · sponsor sign-off · Module 5</div><div class="it-note">Intro/Discussion/Conclusions ship as placeholders today.</div></div></li>
+      <li class="s-open"><span class="eff S">S</span><div><div class="it-name">Manuscript: journal-style validators · ORCID · COI · preprint sync</div><div class="it-note">Lands the draft closer to journal requirements first time.</div></div></li>
+      <li class="s-open"><span class="eff M">M</span><div><div class="it-name">Registration + IRB: extra registries · IND/IDE · FDA 1572 · HIPAA auth</div><div class="it-note">Completes the start-up + FDA pre-trial packet.</div></div></li>
+      <li class="s-open"><span class="eff S">S</span><div><div class="it-name">Lay summaries: per-language FK · EMA template · glossary extraction</div><div class="it-note">Makes the multilingual claim regulator-defensible. (Style validator + handoffs ✅ done.)</div></div></li>
+    </ul>
+  </div>
+
+  <!-- Platform -->
+  <div class="block-head"><h2>Platform &amp; dashboards</h2><span class="sub">RBAC · RAG · citations · portfolio · budget · multi-site</span></div>
+  <div class="card">
+    <ul class="items">
+      <li class="s-open"><span class="eff M">M</span><div><div class="it-name">Dashboards: sparklines · filters/sort · drilldowns · budget gauges</div><div class="it-note">Portfolio + multi-site + budget — mostly frontend.</div></div></li>
+      <li class="s-open"><span class="eff M">M</span><div><div class="it-name">Auth/RBAC: per-tier token caps · blinded views for non-DSMB</div><div class="it-note">Lets one deployment serve mixed researcher + student tiers.</div></div></li>
+      <li class="s-open"><span class="eff M">M</span><div><div class="it-name">Library/RAG: R5 ontology (MeSH/SNOMED) · R6 rerank · OCR</div><div class="it-note">Higher recall + reliable top-3 for direct quoting.</div></div></li>
+      <li class="s-open"><span class="eff M">M</span><div><div class="it-name">Citations: Zotero web-API (OAuth)</div><div class="it-note">"Import my Zotero library" in one click. (CSL + EndNote ✅ done.)</div></div></li>
+      <li class="s-open"><span class="eff M">M</span><div><div class="it-name">Cross-store consistency check + RoleAssignment widening</div><div class="it-note">Drift detection across the account/trial/study/site hierarchy.</div></div></li>
+    </ul>
+  </div>
+
+  <!-- Strategic -->
+  <div class="block-head"><h2>Strategic initiatives</h2><span class="sub">new customer segments · ordered by fit with what we ship</span></div>
+  <div class="card">
+    <ul class="items">
+      <li class="s-strat"><span class="eff XL">XL</span><div><div class="it-name">EHR / FHIR / OMOP → real-world evidence</div><div class="it-note">Pull a cohort from a live clinical store (Epic/Cerner FHIR, OHDSI OMOP). New <code>rwe_specialist</code> tier.</div></div></li>
+      <li class="s-strat"><span class="eff L">L</span><div><div class="it-name">Pharmacovigilance / post-market AE tracking</div><div class="it-note">PSUR / PBRER + rapid-alert; folds MedDRA-coded AEs from trial → post-market.</div></div></li>
+      <li class="s-strat"><span class="eff L">L</span><div><div class="it-name">HTA / payer-grade dossier generation</div><div class="it-note">Reimbursement submissions — six-figure consultancy today.</div></div></li>
+      <li class="s-strat"><span class="eff L">L</span><div><div class="it-name">Central imaging upload + adjudicated review</div><div class="it-note">DICOM/OHIF viewer + SDTM RS (Disease Response) deriver; oncology/neuro trials.</div></div></li>
+      <li class="s-strat"><span class="eff M">M</span><div><div class="it-name">DSMB / DMC charter + blinded views</div><div class="it-note">Data-monitoring-committee workflow on top of the group-sequential tooling.</div></div></li>
+      <li class="s-strat"><span class="eff M">M</span><div><div class="it-name">Research-gap analysis specialist · Press-release drafter</div><div class="it-note">Two named-but-unbuilt specialists (evidence gaps; institutional comms).</div></div></li>
+    </ul>
+  </div>
+
+  <!-- Gates -->
+  <div class="block-head"><h2>Trial-readiness gates</h2><span class="sub">deploy blockers for first external users · order T5→T4→T3, T1 before invites</span></div>
+  <div class="card">
+    <ul class="items">
+      <li class="s-gate"><span class="eff S">S</span><div><div class="it-name">T1 — per-account spend quota</div><div class="it-note">Built on an unmerged branch; awaiting verify.</div></div></li>
+      <li class="s-gate"><span class="eff M">M</span><div><div class="it-name">T2 — paywalled sources + secrets manager</div><div class="it-note">Also the coupling point for real MedDRA/WHODrug + paid literature.</div></div></li>
+      <li class="s-gate"><span class="eff M">M</span><div><div class="it-name">T3 Cognito prod · T4 SES · T5 domain / ACM / R53</div><div class="it-note">Identity, transactional email, and a real domain + cert on the ALB.</div></div></li>
+      <li class="s-gate"><span class="eff L">L</span><div><div class="it-name">T6 eCRF subset · T7 HIPAA posture (G1–G6 gaps)</div><div class="it-note">The clinical-data-handling readiness bar; posture doc drafted.</div></div></li>
+    </ul>
+  </div>
+
+  <footer>
+    <p><b>How to read effort vs. status:</b> green <span class="eff S" style="vertical-align:middle">S</span> items on an <span style="color:var(--accent)">Open</span> stripe are the cheapest to grab; <span style="color:var(--blocked)">Blocked</span> items need a license or external contract no code closes; <span style="color:var(--strat)">Strategic</span> rows each open a new customer segment but are multi-week-to-multi-quarter.</p>
+    <p>This board summarises <code>docs/roadmap.md</code> (canonical) as of the current sweep. Update both together; the roadmap carries the full per-item rationale + benefit.</p>
+  </footer>
+</div>
+
+</body>
+</html>

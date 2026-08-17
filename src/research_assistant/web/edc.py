@@ -2091,14 +2091,21 @@ def create_edc_router() -> APIRouter:
         ),
     ) -> dict[str, Any]:
         from ..cdisc.pipeline import (
+            fetch_adae,
+            fetch_adcm,
+            fetch_adlb,
             fetch_adsl,
             fetch_adtte,
+            fetch_advs,
             fetch_ae,
             fetch_cm,
+            fetch_da,
             fetch_dm,
+            fetch_ds,
             fetch_ex,
             fetch_lb,
             fetch_mh,
+            fetch_sv,
             fetch_vs,
         )
 
@@ -2121,15 +2128,30 @@ def create_edc_router() -> APIRouter:
                 rows = list(await fetch_cm(s, deployment_id))
             elif domain_upper == "MH":
                 rows = list(await fetch_mh(s, deployment_id))
+            elif domain_upper == "DA":
+                rows = list(await fetch_da(s, deployment_id))
+            elif domain_upper == "SV":
+                rows = list(await fetch_sv(s, deployment_id))
+            elif domain_upper == "DS":
+                rows = list(await fetch_ds(s, deployment_id))
             elif domain_upper == "ADSL":
                 rows = list(await fetch_adsl(s, deployment_id))
             elif domain_upper == "ADTTE":
                 rows = list(await fetch_adtte(s, deployment_id))
+            elif domain_upper == "ADAE":
+                rows = list(await fetch_adae(s, deployment_id))
+            elif domain_upper == "ADCM":
+                rows = list(await fetch_adcm(s, deployment_id))
+            elif domain_upper == "ADLB":
+                rows = list(await fetch_adlb(s, deployment_id))
+            elif domain_upper == "ADVS":
+                rows = list(await fetch_advs(s, deployment_id))
             else:
                 raise HTTPException(
                     400,
                     f"Unknown domain {domain!r}. Choose one of: "
-                    "DM, AE, VS, LB, EX, CM, MH, ADSL, ADTTE.",
+                    "DM, AE, VS, LB, EX, CM, MH, DA, SV, DS, "
+                    "ADSL, ADAE, ADCM, ADLB, ADVS, ADTTE.",
                 )
         return {
             "domain": domain_upper,
@@ -2153,25 +2175,39 @@ def create_edc_router() -> APIRouter:
         ),
     ) -> Response:
         from ..cdisc.exporter import (
+            adae_to_csv,
+            adcm_to_csv,
+            adlb_to_csv,
             adsl_to_csv,
             adtte_to_csv,
+            advs_to_csv,
             ae_to_csv,
             cm_to_csv,
+            da_to_csv,
             dm_to_csv,
+            ds_to_csv,
             ex_to_csv,
             lb_to_csv,
             mh_to_csv,
+            sv_to_csv,
             vs_to_csv,
         )
         from ..cdisc.pipeline import (
+            fetch_adae,
+            fetch_adcm,
+            fetch_adlb,
             fetch_adsl,
             fetch_adtte,
+            fetch_advs,
             fetch_ae,
             fetch_cm,
+            fetch_da,
             fetch_dm,
+            fetch_ds,
             fetch_ex,
             fetch_lb,
             fetch_mh,
+            fetch_sv,
             fetch_vs,
         )
 
@@ -2191,15 +2227,30 @@ def create_edc_router() -> APIRouter:
                 payload = cm_to_csv(await fetch_cm(s, deployment_id))
             elif domain_upper == "MH":
                 payload = mh_to_csv(await fetch_mh(s, deployment_id))
+            elif domain_upper == "DA":
+                payload = da_to_csv(await fetch_da(s, deployment_id))
+            elif domain_upper == "SV":
+                payload = sv_to_csv(await fetch_sv(s, deployment_id))
+            elif domain_upper == "DS":
+                payload = ds_to_csv(await fetch_ds(s, deployment_id))
             elif domain_upper == "ADSL":
                 payload = adsl_to_csv(await fetch_adsl(s, deployment_id))
             elif domain_upper == "ADTTE":
                 payload = adtte_to_csv(await fetch_adtte(s, deployment_id))
+            elif domain_upper == "ADAE":
+                payload = adae_to_csv(await fetch_adae(s, deployment_id))
+            elif domain_upper == "ADCM":
+                payload = adcm_to_csv(await fetch_adcm(s, deployment_id))
+            elif domain_upper == "ADLB":
+                payload = adlb_to_csv(await fetch_adlb(s, deployment_id))
+            elif domain_upper == "ADVS":
+                payload = advs_to_csv(await fetch_advs(s, deployment_id))
             else:
                 raise HTTPException(
                     400,
                     f"Unknown domain {domain!r}. Choose one of: "
-                    "DM, AE, VS, LB, EX, CM, MH, ADSL, ADTTE.",
+                    "DM, AE, VS, LB, EX, CM, MH, DA, SV, DS, "
+                    "ADSL, ADAE, ADCM, ADLB, ADVS, ADTTE.",
                 )
         return Response(
             content=payload,
@@ -2241,14 +2292,21 @@ def create_edc_router() -> APIRouter:
     ) -> Response:
         from ..cdisc.exporter import build_submission_bundle
         from ..cdisc.pipeline import (
+            fetch_adae,
+            fetch_adcm,
+            fetch_adlb,
             fetch_adsl,
             fetch_adtte,
+            fetch_advs,
             fetch_ae,
             fetch_cm,
+            fetch_da,
             fetch_dm,
+            fetch_ds,
             fetch_ex,
             fetch_lb,
             fetch_mh,
+            fetch_sv,
             fetch_tlfs,
             fetch_vs,
             list_datasets,
@@ -2269,8 +2327,15 @@ def create_edc_router() -> APIRouter:
             ex = await fetch_ex(s, deployment_id)
             cm = await fetch_cm(s, deployment_id)
             mh = await fetch_mh(s, deployment_id)
+            da = await fetch_da(s, deployment_id)
+            sv = await fetch_sv(s, deployment_id)
+            ds = await fetch_ds(s, deployment_id)
             adsl = await fetch_adsl(s, deployment_id)
             adtte = await fetch_adtte(s, deployment_id)
+            adae = await fetch_adae(s, deployment_id)
+            adcm = await fetch_adcm(s, deployment_id)
+            adlb = await fetch_adlb(s, deployment_id)
+            advs = await fetch_advs(s, deployment_id)
             tlfs = await fetch_tlfs(s, deployment_id)
             # Use the deployment's underlying research study id for the
             # manifest's STUDYID — that's what regulators expect.
@@ -2289,8 +2354,15 @@ def create_edc_router() -> APIRouter:
             ex=ex,
             cm=cm,
             mh=mh,
+            da=da,
+            sv=sv,
+            ds=ds,
             adsl=adsl,
             adtte=adtte,
+            adae=adae,
+            adcm=adcm,
+            adlb=adlb,
+            advs=advs,
             tlfs=tlfs,
         )
         return Response(
