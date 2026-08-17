@@ -45,7 +45,7 @@ Study Data Tabulation Model — the standardized raw-data tables.
 | 🟡 | `AE` | Adverse Events | Verbatim + seriousness + relationship. `AEDECOD` / `AEBODSYS` free-text — MedDRA coding blocked. |
 | ✅ | `EX` | Exposure | Dosing / administration records with routes. |
 | 🟡 | `CM` | Concomitant Meds | Captured & mapped. `CMDECOD` free-text — WHODrug coding blocked. |
-| 🟡 | `LB` | Laboratory | Results + normal-range indicator. `LBSTRESN = LBORRES` until a unit-conversion table is wired in. |
+| ✅ | `LB` | Laboratory | Results + normal-range indicator; standardised columns (`LBSTRESN`/`LBSTRESU` + `LBSTNRLO`/`HI`) unit-converted (US-conventional → SI) per analyte via `lab_units`. |
 | ✅ | `VS` | Vital Signs | Height, weight, BP, pulse, temperature. |
 | 🟡 | `MH` | Medical History | Captured & mapped. SOC placeholder until MedDRA. |
 | ✅ | `DA` | Drug Accountability | Dispense/return amounts as `DISPAMT`/`RETURNED` findings, kit id as `DAREFID`; derived from the IP dispense/return records. In Define-XML + XPT + the bundle. |
@@ -131,8 +131,8 @@ Suggested build sequence (cheapest-given-existing-data first):
    from 2 → 6 (the FDA-recommended set); ADQS still needs SDTM `QS` first.
 5. **Reviewer guides (SDRG / ADRG)** — drafter shape parallel to the CSR/IRB
    drafters; templated from the Define-XML + derivation metadata.
-7. **LB unit-conversion table** — makes `LBSTRESN` regulator-ready (removes an
-   `LB` caveat).
+6. ~~**LB unit-conversion table**~~ — ✅ **shipped** (`cdisc/lab_units`):
+   standardised LB columns are unit-converted US-conventional → SI per analyte.
 
 **Deploy-gate, not backlog:** MedDRA (MSSO) + WHODrug (Uppsala) licenses. Until
 these land, AE/MH/CM coded terms stay verbatim and any "regulator-acceptable

@@ -288,11 +288,11 @@ The platform's existing invite endpoint (`/api/admin/users`) was bare — global
 - **IRT integration for dispensation.** Today the kit is operator-selected; randomisation could auto-pick the next kit from the allocated arm. **Benefit:** removes the blinded-site-personnel-could-infer-arm leak when the kit packaging differs by arm.
 - **Destruction / recall workflows.** End-of-study destruction events + sponsor-recall workflows aren't modelled today. **Benefit:** completes the GCP-mandated IP lifecycle.
 - **Parent-child dosing relationship.** Some trials dose two IPs together (active + booster, or drug + matched placebo). **Benefit:** lets the platform serve those trial designs cleanly.
-- **CDISC EX domain integration.** Dispensations should auto-feed the SDTM EX (exposure) domain the same way LabResult feeds LB. **Benefit:** the CDISC bundle picks up dispensation events automatically.
+- ~~**CDISC EX domain integration.**~~ ✅ **shipped**: IP dispensations additively feed the SDTM EX domain (EXTRT/EXDOSE/EXSTDTC), continuing EXSEQ past any form-based EX — same additive pattern as the LB lab-feed cascade. EXDOSE is an accountability-based exposure proxy (dispensed amount).
 
 ### Lab-data feeds
 
-- **Unit-conversion table for LBSTRESN.** Today the cascade emits `LBSTRESN = LBORRES` (no conversion). A deploy-time mg/dL ↔ mmol/L dictionary would normalise across glucose, creatinine, cholesterol, etc. **Benefit:** the SDTM LB bundle becomes regulator-ready without manual unit harmonisation.
+- ~~**Unit-conversion table for LBSTRESN.**~~ ✅ **shipped** (`cdisc/lab_units`): standardised LB columns (LBSTRESN/LBSTRESU + LBSTNRLO/HI) unit-convert US-conventional → SI per analyte (glucose, creatinine, cholesterol, HGB, …). Extend `_LB_STD_CONVERSIONS` at deploy for a site's own panel.
 - **LBTESTCD ↔ LOINC mapping table.** Source messages carry LOINC codes (HL7 / FHIR) that don't always align with the platform's `lb_test_codes.json` aliases. **Benefit:** sponsors with their own LOINC dictionaries map cleanly.
 - **MLLP / TCP listener.** Hospitals that can only ship HL7 over TCP need a long-running listener; today only HTTP works. **Benefit:** opens the platform to hospital lab integrations that don't support REST.
 - **Hospital → trial subject_code mapping table.** Source messages typically carry the hospital MRN; we have `subject_code_hint` but the operator must pre-map. **Benefit:** removes manual translation at every ingest.
