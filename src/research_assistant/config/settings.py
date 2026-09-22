@@ -142,7 +142,7 @@ class Settings(BaseSettings):
     cognito_user_pool_id: str = ""
     cognito_client_id: str = ""
     cognito_client_secret: str = ""
-    cognito_domain: str = ""  # e.g. https://cra-arsalanam.auth.us-east-1.amazoncognito.com
+    cognito_domain: str = ""  # e.g. https://<prefix>.auth.us-east-1.amazoncognito.com
     cognito_redirect_uri: str = "http://localhost:8000/auth/callback"
 
     # ── ALB edge auth (Option A) ─────────────────────────────────────────

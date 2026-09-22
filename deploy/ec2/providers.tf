@@ -1,9 +1,9 @@
 provider "aws" {
   region = var.region
 
-  # Guardrail: refuse to apply against the wrong account. The CRA test
-  # account is 157470074212 — override via var.allowed_account_ids only if
-  # you deliberately target another account.
+  # Guardrail: refuse to apply against the wrong account. Set
+  # var.allowed_account_ids to your account id in terraform.tfvars; leave it
+  # empty to disable the check.
   allowed_account_ids = var.allowed_account_ids
 
   default_tags {
