@@ -1,8 +1,7 @@
 # Contributing
 
-This is a proprietary project shared with named collaborators — see
-[LICENSE](LICENSE). By contributing you agree your contributions are owned
-by the project under those terms.
+This project is released under the [MIT License](LICENSE). By contributing you
+agree that your contributions are licensed under the same terms.
 
 ## Setup
 

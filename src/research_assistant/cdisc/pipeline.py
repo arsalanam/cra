@@ -229,15 +229,19 @@ async def run_derivation(
             )
         ).all()
     )
-    units_by_ip_id: dict[str, str] = {
-        ip.id: ip.units
-        for ip in (
+    ip_rows = list(
+        (
             await session.scalars(
                 select(InvestigationalProduct).where(
                     InvestigationalProduct.deployment_id == deployment_id
                 )
             )
         ).all()
+    )
+    units_by_ip_id: dict[str, str] = {ip.id: ip.units for ip in ip_rows}
+    # ip_id → (EXTRT label, EXDOSU) for the dispensation → SDTM EX cascade.
+    drug_by_ip_id: dict[str, tuple[str, str]] = {
+        ip.id: (f"{ip.drug_name} {ip.strength}".strip(), ip.units) for ip in ip_rows
     }
 
     # Subject Visits (SV): the planned-visit calendar + the schedule that
@@ -386,6 +390,22 @@ async def run_derivation(
         form_instances=form_instances_by_domain.get("EX", []),
         config=cfg,
     )
+    # Additively extend EX with the IP dispensations (continues EXSEQ per
+    # subject past any form-based rows), mirroring the LB lab-feed cascade.
+    if dispensations:
+        ex_starting_seq: dict[str, int] = {}
+        for ex_row in ex:
+            ex_starting_seq[ex_row.USUBJID] = max(
+                ex_starting_seq.get(ex_row.USUBJID, 0), ex_row.EXSEQ
+            )
+        ex = list(ex) + mapper.derive_ex_from_dispensations(
+            deployment_id=deployment_id,
+            study_id=study_id,
+            dispensations=dispensations,
+            subjects_by_id=subjects_by_id,
+            drug_by_ip_id=drug_by_ip_id,
+            starting_seq=ex_starting_seq,
+        )
     cm = mapper.derive_cm(
         deployment_id=deployment_id,
         study_id=study_id,

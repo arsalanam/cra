@@ -39,6 +39,7 @@ from ..persistence.clinical.models import (
     SdtmVs,
     Subject,
 )
+from .lab_units import standardize_lab
 from .terminology import load as _load_terminology
 
 # Coarse Subject.status → SDTM DS disposition CT. Enrich when a real
@@ -518,6 +519,9 @@ class BuiltinPythonMapper:
                     nrind = "NORMAL"
             date_value = values.get(m["__date"])
             per_subject_seq[fi.subject_id] = per_subject_seq.get(fi.subject_id, 0) + 1
+            stresn, stresu, stnrlo, stnrhi = standardize_lab(
+                testcd=spec["LBTESTCD"], value=result_num, unit=unit, nrlo=nrlo, nrhi=nrhi
+            )
             out.append(
                 SdtmLb(
                     deployment_id=deployment_id,
@@ -529,13 +533,13 @@ class BuiltinPythonMapper:
                     LBTEST=spec["LBTEST"],
                     LBORRES=result_str,
                     LBORRESU=unit,
-                    LBSTRESC=result_str,
-                    LBSTRESN=result_num,
-                    LBSTRESU=unit,
+                    LBSTRESC=str(stresn) if stresn is not None else result_str,
+                    LBSTRESN=stresn,
+                    LBSTRESU=stresu or unit,
                     LBORNRLO=str(nrlo) if nrlo is not None else None,
                     LBORNRHI=str(nrhi) if nrhi is not None else None,
-                    LBSTNRLO=nrlo,
-                    LBSTNRHI=nrhi,
+                    LBSTNRLO=stnrlo,
+                    LBSTNRHI=stnrhi,
                     LBNRIND=nrind,
                     LBDTC=_to_iso8601(date_value) if date_value else _to_iso8601(fi.created_at),
                 )
@@ -623,6 +627,9 @@ class BuiltinPythonMapper:
             result_str = r.value_text or (
                 str(r.value_numeric) if r.value_numeric is not None else None
             )
+            stresn, stresu, stnrlo, stnrhi = standardize_lab(
+                testcd=lbtestcd, value=r.value_numeric, unit=unit, nrlo=nrlo, nrhi=nrhi
+            )
             out.append(
                 SdtmLb(
                     deployment_id=deployment_id,
@@ -634,13 +641,13 @@ class BuiltinPythonMapper:
                     LBTEST=lbtest,
                     LBORRES=result_str,
                     LBORRESU=unit,
-                    LBSTRESC=result_str,
-                    LBSTRESN=r.value_numeric,
-                    LBSTRESU=unit,
+                    LBSTRESC=str(stresn) if stresn is not None else result_str,
+                    LBSTRESN=stresn,
+                    LBSTRESU=stresu or unit,
                     LBORNRLO=str(nrlo) if nrlo is not None else None,
                     LBORNRHI=str(nrhi) if nrhi is not None else None,
-                    LBSTNRLO=nrlo,
-                    LBSTNRHI=nrhi,
+                    LBSTNRLO=stnrlo,
+                    LBSTNRHI=stnrhi,
                     LBNRIND=nrind,
                     LBDTC=_to_iso8601(r.collected_at) if r.collected_at else None,
                 )
@@ -683,6 +690,53 @@ class BuiltinPythonMapper:
                     EXROUTE=route or route_raw,
                     EXSTDTC=_to_iso8601(values.get(m["__start"]) or fi.created_at),
                     EXENDTC=_to_iso8601(values.get(m["__end"])),
+                )
+            )
+        return out
+
+    def derive_ex_from_dispensations(
+        self,
+        *,
+        deployment_id: str,
+        study_id: str,
+        dispensations: Iterable[DrugDispensation],
+        subjects_by_id: dict[str, Subject] | None = None,
+        drug_by_ip_id: dict[str, tuple[str, str]] | None = None,
+        starting_seq: dict[str, int] | None = None,
+    ) -> list[SdtmEx]:
+        """SDTM EX from the IP dispense records — additive alongside any
+        form-based EX (the same way lab-feed rows extend form-based LB).
+
+        Each dispensation becomes one EX record: EXTRT = the IP name +
+        strength, EXDOSE = the dispensed quantity (an accountability-based
+        exposure proxy — dispensed amount, not a per-administration dose;
+        studies that capture a dedicated dosing form get precise EXDOSE
+        from that path instead), EXSTDTC = the dispense date. `starting_seq`
+        continues EXSEQ per USUBJID past the form-based rows.
+        """
+        subjects_by_id = subjects_by_id or {}
+        drug_by_ip_id = drug_by_ip_id or {}
+        per_subject_seq: dict[str, int] = dict(starting_seq or {})
+        out: list[SdtmEx] = []
+        for d in sorted(dispensations, key=lambda x: (x.subject_id, x.dispensed_at)):
+            subject = subjects_by_id.get(d.subject_id)
+            subj_code = subject.subject_code if subject is not None else d.subject_id
+            usubjid = _usubjid(study_id, subj_code)
+            per_subject_seq[usubjid] = per_subject_seq.get(usubjid, 0) + 1
+            drug, units = drug_by_ip_id.get(d.ip_id, ("", ""))
+            out.append(
+                SdtmEx(
+                    deployment_id=deployment_id,
+                    STUDYID=study_id,
+                    DOMAIN="EX",
+                    USUBJID=usubjid,
+                    EXSEQ=per_subject_seq[usubjid],
+                    EXTRT=drug or None,
+                    EXDOSE=float(d.quantity_dispensed),
+                    EXDOSU=units or None,
+                    EXROUTE=None,
+                    EXSTDTC=_to_iso8601(d.dispensed_at),
+                    EXENDTC=None,
                 )
             )
         return out

@@ -429,3 +429,39 @@ def test_derive_ds_unknown_status_falls_back_to_uppercase() -> None:
     )
     assert row.DSDECOD == "SOMETHING_NEW"
     assert row.DSTERM == "something_new"
+
+
+# ── EX from dispensations (additive cascade) ─────────────────────────────
+
+
+def test_derive_ex_from_dispensations() -> None:
+    mapper = BuiltinPythonMapper()
+    rows = mapper.derive_ex_from_dispensations(
+        deployment_id="dep-1",
+        study_id="RS-1",
+        dispensations=[_disp(quantity_dispensed=30)],
+        subjects_by_id={"subj-1": _subject()},
+        drug_by_ip_id={"ip-1": ("DrugX 10 mg", "tablet")},
+    )
+    assert len(rows) == 1
+    row = rows[0]
+    assert row.DOMAIN == "EX"
+    assert row.USUBJID == "RS-1-S-001"
+    assert row.EXTRT == "DrugX 10 mg"
+    assert row.EXDOSE == 30.0
+    assert row.EXDOSU == "tablet"
+    assert row.EXSEQ == 1
+
+
+def test_derive_ex_from_dispensations_continues_seq_past_form_rows() -> None:
+    """EXSEQ picks up after the form-based EX max for that subject."""
+    mapper = BuiltinPythonMapper()
+    rows = mapper.derive_ex_from_dispensations(
+        deployment_id="dep-1",
+        study_id="RS-1",
+        dispensations=[_disp(id="d1", dispensed_at=datetime(2026, 2, 1, tzinfo=UTC))],
+        subjects_by_id={"subj-1": _subject()},
+        drug_by_ip_id={"ip-1": ("DrugX 10 mg", "tablet")},
+        starting_seq={"RS-1-S-001": 2},  # two form-based EX rows already
+    )
+    assert rows[0].EXSEQ == 3

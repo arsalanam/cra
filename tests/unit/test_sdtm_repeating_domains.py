@@ -163,8 +163,10 @@ def test_lb_explicit_ref_range_wins_over_default() -> None:
         config=ItemMappingConfig(),
     )
     assert row.LBNRIND == "HIGH"
-    assert row.LBSTNRLO == 10.0
-    assert row.LBSTNRHI == 13.0
+    # The explicit range wins over the default — checked on the as-collected
+    # LBORNRLO (LBSTNRLO is now unit-standardised, e.g. g/dL → g/L).
+    assert row.LBORNRLO == "10.0"
+    assert row.LBORNRHI == "13.0"
 
 
 # ── EX ─────────────────────────────────────────────────────────────────

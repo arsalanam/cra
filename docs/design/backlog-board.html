@@ -157,15 +157,14 @@
     <span class="pill">plain-language guard</span><span class="pill">CSL / EndNote</span>
     <span class="pill">CSR/IRB lay handoffs</span><span class="pill">SDTM DA</span>
     <span class="pill">SDTM SV + DS</span><span class="pill">ADAE·ADCM·ADLB·ADVS</span>
+    <span class="pill">LB unit-conversion</span><span class="pill">EX from dispensations</span>
   </div>
 
   <!-- Quick wins -->
   <div class="block-head"><h2>Quick wins</h2><span class="sub">small, self-contained — the grab-it-now set</span></div>
   <div class="card">
     <ul class="items">
-      <li class="s-open"><span class="eff S">S</span><div><div class="it-name">LB unit-conversion table</div><div class="it-note">mg/dL ↔ mmol/L dict; flips the SDTM <code>LB</code> row from partial to produced.</div></div></li>
-      <li class="s-open"><span class="eff S">S</span><div><div class="it-name">SUSAR sponsor-notification webhook</div><div class="it-note">Fires on the SUSAR flag we already compute; closes the expedited-reporting loop.</div></div></li>
-      <li class="s-open"><span class="eff S">S</span><div><div class="it-name">CDISC <code>EX</code> from dispensations</div><div class="it-note">Auto-feed SDTM EX from IP dispense records, like DA now does.</div></div></li>
+      <li class="s-open"><span class="eff S">S</span><div><div class="it-name">SUSAR sponsor-notification webhook</div><div class="it-note">Fires on the SUSAR flag we already compute; closes the expedited-reporting loop. Needs outbound-webhook wiring.</div></div></li>
       <li class="s-open"><span class="eff S">S</span><div><div class="it-name">Visit-window / temp-excursion loops → more triggers</div><div class="it-note">SMS (Twilio), ICS calendar attach, locale-aware reminders.</div></div></li>
       <li class="s-open"><span class="eff S">S</span><div><div class="it-name">SR screening: title-only tier + reviewer annotations</div><div class="it-note">Cuts first-pass reviewer load; adds rationale to the adjudication queue.</div></div></li>
       <li class="s-open"><span class="eff S">S</span><div><div class="it-name">Living-review: email digest + per-paper voting</div><div class="it-note">Reuses the SES integration; committee drill-down.</div></div></li>

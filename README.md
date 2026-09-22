@@ -1,7 +1,7 @@
 # CRA — Clinical Research Assistant
 
 [![ci](https://github.com/arsalanam/cra/actions/workflows/ci.yml/badge.svg)](https://github.com/arsalanam/cra/actions/workflows/ci.yml)
-[![license: proprietary](https://img.shields.io/badge/license-proprietary-red.svg)](LICENSE)
+[![license: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![python](https://img.shields.io/badge/python-3.13-blue.svg)](pyproject.toml)
 
 **An AI research platform for the full clinical-study lifecycle — from
@@ -123,5 +123,7 @@ review, never hidden in config. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
-Proprietary — all rights reserved; shared with named collaborators for
-collaboration on this project only. See [LICENSE](LICENSE).
+Released under the [MIT License](LICENSE) — free to use, modify, and
+distribute with attribution and the license notice. Provided "as is",
+without warranty; not a certified medical device or a substitute for
+regulatory review.

@@ -41,8 +41,9 @@ Start every local step from the EC2 directory:
 Set-Location D:\researchwork\cra\deploy\ec2
 ```
 
-1. **OpenTofu ≥ 1.6** (`tofu`) on `PATH`, and AWS credentials for account
-   `157470074212` in your shell — verify:
+1. **OpenTofu ≥ 1.6** (`tofu`) on `PATH`, and AWS credentials for your target
+   account in your shell (pin it via `allowed_account_ids` in
+   `terraform.tfvars`) — verify:
    ```powershell
    tofu version
    aws sts get-caller-identity
@@ -121,7 +122,8 @@ tofu apply
 
 ## Turning Cognito auth on 🪟
 
-1. In the Cognito app client (`us-east-1_HpFCZvhKV`), add the callback URL:
+1. In your Cognito app client (`cognito_user_pool_id` from `terraform.tfvars`),
+   add the callback URL:
    ```powershell
    tofu output cognito_callback_url
    ```
