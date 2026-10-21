@@ -875,6 +875,115 @@ class SdtmMh(ClinicalBase):
     derived_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
+class SdtmDa(ClinicalBase):
+    """SDTM Drug Accountability row — one per accountability measurement.
+
+    A Findings-class domain derived from the IP dispense / return records
+    (not from a form). Each DrugDispensation becomes a DISPAMT (Dispensed
+    Amount) row and each DrugReturn a RETURNED (Returned Amount) row, keyed
+    by `DAREFID` = the kit id so a dispense and its return cross-reference.
+    `DATESTCD` values should be validated against the DA test-code CT at
+    deploy — the MVP emits the two amounts that drive reconciliation.
+    """
+
+    __tablename__ = "sdtm_da"
+    __table_args__ = (
+        UniqueConstraint("deployment_id", "USUBJID", "DASEQ", name="uq_sdtm_da_daseq"),
+    )
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    deployment_id: Mapped[str] = mapped_column(Text, index=True)
+    STUDYID: Mapped[str] = mapped_column(Text)
+    DOMAIN: Mapped[str] = mapped_column(Text, default="DA")
+    USUBJID: Mapped[str] = mapped_column(Text, index=True)
+    DASEQ: Mapped[int] = mapped_column(Integer, doc="Sequence number within subject.")
+    DAREFID: Mapped[str | None] = mapped_column(
+        Text, nullable=True, default=None, doc="Reference ID — the kit id."
+    )
+    DATESTCD: Mapped[str] = mapped_column(Text, doc="DISPAMT | RETURNED (DA test code).")
+    DATEST: Mapped[str] = mapped_column(Text, doc="Human-readable test name.")
+    DAORRES: Mapped[str | None] = mapped_column(
+        Text, nullable=True, default=None, doc="Result as collected (character)."
+    )
+    DAORRESU: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    DASTRESN: Mapped[float | None] = mapped_column(
+        Float, nullable=True, default=None, doc="Standardised numeric result."
+    )
+    DASTRESU: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    DADTC: Mapped[str | None] = mapped_column(
+        Text, nullable=True, default=None, doc="Date/time of collection (ISO 8601)."
+    )
+
+    derived_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class SdtmSv(ClinicalBase):
+    """SDTM Subject Visits row — one per subject per completed visit.
+
+    Derived from the PlannedVisit calendar: a visit that reached
+    status='completed' becomes an SV record dated at `completed_at` (the
+    actual visit) falling back to `planned_date`. VISIT / VISITNUM come
+    from the linked ScheduledVisit (name + day-offset ordering). Visits
+    still pending / missed / cancelled are NOT emitted — SV captures
+    visits that actually occurred.
+    """
+
+    __tablename__ = "sdtm_sv"
+    __table_args__ = (
+        UniqueConstraint("deployment_id", "USUBJID", "SVSEQ", name="uq_sdtm_sv_svseq"),
+    )
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    deployment_id: Mapped[str] = mapped_column(Text, index=True)
+    STUDYID: Mapped[str] = mapped_column(Text)
+    DOMAIN: Mapped[str] = mapped_column(Text, default="SV")
+    USUBJID: Mapped[str] = mapped_column(Text, index=True)
+    SVSEQ: Mapped[int] = mapped_column(Integer, doc="Sequence number within subject.")
+    VISITNUM: Mapped[float | None] = mapped_column(
+        Float, nullable=True, default=None, doc="Visit number (day-offset ordering)."
+    )
+    VISIT: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    SVSTDTC: Mapped[str | None] = mapped_column(
+        Text, nullable=True, default=None, doc="Start date/time of the visit (ISO 8601)."
+    )
+    SVENDTC: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+
+    derived_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class SdtmDs(ClinicalBase):
+    """SDTM Disposition row — one disposition event per subject.
+
+    MINIMAL derivation from `Subject.status`: the platform does not yet
+    capture a per-subject disposition lifecycle (withdrawals, completion
+    dates, screen-failure reasons live in the screening log, not linked by
+    USUBJID). Today this emits one DISPOSITION EVENT per enrolled subject
+    with DSDECOD mapped from the coarse status, DSSTDTC = the subject
+    reference (baseline) date as the available anchor. Enrich when a
+    dedicated disposition-capture surface lands.
+    """
+
+    __tablename__ = "sdtm_ds"
+    __table_args__ = (
+        UniqueConstraint("deployment_id", "USUBJID", "DSSEQ", name="uq_sdtm_ds_dsseq"),
+    )
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    deployment_id: Mapped[str] = mapped_column(Text, index=True)
+    STUDYID: Mapped[str] = mapped_column(Text)
+    DOMAIN: Mapped[str] = mapped_column(Text, default="DS")
+    USUBJID: Mapped[str] = mapped_column(Text, index=True)
+    DSSEQ: Mapped[int] = mapped_column(Integer, doc="Sequence number within subject.")
+    DSTERM: Mapped[str] = mapped_column(Text, doc="Reported disposition term (verbatim status).")
+    DSDECOD: Mapped[str] = mapped_column(Text, doc="Standardised disposition (CT).")
+    DSCAT: Mapped[str] = mapped_column(Text, default="DISPOSITION EVENT")
+    DSSTDTC: Mapped[str | None] = mapped_column(
+        Text, nullable=True, default=None, doc="Start date of the disposition event (ISO 8601)."
+    )
+
+    derived_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
 class AdamAdsl(ClinicalBase):
     """ADaM Subject-Level Analysis Dataset — one row per subject.
 
@@ -990,6 +1099,133 @@ class AdamAdtte(ClinicalBase):
     )
     TRT01P: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     TRT01A: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+
+    derived_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class AdamAdae(ClinicalBase):
+    """ADaM ADAE — Adverse-Events analysis dataset (OCCDS).
+
+    One row per SDTM AE, merged with ADSL treatment + population, plus the
+    two flags every safety table needs: TRTEMFL (treatment-emergent —
+    AESTDTC on/after the subject's RFSTDTC) and AOCCFL (first occurrence of
+    the coded/verbatim term within the subject).
+    """
+
+    __tablename__ = "adam_adae"
+    __table_args__ = (UniqueConstraint("deployment_id", "USUBJID", "ASEQ", name="uq_adam_adae"),)
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    deployment_id: Mapped[str] = mapped_column(Text, index=True)
+    STUDYID: Mapped[str] = mapped_column(Text)
+    USUBJID: Mapped[str] = mapped_column(Text, index=True)
+    ASEQ: Mapped[int] = mapped_column(Integer, doc="Analysis sequence (= AE.AESEQ).")
+    TRTA: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    TRTP: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    AGE: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
+    SEX: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    SAFFL: Mapped[str] = mapped_column(Text, default="N")
+    AEDECOD: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    AETERM: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    AEBODSYS: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    AESEV: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    AESER: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    AEREL: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    AEOUT: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    ASTDT: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    AENDT: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    TRTEMFL: Mapped[str] = mapped_column(Text, default="", doc="Treatment-emergent flag (Y/blank).")
+    AOCCFL: Mapped[str] = mapped_column(Text, default="", doc="First-occurrence flag (Y/blank).")
+
+    derived_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class AdamAdcm(ClinicalBase):
+    """ADaM ADCM — Concomitant-Medications analysis dataset (OCCDS).
+
+    One row per SDTM CM, merged with ADSL treatment + population.
+    """
+
+    __tablename__ = "adam_adcm"
+    __table_args__ = (UniqueConstraint("deployment_id", "USUBJID", "ASEQ", name="uq_adam_adcm"),)
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    deployment_id: Mapped[str] = mapped_column(Text, index=True)
+    STUDYID: Mapped[str] = mapped_column(Text)
+    USUBJID: Mapped[str] = mapped_column(Text, index=True)
+    ASEQ: Mapped[int] = mapped_column(Integer, doc="Analysis sequence (= CM.CMSEQ).")
+    TRTA: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    TRTP: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    SAFFL: Mapped[str] = mapped_column(Text, default="N")
+    CMDECOD: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    CMTRT: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    CMINDC: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    CMDOSE: Mapped[float | None] = mapped_column(Float, nullable=True, default=None)
+    CMDOSU: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    ASTDT: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    AENDT: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+
+    derived_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class AdamAdlb(ClinicalBase):
+    """ADaM ADLB — Laboratory analysis dataset (BDS).
+
+    One row per SDTM LB result. BDS value-add: ABLFL flags the earliest
+    record per (subject, PARAMCD) as baseline; BASE carries that value and
+    CHG = AVAL - BASE for post-baseline records.
+    """
+
+    __tablename__ = "adam_adlb"
+    __table_args__ = (UniqueConstraint("deployment_id", "USUBJID", "ASEQ", name="uq_adam_adlb"),)
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    deployment_id: Mapped[str] = mapped_column(Text, index=True)
+    STUDYID: Mapped[str] = mapped_column(Text)
+    USUBJID: Mapped[str] = mapped_column(Text, index=True)
+    ASEQ: Mapped[int] = mapped_column(Integer, doc="Analysis sequence within subject.")
+    TRTA: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    TRTP: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    PARAMCD: Mapped[str] = mapped_column(Text, doc="= LB.LBTESTCD.")
+    PARAM: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    AVAL: Mapped[float | None] = mapped_column(Float, nullable=True, default=None)
+    AVALU: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    ADT: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    ANRIND: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    A1LO: Mapped[float | None] = mapped_column(Float, nullable=True, default=None)
+    A1HI: Mapped[float | None] = mapped_column(Float, nullable=True, default=None)
+    ABLFL: Mapped[str] = mapped_column(Text, default="", doc="Baseline record flag (Y/blank).")
+    BASE: Mapped[float | None] = mapped_column(Float, nullable=True, default=None)
+    CHG: Mapped[float | None] = mapped_column(Float, nullable=True, default=None)
+
+    derived_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class AdamAdvs(ClinicalBase):
+    """ADaM ADVS — Vital-Signs analysis dataset (BDS).
+
+    One row per SDTM VS record; same BDS baseline / change derivation as
+    ADLB. AVAL is the numeric parse of VS.VSORRES.
+    """
+
+    __tablename__ = "adam_advs"
+    __table_args__ = (UniqueConstraint("deployment_id", "USUBJID", "ASEQ", name="uq_adam_advs"),)
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=_uuid)
+    deployment_id: Mapped[str] = mapped_column(Text, index=True)
+    STUDYID: Mapped[str] = mapped_column(Text)
+    USUBJID: Mapped[str] = mapped_column(Text, index=True)
+    ASEQ: Mapped[int] = mapped_column(Integer, doc="Analysis sequence within subject.")
+    TRTA: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    TRTP: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    PARAMCD: Mapped[str] = mapped_column(Text, doc="= VS.VSTESTCD.")
+    PARAM: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    AVAL: Mapped[float | None] = mapped_column(Float, nullable=True, default=None)
+    AVALU: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    ADT: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    ABLFL: Mapped[str] = mapped_column(Text, default="", doc="Baseline record flag (Y/blank).")
+    BASE: Mapped[float | None] = mapped_column(Float, nullable=True, default=None)
+    CHG: Mapped[float | None] = mapped_column(Float, nullable=True, default=None)
 
     derived_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 

@@ -11,7 +11,7 @@ allowed_ingress_cidrs = ["203.0.113.7/32"]
 app_secrets = {
   TAVILY_API_KEY             = ""
   NCBI_API_KEY               = ""
-  COGNITO_CLIENT_SECRET      = "1n7cqcsc4isulqo0gqvackfp9p1756v3rq29cg31mgk8d02beq4k"
+  COGNITO_CLIENT_SECRET      = "" # from your Cognito app client
   SESSION_COOKIE_SECRET      = "" # generate: openssl rand -base64 48
   POSTGRES_PASSWORD          = "change-me"
   CLINICAL_POSTGRES_PASSWORD = "change-me-too"
@@ -25,8 +25,18 @@ app_secrets = {
 # Then paste the private key here (or use: github_deploy_key = file("deploy_key"))
 github_deploy_key = ""
 
+# ── Cognito identity (non-secret ids; no defaults — set for YOUR account) ────
+# Created by scripts/cognito_setup.py. Leave enable_cognito_auth /
+# enable_alb_auth false for the first bring-up and these can stay empty.
+# cognito_user_pool_id            = "us-east-1_xxxxxxxxx"
+# cognito_client_id               = "xxxxxxxxxxxxxxxxxxxxxxxxxx"
+# cognito_domain                  = "https://<prefix>.auth.us-east-1.amazoncognito.com"
+# cognito_user_pool_domain_prefix = "<prefix>"
+
 # ── Optional overrides ──────────────────────────────────────────────────────
 # region              = "us-east-1"
 # instance_type       = "t3.large"
+# repo_url            = "git@github.com:<you>/cra.git"
 # repo_branch         = "main"
+# allowed_account_ids = ["123456789012"]   # pin to your AWS account (safety)
 # enable_cognito_auth = false   # keep false for first bring-up

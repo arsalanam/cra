@@ -5,9 +5,9 @@ variable "region" {
 }
 
 variable "allowed_account_ids" {
-  description = "Account IDs this stack is allowed to apply against (safety pin)."
+  description = "Account IDs this stack is allowed to apply against (safety pin). Set to your own account in terraform.tfvars; empty = no restriction."
   type        = list(string)
-  default     = ["157470074212"]
+  default     = []
 }
 
 variable "name_prefix" {
@@ -153,19 +153,24 @@ variable "enable_cognito_auth" {
   default     = false
 }
 
+# Non-secret ids created by scripts/cognito_setup.py. No defaults — set these
+# in terraform.tfvars for your own account (only needed when auth is enabled).
 variable "cognito_user_pool_id" {
-  type    = string
-  default = "us-east-1_HpFCZvhKV"
+  description = "Cognito user pool id, e.g. us-east-1_xxxxxxxxx."
+  type        = string
+  default     = ""
 }
 
 variable "cognito_client_id" {
-  type    = string
-  default = "32o7dbkeem2finegju5kd7jpqi"
+  description = "Cognito app client id."
+  type        = string
+  default     = ""
 }
 
 variable "cognito_domain" {
-  type    = string
-  default = "https://cra-arsalanam.auth.us-east-1.amazoncognito.com"
+  description = "Cognito hosted-UI base URL, https://<prefix>.auth.<region>.amazoncognito.com."
+  type        = string
+  default     = ""
 }
 
 # ── Edge auth (Option A: ALB -> Cognito) ───────────────────────────────────
@@ -183,9 +188,9 @@ variable "enable_alb_auth" {
 }
 
 variable "cognito_user_pool_domain_prefix" {
-  description = "Cognito hosted-UI domain PREFIX (not the full URL) for authenticate-cognito, e.g. 'cra-arsalanam'."
+  description = "Cognito hosted-UI domain PREFIX (not the full URL) for authenticate-cognito, e.g. 'my-cra'. Set in terraform.tfvars."
   type        = string
-  default     = "cra-arsalanam"
+  default     = ""
 }
 
 # ── ALB tuning ─────────────────────────────────────────────────────────────

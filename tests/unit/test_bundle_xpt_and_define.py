@@ -54,7 +54,14 @@ def test_bundle_contains_xpt_for_every_sdtm_domain_plus_adam() -> None:
         "sdtm/ex.xpt",
         "sdtm/cm.xpt",
         "sdtm/mh.xpt",
+        "sdtm/da.xpt",
+        "sdtm/sv.xpt",
+        "sdtm/ds.xpt",
         "adam/adsl.xpt",
+        "adam/adae.xpt",
+        "adam/adcm.xpt",
+        "adam/adlb.xpt",
+        "adam/advs.xpt",
         "adam/adtte.xpt",
     }
     missing = expected_xpt - names

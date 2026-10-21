@@ -22,7 +22,8 @@ has setup and the quality-gate workflow.
 | Doc | What it tracks |
 |---|---|
 | [`trial-readiness.md`](trial-readiness.md) | Gate list for opening the deployment to first external users (T1–T7) |
-| [`roadmap.md`](roadmap.md) | Feature roadmap: everything shipped, plus the pickable backlog |
+| [`roadmap.md`](roadmap.md) | Feature roadmap: everything shipped, plus the pickable backlog (canonical) |
+| [`design/backlog-board.html`](design/backlog-board.html) | Visual backlog board — pickable follow-ups, strategic initiatives, and deploy gates by effort + status (a rendered view of the roadmap) |
 | [`t1-spend-quota.md`](t1-spend-quota.md) | T1 design doc — per-account USD spend budgets (on its feature branch until merged) |
 
 ## Guides

@@ -252,6 +252,67 @@ _MH = DatasetMeta(
     ),
 )
 
+_DA = DatasetMeta(
+    name="DA",
+    label="Drug Accountability",
+    structure="One record per accountability finding per subject",
+    purpose="Tabulation",
+    klass="FINDINGS",
+    key_vars=("STUDYID", "USUBJID", "DASEQ"),
+    columns=(
+        ColumnMeta("STUDYID", "CHAR", 20, "Study Identifier", mandatory=True),
+        ColumnMeta("DOMAIN", "CHAR", 2, "Domain Abbreviation", mandatory=True),
+        ColumnMeta("USUBJID", "CHAR", 40, "Unique Subject Identifier", mandatory=True),
+        ColumnMeta("DASEQ", "NUM", 8, "Sequence Number", mandatory=True),
+        ColumnMeta("DAREFID", "CHAR", 40, "Reference ID"),
+        ColumnMeta("DATESTCD", "CHAR", 8, "Drug Accountability Test Short Name"),
+        ColumnMeta("DATEST", "CHAR", 40, "Drug Accountability Test Name"),
+        ColumnMeta("DAORRES", "CHAR", 20, "Result or Finding as Collected"),
+        ColumnMeta("DAORRESU", "CHAR", 20, "Original Units"),
+        ColumnMeta("DASTRESN", "NUM", 8, "Numeric Result/Finding in Standard Units"),
+        ColumnMeta("DASTRESU", "CHAR", 20, "Standard Units"),
+        ColumnMeta("DADTC", "CHAR", 30, "Date/Time of Collection"),
+    ),
+)
+
+_SV = DatasetMeta(
+    name="SV",
+    label="Subject Visits",
+    structure="One record per subject per visit",
+    purpose="Tabulation",
+    klass="SPECIAL PURPOSE",
+    key_vars=("STUDYID", "USUBJID", "SVSEQ"),
+    columns=(
+        ColumnMeta("STUDYID", "CHAR", 20, "Study Identifier", mandatory=True),
+        ColumnMeta("DOMAIN", "CHAR", 2, "Domain Abbreviation", mandatory=True),
+        ColumnMeta("USUBJID", "CHAR", 40, "Unique Subject Identifier", mandatory=True),
+        ColumnMeta("SVSEQ", "NUM", 8, "Sequence Number", mandatory=True),
+        ColumnMeta("VISITNUM", "NUM", 8, "Visit Number"),
+        ColumnMeta("VISIT", "CHAR", 60, "Visit Name"),
+        ColumnMeta("SVSTDTC", "CHAR", 30, "Start Date/Time of Visit"),
+        ColumnMeta("SVENDTC", "CHAR", 30, "End Date/Time of Visit"),
+    ),
+)
+
+_DS = DatasetMeta(
+    name="DS",
+    label="Disposition",
+    structure="One record per subject per disposition event",
+    purpose="Tabulation",
+    klass="EVENTS",
+    key_vars=("STUDYID", "USUBJID", "DSSEQ"),
+    columns=(
+        ColumnMeta("STUDYID", "CHAR", 20, "Study Identifier", mandatory=True),
+        ColumnMeta("DOMAIN", "CHAR", 2, "Domain Abbreviation", mandatory=True),
+        ColumnMeta("USUBJID", "CHAR", 40, "Unique Subject Identifier", mandatory=True),
+        ColumnMeta("DSSEQ", "NUM", 8, "Sequence Number", mandatory=True),
+        ColumnMeta("DSTERM", "CHAR", 200, "Reported Term for the Disposition Event"),
+        ColumnMeta("DSDECOD", "CHAR", 60, "Standardized Disposition Term"),
+        ColumnMeta("DSCAT", "CHAR", 40, "Category for Disposition Event"),
+        ColumnMeta("DSSTDTC", "CHAR", 30, "Start Date/Time of Disposition Event"),
+    ),
+)
+
 _ADSL = DatasetMeta(
     name="ADSL",
     label="Subject-Level Analysis Dataset",
@@ -327,8 +388,130 @@ _ADTTE = DatasetMeta(
     ),
 )
 
+_ADAE = DatasetMeta(
+    name="ADAE",
+    label="Adverse Events Analysis Dataset",
+    structure="One record per subject per adverse event",
+    purpose="Analysis",
+    klass="ADaM",
+    key_vars=("STUDYID", "USUBJID", "ASEQ"),
+    columns=(
+        ColumnMeta("STUDYID", "CHAR", 20, "Study Identifier", mandatory=True),
+        ColumnMeta("USUBJID", "CHAR", 40, "Unique Subject Identifier", mandatory=True),
+        ColumnMeta("ASEQ", "NUM", 8, "Analysis Sequence Number", mandatory=True),
+        ColumnMeta("TRTA", "CHAR", 60, "Actual Treatment"),
+        ColumnMeta("TRTP", "CHAR", 60, "Planned Treatment"),
+        ColumnMeta("AGE", "NUM", 8, "Age"),
+        ColumnMeta("SEX", "CHAR", 2, "Sex", codelist_oid=CL_SEX),
+        ColumnMeta("SAFFL", "CHAR", 1, "Safety Population Flag", codelist_oid=CL_NY),
+        ColumnMeta("AEDECOD", "CHAR", 200, "Dictionary-Derived Term"),
+        ColumnMeta("AETERM", "CHAR", 200, "Reported Term for the Adverse Event"),
+        ColumnMeta("AEBODSYS", "CHAR", 200, "Body System or Organ Class"),
+        ColumnMeta("AESEV", "CHAR", 20, "Severity/Intensity", codelist_oid=CL_AESEV),
+        ColumnMeta("AESER", "CHAR", 1, "Serious Event", codelist_oid=CL_NY),
+        ColumnMeta("AEREL", "CHAR", 20, "Causality", codelist_oid=CL_AEREL),
+        ColumnMeta("AEOUT", "CHAR", 40, "Outcome of Adverse Event", codelist_oid=CL_AEOUT),
+        ColumnMeta("ASTDT", "CHAR", 30, "Analysis Start Date"),
+        ColumnMeta("AENDT", "CHAR", 30, "Analysis End Date"),
+        ColumnMeta("TRTEMFL", "CHAR", 1, "Treatment Emergent Flag", codelist_oid=CL_NY),
+        ColumnMeta("AOCCFL", "CHAR", 1, "1st Occurrence of Term Flag", codelist_oid=CL_NY),
+    ),
+)
 
-DATASETS: tuple[DatasetMeta, ...] = (_DM, _AE, _VS, _LB, _EX, _CM, _MH, _ADSL, _ADTTE)
+_ADCM = DatasetMeta(
+    name="ADCM",
+    label="Concomitant Medications Analysis Dataset",
+    structure="One record per subject per medication",
+    purpose="Analysis",
+    klass="ADaM",
+    key_vars=("STUDYID", "USUBJID", "ASEQ"),
+    columns=(
+        ColumnMeta("STUDYID", "CHAR", 20, "Study Identifier", mandatory=True),
+        ColumnMeta("USUBJID", "CHAR", 40, "Unique Subject Identifier", mandatory=True),
+        ColumnMeta("ASEQ", "NUM", 8, "Analysis Sequence Number", mandatory=True),
+        ColumnMeta("TRTA", "CHAR", 60, "Actual Treatment"),
+        ColumnMeta("TRTP", "CHAR", 60, "Planned Treatment"),
+        ColumnMeta("SAFFL", "CHAR", 1, "Safety Population Flag", codelist_oid=CL_NY),
+        ColumnMeta("CMDECOD", "CHAR", 200, "Standardized Medication Name"),
+        ColumnMeta("CMTRT", "CHAR", 200, "Reported Name of Drug, Med, or Therapy"),
+        ColumnMeta("CMINDC", "CHAR", 200, "Indication"),
+        ColumnMeta("CMDOSE", "NUM", 8, "Dose per Administration"),
+        ColumnMeta("CMDOSU", "CHAR", 40, "Dose Units"),
+        ColumnMeta("ASTDT", "CHAR", 30, "Analysis Start Date"),
+        ColumnMeta("AENDT", "CHAR", 30, "Analysis End Date"),
+    ),
+)
+
+_ADLB = DatasetMeta(
+    name="ADLB",
+    label="Laboratory Analysis Dataset",
+    structure="One record per subject per parameter per analysis timepoint",
+    purpose="Analysis",
+    klass="ADaM",
+    key_vars=("STUDYID", "USUBJID", "ASEQ"),
+    columns=(
+        ColumnMeta("STUDYID", "CHAR", 20, "Study Identifier", mandatory=True),
+        ColumnMeta("USUBJID", "CHAR", 40, "Unique Subject Identifier", mandatory=True),
+        ColumnMeta("ASEQ", "NUM", 8, "Analysis Sequence Number", mandatory=True),
+        ColumnMeta("TRTA", "CHAR", 60, "Actual Treatment"),
+        ColumnMeta("TRTP", "CHAR", 60, "Planned Treatment"),
+        ColumnMeta("PARAMCD", "CHAR", 8, "Parameter Code", mandatory=True),
+        ColumnMeta("PARAM", "CHAR", 60, "Parameter"),
+        ColumnMeta("AVAL", "NUM", 8, "Analysis Value"),
+        ColumnMeta("AVALU", "CHAR", 20, "Analysis Value Unit"),
+        ColumnMeta("ADT", "CHAR", 30, "Analysis Date"),
+        ColumnMeta("ANRIND", "CHAR", 20, "Analysis Reference Range Indicator"),
+        ColumnMeta("A1LO", "NUM", 8, "Analysis Normal Range Lower Limit"),
+        ColumnMeta("A1HI", "NUM", 8, "Analysis Normal Range Upper Limit"),
+        ColumnMeta("ABLFL", "CHAR", 1, "Baseline Record Flag", codelist_oid=CL_NY),
+        ColumnMeta("BASE", "NUM", 8, "Baseline Value"),
+        ColumnMeta("CHG", "NUM", 8, "Change from Baseline"),
+    ),
+)
+
+_ADVS = DatasetMeta(
+    name="ADVS",
+    label="Vital Signs Analysis Dataset",
+    structure="One record per subject per parameter per analysis timepoint",
+    purpose="Analysis",
+    klass="ADaM",
+    key_vars=("STUDYID", "USUBJID", "ASEQ"),
+    columns=(
+        ColumnMeta("STUDYID", "CHAR", 20, "Study Identifier", mandatory=True),
+        ColumnMeta("USUBJID", "CHAR", 40, "Unique Subject Identifier", mandatory=True),
+        ColumnMeta("ASEQ", "NUM", 8, "Analysis Sequence Number", mandatory=True),
+        ColumnMeta("TRTA", "CHAR", 60, "Actual Treatment"),
+        ColumnMeta("TRTP", "CHAR", 60, "Planned Treatment"),
+        ColumnMeta("PARAMCD", "CHAR", 8, "Parameter Code", mandatory=True),
+        ColumnMeta("PARAM", "CHAR", 60, "Parameter"),
+        ColumnMeta("AVAL", "NUM", 8, "Analysis Value"),
+        ColumnMeta("AVALU", "CHAR", 20, "Analysis Value Unit"),
+        ColumnMeta("ADT", "CHAR", 30, "Analysis Date"),
+        ColumnMeta("ABLFL", "CHAR", 1, "Baseline Record Flag", codelist_oid=CL_NY),
+        ColumnMeta("BASE", "NUM", 8, "Baseline Value"),
+        ColumnMeta("CHG", "NUM", 8, "Change from Baseline"),
+    ),
+)
+
+
+DATASETS: tuple[DatasetMeta, ...] = (
+    _DM,
+    _AE,
+    _VS,
+    _LB,
+    _EX,
+    _CM,
+    _MH,
+    _DA,
+    _SV,
+    _DS,
+    _ADSL,
+    _ADAE,
+    _ADCM,
+    _ADLB,
+    _ADVS,
+    _ADTTE,
+)
 DOMAIN_METADATA: dict[str, DatasetMeta] = {d.name: d for d in DATASETS}
 
 
